@@ -1,0 +1,51 @@
+---
+description: Code style, quality gates, and PR conventions for mosbot-dashboard
+alwaysApply: false
+---
+
+# Contributing — Dashboard
+
+## Purpose
+
+Enforce consistent style, passing checks, and clean PRs on the mosbot-dashboard React/Vite app.
+
+## Do
+
+- Use **double quotes** for all JS/JSX string literals and import paths.
+- Use **functional components with hooks only** — no class components.
+- Place new pages under `src/pages/`, reusable UI under `src/components/`, stores under `src/stores/`.
+- Use `classNames()` from `src/utils/helpers.js` for dynamic class composition.
+- Use shared constants from `src/utils/constants.js` for statuses, priorities, and columns.
+- Reuse shared CSS classes (`btn-primary`, `btn-secondary`, `input-field`, `card`) before adding new ones.
+- Name branches: `feat/<short-description>`, `fix/<short-description>`, `chore/<short-description>`.
+- Keep PRs focused — one logical change per PR.
+
+## Don't
+
+- Don't create new Axios instances — use the shared `api` from `src/api/client.js`.
+- Don't add inline styles when a Tailwind utility or shared class exists.
+- Don't commit `node_modules/`, `dist/`, or any build artifact.
+- Don't merge a PR with failing lint, test, or build checks.
+- Don't introduce new fonts or break the dark-theme color palette.
+
+## Commands
+
+```bash
+make lint        # ESLint
+make test-run    # Vitest (CI mode)
+make build       # Vite production build
+
+# Without Make:
+npm run lint
+npm run test:run
+npm run build
+```
+
+## PR Checklist
+
+- [ ] `make lint` passes with no new errors
+- [ ] `make test-run` passes
+- [ ] `make build` succeeds
+- [ ] New UI shows loading **and** error states
+- [ ] No hardcoded strings that belong in `constants.js`
+- [ ] No secrets, tokens, or internal URLs in code or comments
