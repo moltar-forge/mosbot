@@ -49,6 +49,33 @@ export default function FilePreview({
   const isMarkdown = file?.name.endsWith('.md');
   const canModify = useMemo(() => isAdmin(), [isAdmin]);
 
+  // Parse frontmatter key-value pairs from markdown content (YAML between --- delimiters)
+  const frontmatterEntries = useMemo(() => {
+    if (!content?.content || !isMarkdown) return null;
+    const match = content.content.match(/^---\s*\n([\s\S]*?)\n---\s*\n?/);
+    if (!match) return null;
+    const lines = match[1].split('\n');
+    const entries = [];
+    let currentKey = null;
+    let multilineValue = [];
+    for (const line of lines) {
+      const kvMatch = line.match(/^([^:\s][^:]*):\s*(.*)/);
+      if (kvMatch) {
+        if (currentKey !== null) {
+          entries.push({ key: currentKey, value: multilineValue.join(' ').trim() });
+        }
+        currentKey = kvMatch[1].trim();
+        multilineValue = kvMatch[2] ? [kvMatch[2].trim()] : [];
+      } else if (currentKey !== null && line.trim()) {
+        multilineValue.push(line.trim().replace(/^-\s*/, ''));
+      }
+    }
+    if (currentKey !== null) {
+      entries.push({ key: currentKey, value: multilineValue.join(' ').trim() });
+    }
+    return entries.length > 0 ? entries : null;
+  }, [content?.content, isMarkdown]);
+
   // Check if file is a symlink or inside a symlink directory
   const isInsideSymlink = useMemo(() => {
     if (!file) return false;
@@ -478,12 +505,36 @@ export default function FilePreview({
             placeholder="File content..."
           />
         ) : isMarkdown ? (
-          <MarkdownRenderer
-            content={content.content}
-            size="sm"
-            breaks={false}
-            workspaceBaseUrl={workspaceBaseUrl}
-          />
+          <>
+            {frontmatterEntries && (
+              <div className="mb-6 rounded-lg border border-dark-700 overflow-hidden">
+                <div className="px-4 py-2 bg-dark-800 border-b border-dark-700 flex items-center gap-2">
+                  <CodeBracketIcon className="w-3.5 h-3.5 text-dark-400" />
+                  <span className="text-xs font-medium text-dark-400 uppercase tracking-wider">
+                    Frontmatter
+                  </span>
+                </div>
+                <div className="divide-y divide-dark-800">
+                  {frontmatterEntries.map(({ key, value }) => (
+                    <div key={key} className="flex items-start gap-3 px-4 py-2.5 bg-dark-900">
+                      <span className="shrink-0 text-xs font-mono font-medium text-primary-400 mt-0.5 min-w-[80px]">
+                        {key}
+                      </span>
+                      <span className="text-xs text-dark-200 leading-relaxed break-words min-w-0">
+                        {value || <span className="text-dark-500 italic">empty</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <MarkdownRenderer
+              content={content.content}
+              size="sm"
+              breaks={false}
+              workspaceBaseUrl={workspaceBaseUrl}
+            />
+          </>
         ) : (
           <pre className="bg-dark-950 p-4 rounded-lg border border-dark-800 overflow-x-auto">
             <code className="text-sm text-dark-200 font-mono">{content.content}</code>
