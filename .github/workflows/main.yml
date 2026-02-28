@@ -43,7 +43,7 @@ jobs:
     name: Deploy to S3
     runs-on: ubuntu-latest
     needs: test-and-build
-    if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+    if: github.event.repository.fork == false
     permissions:
       contents: read
 
