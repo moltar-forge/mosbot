@@ -382,12 +382,12 @@ Configures which tools are available and how they behave.
 }
 ```
 
-| Field                  | Description                                 |
-| ---------------------- | ------------------------------------------- |
-| `sessions.visibility`  | `agent` — agents can see their own sessions |
-| `agentToAgent.enabled` | Allow agents to invoke other agents         |
-| `elevated.enabled`     | Enable elevated (privileged) tools          |
-| `exec.host`            | Where exec commands run: `gateway`          |
+| Field                  | Description                                                                  |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| `sessions.visibility`  | `agent` — agents can see their own sessions. **Required for Agent Monitor.** |
+| `agentToAgent.enabled` | Allow agents to invoke other agents. **Required for subagent tracking.**     |
+| `elevated.enabled`     | Enable elevated (privileged) tools                                           |
+| `exec.host`            | Where exec commands run: `gateway`                                           |
 
 ---
 
@@ -424,12 +424,12 @@ Controls native command and skill behavior.
 }
 ```
 
-| Field          | Values              | Description                      |
-| -------------- | ------------------- | -------------------------------- |
-| `native`       | `auto`, `on`, `off` | Enable native commands           |
-| `nativeSkills` | `auto`, `on`, `off` | Enable skills as commands        |
-| `restart`      | `true`, `false`     | Allow the `/restart` command     |
-| `ownerDisplay` | `raw`, `formatted`  | How owner messages are displayed |
+| Field          | Values              | Description                                     |
+| -------------- | ------------------- | ----------------------------------------------- |
+| `native`       | `auto`, `on`, `off` | Enable native commands                          |
+| `nativeSkills` | `auto`, `on`, `off` | Enable skills as commands                       |
+| `restart`      | `true`, `false`     | Allow the `/restart` command                    |
+| `ownerDisplay` | `raw`, `formatted`  | How owner messages are displayed in the gateway |
 
 ---
 
@@ -534,16 +534,26 @@ Configures the OpenClaw gateway service.
 }
 ```
 
-| Field                         | Description                             |
-| ----------------------------- | --------------------------------------- |
-| `port`                        | Gateway port (default: `18789`)         |
-| `mode`                        | `local` for local/LAN operation         |
-| `bind`                        | `lan` to bind to all LAN interfaces     |
-| `controlUi.allowedOrigins`    | CORS allowed origins for the gateway UI |
-| `controlUi.allowInsecureAuth` | Allow insecure auth in development      |
-| `auth.mode`                   | `token` for bearer token authentication |
-| `tls.enabled`                 | Enable TLS                              |
-| `tls.autoGenerate`            | Auto-generate a self-signed certificate |
+| Field                         | Description                                                                                         |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| `port`                        | Gateway port (default: `18789`)                                                                     |
+| `mode`                        | `local` for local/LAN operation                                                                     |
+| `bind`                        | `lan` to bind to all LAN interfaces                                                                 |
+| `controlUi.allowedOrigins`    | CORS allowed origins for the gateway UI — **must include your MosBot dashboard URL**                |
+| `controlUi.allowInsecureAuth` | Allow operator-scoped connections without device auth. Required when device auth is not configured. |
+| `auth.mode`                   | `token` for bearer token authentication                                                             |
+| `tls.enabled`                 | Enable TLS                                                                                          |
+| `tls.autoGenerate`            | Auto-generate a self-signed certificate                                                             |
+
+:::info MosBot Integration
+
+MosBot API connects to the gateway via WebSocket. For this to work:
+
+1. Add your MosBot dashboard URL to `controlUi.allowedOrigins`
+2. Either configure device auth credentials in MosBot API's `.env`, or set
+   `controlUi.allowInsecureAuth: true`
+
+See [Key Settings for MosBot](./mosbot-required-config) for details. :::
 
 ---
 

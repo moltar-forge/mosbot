@@ -38,6 +38,19 @@ const sidebars = {
         'skills/creating-skills',
         'skills/skill-structure',
         'skills/examples',
+        {
+          type: 'category',
+          label: 'Skill Reference',
+          collapsed: true,
+          items: [
+            'skills/reference/memory-flush',
+            'skills/reference/reminder-create',
+            'skills/reference/audio-transcribe',
+            'skills/reference/create-prd',
+            'skills/reference/task-writing',
+            'skills/reference/task-pickup',
+          ],
+        },
       ],
     },
     {
@@ -46,6 +59,7 @@ const sidebars = {
       items: [
         'configuration/openclaw-json',
         'configuration/sample-config',
+        'configuration/mosbot-required-config',
         'configuration/best-practices',
       ],
     },

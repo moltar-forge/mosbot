@@ -10,8 +10,10 @@ sidebar_position: 2
 OpenClaw is the AI agent runtime that MosBot OS connects to. This guide covers the basics of getting
 OpenClaw running so you can connect MosBot to it.
 
-:::info OpenClaw documentation OpenClaw has its own documentation. This guide covers only what you
-need to know to integrate it with MosBot OS. :::
+:::info OpenClaw Documentation
+
+OpenClaw has its own documentation. This guide covers only what you need to know to integrate it
+with MosBot OS. :::
 
 ## OpenClaw deployment options
 
@@ -39,9 +41,10 @@ See [Kubernetes Deployment](./kubernetes) for the full guide.
 
 OpenClaw runs on a remote server. Expose ports 8080 and 18789 via firewall rules or a reverse proxy.
 
-:::warning Security note When exposing OpenClaw ports over the internet, use a VPN or private
-network. At minimum, use strong bearer tokens and TLS. Never expose these ports without
-authentication. :::
+:::warning Security Note
+
+When exposing OpenClaw ports over the internet, use a VPN or private network. At minimum, use strong
+bearer tokens and TLS. Never expose these ports without authentication. :::
 
 ## OpenClaw configuration file
 

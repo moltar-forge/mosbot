@@ -7,13 +7,33 @@ sidebar_position: 5
 
 # Example Skills
 
-A collection of ready-to-use skills you can add to your MosBot OS installation.
+A collection of ready-to-use skills you can add to your MosBot OS installation. All examples follow
+the snake_case folder structure.
+
+## Skill Folder Structure
+
+Each skill lives in its own folder with a `SKILL.md` file:
+
+```
+skills/
+└── <skill_name>/          ← snake_case folder name
+    ├── SKILL.md           ← Required: Skill definition
+    ├── references/        ← Optional: Reference files
+    └── scripts/           ← Optional: Helper scripts
+```
+
+---
 
 ## General purpose (shared skills)
 
 ### summarize
 
+**Location**: `skills/summarize/SKILL.md`
+
 Summarize any document or conversation.
+
+<details>
+<summary>📋 Click to view SKILL.md content (copy-ready)</summary>
 
 ```markdown
 ---
@@ -38,11 +58,18 @@ Read the provided content and produce a concise summary.
 - Use plain language — avoid jargon
 ```
 
+</details>
+
 ---
 
-### daily-brief
+### daily_brief
+
+**Location**: `skills/daily_brief/SKILL.md`
 
 Generate a daily activity briefing.
+
+<details>
+<summary>📋 Click to view SKILL.md content (copy-ready)</summary>
 
 ```markdown
 ---
@@ -79,11 +106,18 @@ Generate a concise daily briefing covering yesterday's activity and today's prio
 - Keep the tone professional and direct
 ```
 
+</details>
+
 ---
 
 ### research
 
+**Location**: `skills/research/SKILL.md`
+
 Research a topic and produce a structured report.
+
+<details>
+<summary>📋 Click to view SKILL.md content (copy-ready)</summary>
 
 ```markdown
 ---
@@ -121,11 +155,18 @@ List the sources consulted (URLs, documents, or knowledge references).
 - Keep the report actionable — focus on what matters
 ```
 
+</details>
+
 ---
 
 ## Agent-specific skill examples
 
-### architecture-review (CTO agent)
+### architecture_review (CTO agent)
+
+**Location**: `workspace-cto/skills/architecture_review/SKILL.md`
+
+<details>
+<summary>📋 Click to view SKILL.md content (copy-ready)</summary>
 
 ```markdown
 ---
@@ -174,9 +215,16 @@ Specific, actionable changes with rationale.
 Questions that need answers before the design can be finalized.
 ```
 
+</details>
+
 ---
 
-### campaign-brief (CMO agent)
+### campaign_brief (CMO agent)
+
+**Location**: `workspace-cmo/skills/campaign_brief/SKILL.md`
+
+<details>
+<summary>📋 Click to view SKILL.md content (copy-ready)</summary>
 
 ```markdown
 ---
@@ -220,12 +268,20 @@ Suggested phases and milestones.
 - Keep the key message to one sentence
 ```
 
+</details>
+
 ---
 
 ## Heartbeat skill
 
 Skills can also be used to define agent behavior for scheduled heartbeats. The heartbeat prompt in
 `openclaw.json` can reference a `HEARTBEAT.md` file in the agent's workspace.
+
+**Location**: `workspace-coo/HEARTBEAT.md` (note: not in skills folder, placed directly in
+workspace)
+
+<details>
+<summary>📋 Click to view HEARTBEAT.md content (copy-ready)</summary>
 
 ```markdown
 <!-- workspace-coo/HEARTBEAT.md -->
@@ -246,3 +302,37 @@ You are MosBot, the COO agent. This is your regular heartbeat check-in.
 - If nothing needs attention, reply HEARTBEAT_OK
 - Keep responses brief — this is a check-in, not a full session
 ```
+
+</details>
+
+---
+
+## Quick Copy: Complete Skill Folder
+
+To create a skill from these examples:
+
+1. **Create the folder** (snake_case):
+
+   ```bash
+   mkdir -p skills/summarize
+   ```
+
+2. **Create SKILL.md** with the content above:
+
+   ```bash
+   cat > skills/summarize/SKILL.md << 'EOF'
+   ---
+   name: summarize
+   description: Summarize a document or conversation into key points
+   ---
+
+   # Summarize
+   ...
+   EOF
+   ```
+
+3. **Add optional references**:
+   ```bash
+   mkdir -p skills/summarize/references
+   cp my-template.txt skills/summarize/references/
+   ```

@@ -5,8 +5,6 @@ sidebar_label: Docker
 sidebar_position: 1
 ---
 
-# Docker Deployment
-
 The recommended way to run MosBot OS is via Docker Compose. This guide covers both development and
 production Docker deployments.
 
@@ -15,27 +13,48 @@ production Docker deployments.
 The development setup uses a Vite dev server for the dashboard with hot-reload. File changes in
 `mosbot-dashboard/` are reflected instantly in the browser.
 
+**Primary method (recommended):**
+
 ```bash
 cd mosbot-api
 make up
-# or: docker compose up -d
+```
+
+This is the recommended way to start the full stack for local development.
+
+**Alternative:**
+
+If you prefer using Docker Compose directly:
+
+```bash
+cd mosbot-api
+docker compose up -d
 ```
 
 Services started:
 
-| Service    | URL                   | Description                  |
-| ---------- | --------------------- | ---------------------------- |
-| API        | http://localhost:3000 | MosBot API                   |
-| Dashboard  | http://localhost:5173 | Vite dev server (hot-reload) |
-| PostgreSQL | localhost:5432        | Database                     |
+| Service    | URL                                            | Description                  |
+| ---------- | ---------------------------------------------- | ---------------------------- |
+| API        | [http://localhost:3000](http://localhost:3000) | MosBot API                   |
+| Dashboard  | [http://localhost:5173](http://localhost:5173) | Vite dev server (hot-reload) |
+| PostgreSQL | localhost:5432                                 | Database                     |
 
 ## Production
 
 The production setup builds the dashboard as an optimized nginx bundle.
 
+**Primary method:**
+
 ```bash
+cd mosbot-api
 make up-prod
-# or: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+```
+
+**Alternative:**
+
+```bash
+cd mosbot-api
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
 ```
 
 This builds the dashboard image before starting. The dashboard is served by nginx instead of the
@@ -64,6 +83,8 @@ Available tags:
 
 ## Docker Compose commands
 
+**Primary method (run from `mosbot-api/` directory):**
+
 ```bash
 make up          # start full stack (dev mode)
 make up-prod     # start full stack (production build)
@@ -73,9 +94,10 @@ make migrate     # run database migrations
 make db-reset    # reset database (dev only — destructive)
 ```
 
-Or with docker compose directly:
+**Alternative (using docker compose directly):**
 
 ```bash
+cd mosbot-api
 docker compose up -d           # start
 docker compose down            # stop
 docker compose logs -f api     # follow API logs

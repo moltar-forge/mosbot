@@ -5,8 +5,6 @@ sidebar_label: Quickstart
 sidebar_position: 3
 ---
 
-# Quickstart
-
 Get MosBot OS running in under 10 minutes using Docker Compose.
 
 ## Step 1: Clone both repositories
@@ -20,7 +18,7 @@ git clone https://github.com/bymosbot/mosbot-dashboard.git
 
 Your directory layout should look like:
 
-```
+```text
 parent-folder/
 ├── mosbot-api/
 └── mosbot-dashboard/
@@ -61,9 +59,23 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 
 ## Step 3: Start the stack
 
+**Primary method (recommended):**
+
 ```bash
+cd mosbot-api
 make up
-# or: docker compose up -d
+```
+
+This is the recommended way to start the full stack for local development. It starts all services
+(API, Dashboard, and PostgreSQL) with a single command.
+
+**Alternative methods:**
+
+If you prefer using Docker Compose directly:
+
+```bash
+cd mosbot-api
+docker compose up -d
 ```
 
 This starts three services:
@@ -104,6 +116,7 @@ After your first successful login:
    the bootstrap account from being re-created or reset on restart.
 2. Change your password in the dashboard under **Settings → Users**.
 3. Restart the API to confirm it starts without the bootstrap variable:
+
    ```bash
    docker compose restart api
    ```
@@ -119,9 +132,18 @@ After your first successful login:
 
 ## Stopping the stack
 
+**Primary method:**
+
 ```bash
+cd mosbot-api
 make down
-# or: docker compose down
+```
+
+**Alternative:**
+
+```bash
+cd mosbot-api
+docker compose down
 ```
 
 To also remove the database volume (destructive):
@@ -135,9 +157,18 @@ docker compose down -v
 The quickstart uses a Vite dev server for the dashboard (with hot-reload). For production, use the
 optimized nginx build:
 
+**Primary method:**
+
 ```bash
+cd mosbot-api
 make up-prod
-# or: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+```
+
+**Alternative:**
+
+```bash
+cd mosbot-api
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
 ```
 
 See [Deployment → Docker](../deployment/docker) for details.

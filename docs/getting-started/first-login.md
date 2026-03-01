@@ -5,13 +5,12 @@ sidebar_label: First Login
 sidebar_position: 5
 ---
 
-# First Login & Security Setup
-
 After starting MosBot OS for the first time, complete these steps to secure your installation.
 
 ## 1. Log in
 
-Open **http://localhost:5173** (or your configured dashboard URL) and log in with:
+Open **[http://localhost:5173](http://localhost:5173)** (or your configured dashboard URL) and log
+in with:
 
 - **Email**: the value of `BOOTSTRAP_OWNER_EMAIL` from your `.env`
 - **Password**: the value of `BOOTSTRAP_OWNER_PASSWORD` from your `.env`
@@ -23,12 +22,17 @@ logged in successfully:
 
 1. Open `mosbot-api/.env`
 2. Remove or blank out `BOOTSTRAP_OWNER_PASSWORD`:
+
    ```bash
    # BOOTSTRAP_OWNER_PASSWORD=  # removed after first login
    ```
+
 3. Restart the API:
+
    ```bash
+   cd mosbot-api
    docker compose restart api
+   # or: make restart (if available)
    ```
 
 This prevents the bootstrap password from being used to reset or recreate the owner account.
@@ -73,6 +77,7 @@ OPENCLAW_GATEWAY_TOKEN=your-gateway-token
 Then restart the API:
 
 ```bash
+cd mosbot-api
 docker compose restart api
 ```
 

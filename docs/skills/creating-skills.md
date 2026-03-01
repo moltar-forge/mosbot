@@ -7,89 +7,186 @@ sidebar_position: 3
 
 # Creating Skills
 
-You can create skills directly in the MosBot Dashboard or by writing files to the OpenClaw workspace
-filesystem.
+There are two ways to create and manage skills in MosBot OS: (1) directly creating a skill folder in
+the filesystem, or (2) asking an agent to create the skill for you.
 
-## Method 1: MosBot Dashboard (recommended)
+---
 
-1. Open the MosBot Dashboard and navigate to **Skills**
-2. Click **New Skill** (or the `+` button)
-3. Choose the skill type:
-   - **Shared skill** — available to all agents
-   - **Agent-specific skill** — available to one agent only
-4. Enter the skill name (this becomes the command name, e.g. `summarize` → `/summarize`)
-5. Write the skill content in the editor
-6. Click **Save**
+## Method 1: Directly Create a Skill Folder
 
-The skill is immediately available to agents.
+Create a skill by adding a folder to the skills directory. The folder name must be in **snake_case**
+(lowercase with underscores).
 
-## Method 2: Write directly to the workspace
+### Location
 
-Skills are plain files in the OpenClaw workspace. You can create them by writing to the appropriate
-directory.
+- **Shared skills**: `/skills/<skill_name>/`
+- **Agent-specific skills**: `/workspace-<agent-id>/skills/<skill_name>/`
 
-### Shared skill
+### Folder Structure
 
-Write a file to `/skills/<skill-name>`:
+A skill folder contains at minimum a `SKILL.md` file. You can also include optional `references/`
+and `scripts/` directories:
 
-```bash
-# Via MosBot API
-curl -X POST http://localhost:3000/api/v1/openclaw/workspace/file \
-  -H "Authorization: Bearer <mosbot-jwt>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "path": "/skills/summarize",
-    "content": "---\nname: summarize\ndescription: Summarize content into key points\n---\n\n# Summarize\n\nRead the content and produce a concise summary..."
-  }'
+```
+skills/
+└── <skill_name>/
+    ├── SKILL.md           # Required: Skill definition and instructions
+    ├── references/        # Optional: Reference files for the skill
+    │   ├── example.txt
+    │   └── template.md
+    └── scripts/           # Optional: Executable scripts
+        └── helper.sh
 ```
 
-### Agent-specific skill
+### Sample Structure
 
-Write a file to `/workspace-<agent-id>/skills/<skill-name>`:
+**Shared skill example** (`/skills/code_review/`):
 
-```bash
-curl -X POST http://localhost:3000/api/v1/openclaw/workspace/file \
-  -H "Authorization: Bearer <mosbot-jwt>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "path": "/workspace-cto/skills/architecture-review",
-    "content": "---\nname: architecture-review\ndescription: Review system architecture and provide recommendations\n---\n\n..."
-  }'
+```
+skills/
+└── code_review/
+    ├── SKILL.md
+    ├── references/
+    │   ├── review_checklist.md
+    │   └── security_patterns.md
+    └── scripts/
+        └── run_linter.sh
 ```
 
-## Skill naming conventions
+**Agent-specific skill example** (`/workspace-cto/skills/architecture_decision/`):
 
-- Use lowercase letters, numbers, and hyphens only
-- Keep names short and descriptive
-- The filename becomes the command name (no extension needed)
-- Examples: `summarize`, `code-review`, `daily-brief`, `write-report`
+```
+workspace-cto/
+└── skills/
+    └── architecture_decision/
+        ├── SKILL.md
+        └── references/
+            ├── adr_template.md
+            └── decision_matrix.xlsx
+```
 
-## Testing a skill
+### SKILL.md Format
 
-After creating a skill, test it by sending the command to an agent:
+The `SKILL.md` file contains YAML frontmatter followed by Markdown instructions:
 
-1. Open a chat with the agent (e.g. via Telegram)
-2. Send `/<skill-name>` followed by any required input
-3. The agent should execute the skill instructions
+```markdown
+---
+name: <skill-name>
+description: <short description>
+---
 
-## Editing skills
+# Skill Title
 
-To edit an existing skill:
+Skill instructions in Markdown...
 
-1. In the dashboard, navigate to **Skills**
-2. Find the skill and click on it to open it
-3. Click **Edit** (pencil icon)
-4. Make your changes
-5. Click **Save**
+## Input
 
-## Deleting skills
+What the agent should expect as input.
 
-To delete a skill:
+## Output format
 
-1. In the dashboard, navigate to **Skills**
-2. Find the skill and open it
-3. Click **Delete** (trash icon)
-4. Confirm the deletion
+How the output should be structured.
+
+## Guidelines
+
+- Specific rules or constraints
+- Quality standards
+- Edge cases to handle
+```
+
+---
+
+## Method 2: Ask an Agent to Create the Skill
+
+You can ask any MosBot agent to create a skill for you. This is useful when you want to collaborate
+on skill design or when you need the agent's expertise.
+
+### Sample Prompt
+
+```
+Please create a new shared skill called "daily_standup" that helps agents generate
+concise daily standup reports. The skill should:
+
+1. Accept input about what the agent worked on yesterday
+2. Ask what they're working on today
+3. Ask about any blockers or impediments
+4. Output a formatted standup report in this structure:
+
+   ### Yesterday
+   - Completed: ...
+   - In Progress: ...
+
+   ### Today
+   - Plan: ...
+
+   ### Blockers
+   - (or "None" if no blockers)
+
+Include a references/ folder with a template.md showing example standup reports.
+```
+
+### How It Works
+
+1. Send the prompt to an agent via chat (Telegram, etc.)
+2. The agent will create the skill folder structure in the appropriate location
+3. The agent writes the `SKILL.md` file with proper frontmatter
+4. If requested, the agent creates supporting files in `references/` or `scripts/`
+5. The skill becomes immediately available to all agents (if shared) or that specific agent
+
+### Tips for Agent-Created Skills
+
+- Be specific about the skill's purpose and desired behavior
+- Define the output format clearly
+- Request reference materials if the skill needs templates or examples
+- Ask the agent to follow naming conventions (snake_case for folder names)
+
+---
+
+## Skill Naming Conventions
+
+| Convention       | Rule                                    | Example                        |
+| ---------------- | --------------------------------------- | ------------------------------ |
+| **Folder name**  | snake_case (lowercase with underscores) | `code_review`, `daily_standup` |
+| **Skill name**   | Lowercase with hyphens                  | `code-review`, `daily-standup` |
+| **Display name** | Title case in frontmatter               | `Code Review`, `Daily Standup` |
+
+- Use descriptive, action-oriented names
+- Keep names concise (1-3 words)
+- Avoid special characters except hyphens and underscores
+
+---
+
+## Testing a Skill
+
+After creating a skill, test it by invoking it:
+
+1. Open a chat with an agent
+2. Type `/<skill-name>` followed by any required input
+3. Verify the agent follows the instructions correctly
+
+Example:
+
+```
+/code_review Please review this function for security issues:
+function authenticate(user, pass) {
+  return db.query("SELECT * FROM users WHERE username='" + user + "'");
+}
+```
+
+---
+
+## Editing and Deleting Skills
+
+### Edit a Skill
+
+1. **Via Dashboard**: Navigate to **Skills**, find the skill, click **Edit**
+2. **Via Filesystem**: Modify the `SKILL.md` file directly
+3. **Via Agent**: Ask an agent to "Update the `<skill-name>` skill to include ..."
+
+### Delete a Skill
+
+1. **Via Dashboard**: Navigate to **Skills**, find the skill, click **Delete** (trash icon)
+2. **Via Filesystem**: Delete the skill folder
 
 :::caution Deleting a skill is permanent. Agents that reference the skill will no longer be able to
 invoke it. :::
