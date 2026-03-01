@@ -10,19 +10,6 @@ MosBot Dashboard is a React 18 + Vite SPA that provides task management, org cha
 
 > **Disclaimer:** MosBot OS is vibe-coded with minimal actual code reviews. It is currently used for personal usage only.
 
-## Known bugs / pending fixes
-
-- **Create new agent** — Not working. Do not use.
-- **Config update** — May not be as reliable due to REDACTIONS. Prefer using OpenClaw's ControlUI instead.
-
-## TODO
-
-- [ ] Fix the known issues above.
-- [ ] Org chart: reference OpenClaw agents list and org-chart JSON file for supplementary metadata.
-- [x] Workspace file viewer: display JSON frontmatter.
-- [ ] Workspace file viewer: display other file types instead of just Markdown (e.g. `.jpg`, `.wav` audio player, `.js` with proper syntax highlighting, etc.).
-- [ ] Increase code coverage to 100% for Dashboard.
-
 ## Features
 
 - **Agent Monitor** — view active sessions, costs, and usage analytics
@@ -45,7 +32,7 @@ cp .env.example .env   # edit required values
 make up
 ```
 
-Dashboard will be available at **http://localhost:5173**.
+Dashboard will be available at **<http://localhost:5173>**.
 
 ### Dashboard-only dev server
 
@@ -89,6 +76,17 @@ make build      # build for production (output: dist/)
 | Security | [Roles & permissions](https://bymosbot.github.io/mosbot-docs/security/roles-permissions) |
 
 Developer-focused docs (component architecture, local dev setup) remain in [`docs/`](docs/README.md).
+
+## Known bugs / pending fixes
+
+- **Create new agent** — Not working. Do not use.
+- **Config update** — May not be as reliable due to REDACTIONS. Prefer using OpenClaw's ControlUI instead.
+
+## TODO
+
+- [ ] Fix the known issues above.
+- [ ] Org chart: reference OpenClaw agents list and org-chart JSON file for supplementary metadata.
+- [ ] Increase code coverage to 100% for Dashboard.
 
 ## Contributing
 

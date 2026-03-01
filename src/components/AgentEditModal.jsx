@@ -533,7 +533,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
                           >
                             {availableModels.map((model) => (
                               <option key={model.id} value={model.id}>
-                                {model.name} ({model.alias}) - {model.provider}
+                                {model.alias} ({model.id})
                               </option>
                             ))}
                           </select>
@@ -554,7 +554,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
                               .filter((m) => m.id !== formData.modelPrimary)
                               .map((model) => (
                                 <option key={model.id} value={model.id}>
-                                  {model.name} ({model.alias})
+                                  {model.alias} ({model.id})
                                 </option>
                               ))}
                           </select>
@@ -579,7 +579,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
                               )
                               .map((model) => (
                                 <option key={model.id} value={model.id}>
-                                  {model.name} ({model.alias})
+                                  {model.alias} ({model.id})
                                 </option>
                               ))}
                           </select>
@@ -635,7 +635,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
                               >
                                 {availableModels.map((model) => (
                                   <option key={model.id} value={model.id}>
-                                    {model.name} ({model.alias})
+                                    {model.alias} ({model.id})
                                   </option>
                                 ))}
                               </select>

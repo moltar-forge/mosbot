@@ -267,7 +267,16 @@ function getStatusBadge(
   };
 }
 
-function CronJobRow({ job, onEdit, onDelete, onToggleEnabled, onTrigger, onJobClick, agents }) {
+function CronJobRow({
+  job,
+  onEdit,
+  onDelete,
+  onToggleEnabled,
+  onTrigger,
+  onJobClick,
+  agents,
+  models,
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Prefer ms-epoch fields from state object; fall back to legacy top-level ISO strings
@@ -292,7 +301,8 @@ function CronJobRow({ job, onEdit, onDelete, onToggleEnabled, onTrigger, onJobCl
 
   // Get model: show if explicitly set in job payload (applies to all job types)
   const agent = agents.find((a) => a.id === agentId);
-  const displayModel = job.payload?.model || null;
+  const displayModelId = job.payload?.model || null;
+  const displayModel = displayModelId ? models.find((m) => m.id === displayModelId) || null : null;
 
   const IconElement = isHeartbeat ? (
     job.agentEmoji ? (
@@ -444,7 +454,7 @@ function CronJobRow({ job, onEdit, onDelete, onToggleEnabled, onTrigger, onJobCl
                 <span className="text-dark-600">•</span>
                 <span className="text-dark-500">Model:</span>
                 <span className="text-dark-300 font-mono text-[11px]">
-                  {formatModel(displayModel)}
+                  {displayModel.alias || formatModel(displayModel.id)}
                   {job.payload?.model && (
                     <span className="ml-1 text-primary-400" title="Custom model override">
                       *
@@ -763,7 +773,16 @@ function parseCronExpression(expr) {
   return null;
 }
 
-function CronJobModal({ isOpen, onClose, job, onSave, timezone = 'UTC', jobs = [] }) {
+function CronJobModal({
+  isOpen,
+  onClose,
+  job,
+  onSave,
+  timezone = 'UTC',
+  jobs = [],
+  models = [],
+  loadingModels = false,
+}) {
   const agents = useAgentStore((state) => state.agents);
   const [formData, setFormData] = useState({
     name: '',
@@ -790,8 +809,6 @@ function CronJobModal({ isOpen, onClose, job, onSave, timezone = 'UTC', jobs = [
     activeHoursTz: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [models, setModels] = useState([]);
-  const [loadingModels, setLoadingModels] = useState(false);
   const [jobIdCopied, setJobIdCopied] = useState(false);
   const showToast = useToastStore((state) => state.showToast);
   const defaultModelSetForCreateRef = useRef(false);
@@ -809,32 +826,6 @@ function CronJobModal({ isOpen, onClose, job, onSave, timezone = 'UTC', jobs = [
   // Get browser timezone for display and conversion
   const browserTimezone = getBrowserTimezone();
   const browserTzAbbr = getTimezoneAbbr(browserTimezone);
-
-  // Fetch available models when modal opens (lazy load)
-  useEffect(() => {
-    if (!isOpen) return;
-    let cancelled = false;
-    setLoadingModels(true);
-    api
-      .get('/models')
-      .then((res) => {
-        if (!cancelled) {
-          setModels(res.data?.data?.models ?? []);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          logger.error('Failed to fetch models', err);
-          setModels([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingModels(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen]);
 
   // Auto-select default model (e.g. Kimi K2.5) when opening create form
   useEffect(() => {
@@ -1348,13 +1339,13 @@ function CronJobModal({ isOpen, onClose, job, onSave, timezone = 'UTC', jobs = [
                             </option>
                             {models.map((m) => (
                               <option key={m.id} value={m.id} title={m.id}>
-                                {formatModel(m.id)}
+                                {m.alias || formatModel(m.id)} ({m.id})
                                 {m.isDefault ? ' — default' : ''}
                               </option>
                             ))}
                             {formData.model && !models.some((m) => m.id === formData.model) && (
                               <option value={formData.model} title={formData.model}>
-                                Current: {formatModel(formData.model)}
+                                Current: {formData.model}
                               </option>
                             )}
                           </select>
@@ -1504,13 +1495,13 @@ function CronJobModal({ isOpen, onClose, job, onSave, timezone = 'UTC', jobs = [
                             <option value="">Default (use agent main session model)</option>
                             {models.map((m) => (
                               <option key={m.id} value={m.id} title={m.id}>
-                                {formatModel(m.id)}
+                                {m.alias || formatModel(m.id)} ({m.id})
                                 {m.isDefault ? ' — default' : ''}
                               </option>
                             ))}
                             {formData.model && !models.some((m) => m.id === formData.model) && (
                               <option value={formData.model} title={formData.model}>
-                                Current: {formatModel(formData.model)}
+                                Current: {formData.model}
                               </option>
                             )}
                           </select>
@@ -1741,6 +1732,8 @@ export default function CronJobs() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
   const [instanceTimezone, setInstanceTimezone] = useState('UTC');
+  const [models, setModels] = useState([]);
+  const [loadingModels, setLoadingModels] = useState(false);
   const showToast = useToastStore((state) => state.showToast);
   const {
     setAttention,
@@ -1822,6 +1815,31 @@ export default function CronJobs() {
     isInitialMount.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run on mount - cachedJobs checked inside
+
+  // Fetch models once on mount (used by CronJobRow and CronRunHistoryPanel)
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingModels(true);
+    api
+      .get('/models')
+      .then((res) => {
+        if (!cancelled) {
+          setModels(res.data?.data?.models ?? []);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          logger.error('Failed to fetch models', err);
+          setModels([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingModels(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Auto-highlight job from ?jobId= deep link once jobs are loaded
   useEffect(() => {
@@ -2267,6 +2285,7 @@ export default function CronJobs() {
                         key={job.jobId || job.id || job.name}
                         job={job}
                         agents={agents}
+                        models={models}
                         onEdit={setEditingJob}
                         onDelete={setDeletingJob}
                         onToggleEnabled={handleToggleEnabled}
@@ -2301,6 +2320,7 @@ export default function CronJobs() {
                         key={job.jobId || job.id || job.name}
                         job={job}
                         agents={agents}
+                        models={models}
                         onEdit={setEditingJob}
                         onDelete={setDeletingJob}
                         onToggleEnabled={handleToggleEnabled}
@@ -2333,6 +2353,7 @@ export default function CronJobs() {
                     key={job.jobId || job.id || job.name}
                     job={job}
                     agents={agents}
+                    models={models}
                     onEdit={setEditingJob}
                     onDelete={setDeletingJob}
                     onToggleEnabled={handleToggleEnabled}
@@ -2354,6 +2375,8 @@ export default function CronJobs() {
         onSave={handleCreate}
         timezone={instanceTimezone}
         jobs={jobs}
+        models={models}
+        loadingModels={loadingModels}
       />
 
       <CronJobModal
@@ -2362,6 +2385,8 @@ export default function CronJobs() {
         job={editingJob}
         onSave={handleUpdate}
         timezone={instanceTimezone}
+        models={models}
+        loadingModels={loadingModels}
         jobs={jobs}
       />
 
@@ -2383,6 +2408,7 @@ export default function CronJobs() {
             isOpen={!!selectedJob}
             onClose={() => setSelectedJob(null)}
             job={selectedJob}
+            models={models}
           />
         ) : (
           <SessionDetailPanel

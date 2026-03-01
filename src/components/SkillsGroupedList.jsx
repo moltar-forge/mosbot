@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   DocumentTextIcon,
   DocumentIcon,
@@ -13,16 +13,11 @@ import { useAgentStore } from '../stores/agentStore';
 
 /**
  * Groups skills into Shared Skills and Agent-Only Skills sections.
- *
- * Logic:
- * - Skills from /skills/ are shared skills
- * - Skills from /workspace-<id>/skills/ are agent-only skills, grouped by agent ID
  */
 function groupSkills(files, agents = []) {
   const shared = [];
-  const agentOnlyByAgent = {}; // { agentId: [files] }
+  const agentOnlyByAgent = {};
 
-  // Create a map of workspace paths to agent IDs
   const workspaceToAgentId = {};
   agents.forEach((agent) => {
     if (agent.id !== 'skills') {
@@ -33,25 +28,17 @@ function groupSkills(files, agents = []) {
 
   files.forEach((file) => {
     const path = file.path;
-    const fullPath = file.fullPath || path; // Use fullPath if available (absolute path from API)
-
-    // Check if file is from an agent workspace skills directory
-    // Pattern: /workspace-<id>/skills/... or /workspace-<id>/skills (directory)
-    // Examples: /workspace-coo/skills/audio_transcribe, /workspace-cto/skills/
+    const fullPath = file.fullPath || path;
     const workspaceMatch = fullPath.match(/^(\/workspace-[^/]+)\/skills/);
 
     if (workspaceMatch) {
       const workspacePath = workspaceMatch[1];
       const agentId = workspaceToAgentId[workspacePath];
-
       if (agentId) {
-        if (!agentOnlyByAgent[agentId]) {
-          agentOnlyByAgent[agentId] = [];
-        }
+        if (!agentOnlyByAgent[agentId]) agentOnlyByAgent[agentId] = [];
         agentOnlyByAgent[agentId].push(file);
       }
     } else {
-      // Default to shared: files from /skills/ root
       shared.push(file);
     }
   });
@@ -68,14 +55,15 @@ function SkillItem({
   childrenCache,
   loadingPaths,
   depth = 0,
+  expandedPaths,
+  onToggleExpand,
 }) {
-  const [isExpanded, setIsExpanded] = useState(false);
   const isDirectory = file.type === 'directory';
   const isMarkdown = file.name.endsWith('.md');
   const isSymlink = file.isSymlink === true;
   const isLoading = loadingPaths?.has(file.path);
+  const isExpanded = expandedPaths.has(file.path);
 
-  // Children from cache for this directory
   const children = useMemo(() => {
     if (!isDirectory || !isExpanded || !childrenCache) return [];
     const cached = childrenCache[file.path];
@@ -92,10 +80,12 @@ function SkillItem({
     e.stopPropagation();
     if (isDirectory) {
       const next = !isExpanded;
-      setIsExpanded(next);
+      onToggleExpand(file.path, next);
       if (next && onFetchChildren && !childrenCache?.[file.path]) {
         onFetchChildren(file.path);
       }
+      // Don't call onClick for directories - expansion/collapse is handled above
+      return;
     }
     if (onClick) onClick(file);
   };
@@ -124,7 +114,6 @@ function SkillItem({
         )}
         style={{ paddingLeft: `${depth * 1.25 + 0.75}rem` }}
       >
-        {/* Expand/collapse chevron for directories */}
         {isDirectory ? (
           isExpanded ? (
             <ChevronDownIcon className="w-3.5 h-3.5 flex-shrink-0 text-dark-400" />
@@ -172,7 +161,6 @@ function SkillItem({
         )}
       </div>
 
-      {/* Expanded children */}
       {isDirectory && isExpanded && (
         <div>
           {children.length > 0 ? (
@@ -187,6 +175,8 @@ function SkillItem({
                 childrenCache={childrenCache}
                 loadingPaths={loadingPaths}
                 depth={depth + 1}
+                expandedPaths={expandedPaths}
+                onToggleExpand={onToggleExpand}
               />
             ))
           ) : !isLoading ? (
@@ -212,12 +202,11 @@ function SkillSection({
   onFetchChildren,
   childrenCache,
   loadingPaths,
+  expandedPaths,
+  onToggleExpand,
 }) {
-  if (files.length === 0) {
-    return null;
-  }
+  if (files.length === 0) return null;
 
-  // Sort files: directories first, then alphabetically
   const sortedFiles = [...files].sort((a, b) => {
     if (a.type === 'directory' && b.type !== 'directory') return -1;
     if (a.type !== 'directory' && b.type === 'directory') return 1;
@@ -240,6 +229,8 @@ function SkillSection({
             onFetchChildren={onFetchChildren}
             childrenCache={childrenCache}
             loadingPaths={loadingPaths}
+            expandedPaths={expandedPaths}
+            onToggleExpand={onToggleExpand}
           />
         ))}
       </div>
@@ -257,23 +248,20 @@ export default function SkillsGroupedList({
   loadingPaths,
   searchQuery = '',
   isLoading = false,
+  expandedPaths = new Set(),
+  onToggleExpand,
 }) {
   const { agents } = useAgentStore();
 
-  // All hooks must be called unconditionally before any early returns
-
-  // Filter files by search query
   const filteredFiles = useMemo(() => {
     if (!searchQuery.trim()) return files;
     return files.filter((file) => file.name.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [files, searchQuery]);
 
-  // Group filtered files into shared and per-agent sections
   const { shared, agentOnlyByAgent } = useMemo(() => {
     return groupSkills(filteredFiles, agents);
   }, [filteredFiles, agents]);
 
-  // Build agent lookup map for display names
   const agentMap = useMemo(() => {
     const map = {};
     agents.forEach((agent) => {
@@ -282,7 +270,6 @@ export default function SkillsGroupedList({
     return map;
   }, [agents]);
 
-  // Derived values (no hooks below this point)
   const hasShared = shared.length > 0;
   const hasAgentOnly = Object.keys(agentOnlyByAgent).length > 0;
 
@@ -317,6 +304,8 @@ export default function SkillsGroupedList({
           onFetchChildren={onFetchChildren}
           childrenCache={childrenCache}
           loadingPaths={loadingPaths}
+          expandedPaths={expandedPaths}
+          onToggleExpand={onToggleExpand}
         />
       )}
 
@@ -358,6 +347,8 @@ export default function SkillsGroupedList({
                           onFetchChildren={onFetchChildren}
                           childrenCache={childrenCache}
                           loadingPaths={loadingPaths}
+                          expandedPaths={expandedPaths}
+                          onToggleExpand={onToggleExpand}
                         />
                       ))}
                   </div>

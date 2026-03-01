@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+dist/
+
+# Coverage reports
+coverage/
+
+# Build artifacts
+*.min.js
+*.bundle.js
+
+# Generated files
+*.generated.js

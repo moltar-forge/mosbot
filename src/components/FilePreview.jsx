@@ -1,5 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import vscDarkPlus from 'react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus';
 import MarkdownRenderer from './MarkdownRenderer';
 import {
   DocumentTextIcon,
@@ -14,7 +16,11 @@ import {
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
-import { formatDateTimeLocal, isFileOrPathInsideSymlink } from '../utils/helpers';
+import {
+  formatDateTimeLocal,
+  isFileOrPathInsideSymlink,
+  detectLanguageFromFileName,
+} from '../utils/helpers';
 import logger from '../utils/logger';
 
 export default function FilePreview({
@@ -47,6 +53,10 @@ export default function FilePreview({
   const cacheKey = file ? `${agentId}:${file.path}` : null;
   const content = cacheKey ? fileContents[cacheKey] : null;
   const isMarkdown = file?.name.endsWith('.md');
+  const detectedLanguage = useMemo(
+    () => (file?.name ? detectLanguageFromFileName(file.name) : null),
+    [file?.name],
+  );
   const canModify = useMemo(() => isAdmin(), [isAdmin]);
 
   // Parse frontmatter key-value pairs from markdown content (YAML between --- delimiters)
@@ -104,8 +114,11 @@ export default function FilePreview({
       setIsAccessDenied(false);
       // If file has a fullPath it's an agent-only file whose path is already
       // absolute — skip the workspaceRootPath prefix in the store.
+      // Use the agentId from the file object if available (for agent-only files),
+      // otherwise use the prop agentId
+      const fileAgentId = file.agentId || agentId;
       const rawPath = !!file.fullPath;
-      fetchFileContent({ path: file.path, agentId, rawPath }).catch((error) => {
+      fetchFileContent({ path: file.path, agentId: fileAgentId, rawPath }).catch((error) => {
         // Check if this is a 404 Not Found error (file doesn't exist)
         const is404Error = error.response?.status === 404;
         // Check if this is a 403 Forbidden error (access denied)
@@ -209,7 +222,13 @@ export default function FilePreview({
       });
 
       // Refetch the file content to show the updated version
-      await fetchFileContent({ path: file.path, force: true, agentId, rawPath: !!file.fullPath });
+      const fileAgentId = file.agentId || agentId;
+      await fetchFileContent({
+        path: file.path,
+        force: true,
+        agentId: fileAgentId,
+        rawPath: !!file.fullPath,
+      });
 
       // Refetch parent directory listing to update the UI
       const parentPath = file.path.substring(0, file.path.lastIndexOf('/')) || '/';
@@ -535,6 +554,27 @@ export default function FilePreview({
               workspaceBaseUrl={workspaceBaseUrl}
             />
           </>
+        ) : detectedLanguage ? (
+          <div className="rounded-lg border border-dark-800 overflow-hidden">
+            <SyntaxHighlighter
+              language={detectedLanguage}
+              style={vscDarkPlus}
+              customStyle={{
+                margin: 0,
+                padding: '1rem',
+                backgroundColor: '#0a0a0a', // bg-dark-950 equivalent
+                fontSize: '0.875rem', // text-sm
+                lineHeight: '1.5',
+              }}
+              codeTagProps={{
+                style: {
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                },
+              }}
+            >
+              {content.content}
+            </SyntaxHighlighter>
+          </div>
         ) : (
           <pre className="bg-dark-950 p-4 rounded-lg border border-dark-800 overflow-x-auto">
             <code className="text-sm text-dark-200 font-mono">{content.content}</code>

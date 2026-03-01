@@ -5,6 +5,15 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
 
+// Mock react-syntax-highlighter (ES module incompatibility in tests)
+vi.mock('react-syntax-highlighter', () => ({
+  Prism: ({ children }) => <pre data-testid="syntax-highlighter">{children}</pre>,
+}));
+
+vi.mock('react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus', () => ({
+  default: {},
+}));
+
 // Mock the stores
 vi.mock('../stores/workspaceStore', () => ({
   useWorkspaceStore: vi.fn(),

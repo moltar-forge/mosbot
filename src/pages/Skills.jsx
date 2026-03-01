@@ -98,8 +98,8 @@ export default function Skills() {
             const files = (response.data.data?.files || []).map((file) => ({
               ...file,
               fullPath: file.path, // Preserve full absolute path for grouping logic
-              // Keep original path for navigation (WorkspaceExplorer will handle it)
-              // The path should remain as the full path from the API
+              // Store agentId so FilePreview can use it when fetching content
+              agentId: agent.id,
             }));
 
             skillsByAgent[agent.id] = { files, loading: false };
@@ -131,9 +131,15 @@ export default function Skills() {
         const response = await api.get('/openclaw/workspace/files', {
           params: { path: absolutePath, recursive: 'false' },
         });
+        // Extract agentId from the absolute path (e.g., /workspace-<agentId>/skills/subfolder)
+        const workspaceMatch = absolutePath.match(/^\/workspace-([^/]+)\//);
+        const extractedAgentId = workspaceMatch ? workspaceMatch[1] : null;
+
         const files = (response.data.data?.files || []).map((file) => ({
           ...file,
           fullPath: file.path,
+          // Store agentId for child files so they can be fetched correctly
+          agentId: extractedAgentId,
         }));
         setAgentChildrenCache((prev) => ({ ...prev, [absolutePath]: files }));
       } catch (error) {
@@ -200,6 +206,8 @@ export default function Skills() {
               childrenCache,
               loadingPaths,
               searchQuery,
+              expandedPaths,
+              onToggleExpand,
             }) => {
               // Route fetch to the right handler based on whether the path is an
               // agent workspace path (absolute) or a shared /skills/ path (relative)
@@ -213,9 +221,19 @@ export default function Skills() {
 
               // For agent-only files, rewrite path to fullPath so the store uses
               // the absolute path (rawPath:true in FilePreview skips root prefix)
+              // Also extract the agentId from the path for proper API routing
               const handleSelectFile = (file) => {
                 if (file?.fullPath) {
-                  onSelectFile({ ...file, path: file.fullPath });
+                  // Extract agentId from paths like /workspace-<agentId>/skills/file.md
+                  const workspaceMatch = file.fullPath.match(/^\/workspace-([^/]+)\//);
+                  const extractedAgentId = workspaceMatch ? workspaceMatch[1] : null;
+
+                  onSelectFile({
+                    ...file,
+                    path: file.fullPath,
+                    // Store the agentId for this file so FilePreview can use it
+                    agentId: extractedAgentId || file.agentId || AGENT_ID,
+                  });
                 } else {
                   onSelectFile(file);
                 }
@@ -236,6 +254,8 @@ export default function Skills() {
                   loadingPaths={mergedLoadingPaths}
                   searchQuery={searchQuery || ''}
                   isLoading={isLoadingAgentSkills}
+                  expandedPaths={expandedPaths || new Set()}
+                  onToggleExpand={onToggleExpand}
                 />
               );
             }}

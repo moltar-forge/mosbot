@@ -13,6 +13,9 @@ export default defineConfig(({ mode }) => ({
       }),
     },
   },
+  optimizeDeps: {
+    include: ['react-syntax-highlighter'],
+  },
   server: {
     port: 5173,
     host: true,

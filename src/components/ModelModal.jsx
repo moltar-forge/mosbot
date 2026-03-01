@@ -26,7 +26,7 @@ export default function ModelModal({ isOpen, onClose, model, onSave }) {
         const params = model.params || {};
         setFormData({
           id: model.id,
-          alias: model.name, // API returns 'name' (transformed from 'alias')
+          alias: model.alias || model.name || '',
           maxTokens: params.maxTokens?.toString() || '',
           temperature: params.temperature?.toString() || '',
           contextWindow: params.contextWindow?.toString() || '',

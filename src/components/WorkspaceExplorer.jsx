@@ -81,6 +81,11 @@ export default function WorkspaceExplorer({
   const [treeKey, setTreeKey] = useState(0); // Key to force tree remount on refresh
   const [justSwitchedWorkspace, setJustSwitchedWorkspace] = useState(false);
 
+  // Controlled expansion state for the tree — a Set of folder paths that are open.
+  // Lifting this out of TreeNode allows us to programmatically expand ancestor folders
+  // when a file is selected (either by click or via URL navigation).
+  const [expandedPaths, setExpandedPaths] = useState(new Set());
+
   // Modal states
   const [showCreateFileModal, setShowCreateFileModal] = useState(false);
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
@@ -96,6 +101,39 @@ export default function WorkspaceExplorer({
 
   // Track previous agentId to detect workspace changes
   const prevAgentIdRef = useRef(agentId);
+
+  // Synchronously reset stale store state on the very first render of this instance,
+  // and gate the initial-load effect so it never fires with stale values.
+  //
+  // workspaceRootPath and currentPath are single global values shared across all
+  // WorkspaceExplorer instances. When navigating between pages (e.g. /projects →
+  // /workspaces/coo), the new WorkspaceExplorer mounts with the store still holding
+  // values from the previous page. All useEffect hooks fire *after* the first render
+  // and capture the stale values from that render's closure — so any effect-based
+  // reset races with the initial-load effect.
+  //
+  // Strategy:
+  // 1. Synchronously update the store during the first render so subsequent renders
+  //    and effects see the correct values.
+  // 2. Use `initialSyncDoneRef` as a gate: the initial-load effect skips the first
+  //    render (where the closure still holds stale values) and only runs from the
+  //    second render onward, after the store update has caused a re-render with
+  //    correct currentPath and workspaceRootPath.
+  const initialSyncDoneRef = useRef(false);
+  if (!initialSyncDoneRef.current) {
+    const rootPath = workspaceRootPathOverride || agent?.workspaceRootPath;
+    if (rootPath) {
+      useWorkspaceStore.getState().setWorkspaceRootPath(rootPath);
+    }
+    if (!normalizeFilePathParam(initialFilePath)) {
+      useWorkspaceStore.getState().clearErrors();
+      useWorkspaceStore.getState().setCurrentPath('/');
+      useWorkspaceStore.getState().setSelectedFile(null);
+    }
+    // Mark done AFTER the store is updated so the initial-load effect skips
+    // the first render's stale closure and waits for the re-render.
+    initialSyncDoneRef.current = true;
+  }
 
   // Initialize workspace root path when agent changes
   useEffect(() => {
@@ -119,8 +157,9 @@ export default function WorkspaceExplorer({
       // Set flag to suppress error banners during transition
       setJustSwitchedWorkspace(true);
 
-      // Clear all errors and cached data from previous workspace
+      // Clear all errors, cached data, and expansion state from previous workspace
       clearErrors();
+      setExpandedPaths(new Set());
       useWorkspaceStore.getState().clearAllListingCache();
       useWorkspaceStore.getState().clearAllContentCache();
 
@@ -178,17 +217,60 @@ export default function WorkspaceExplorer({
     return isPathInsideSymlink(currentPath, childrenCache, agentId);
   }, [currentPath, childrenCache, agentId]);
 
+  // Toggle a single folder's expanded state
+  const handleToggleExpand = useCallback((folderPath, expanded) => {
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      if (expanded) next.add(folderPath);
+      else next.delete(folderPath);
+      return next;
+    });
+  }, []);
+
+  // Expand all ancestor folders of a given file/folder path and fetch their listings.
+  // e.g. for "/live-streaming-ai/README.md" this expands "/" and "/live-streaming-ai".
+  const expandAncestors = useCallback(
+    async (filePath) => {
+      if (!filePath || filePath === '/') return;
+      const parts = filePath.split('/').filter(Boolean);
+      const ancestors = parts.slice(0, -1).map((_, i) => '/' + parts.slice(0, i + 1).join('/'));
+      // Always include root
+      const pathsToExpand = ['/', ...ancestors];
+
+      setExpandedPaths((prev) => {
+        const next = new Set(prev);
+        pathsToExpand.forEach((p) => next.add(p));
+        return next;
+      });
+
+      // Fetch listings for any ancestors not yet cached
+      const state = useWorkspaceStore.getState();
+      for (const p of pathsToExpand) {
+        const ancestorCacheKey = `${agentId}:${p}:false`;
+        if (!state.listings[ancestorCacheKey]) {
+          try {
+            await fetchListing({ path: p, recursive: false, agentId });
+          } catch {
+            // Ignore — tree will show what it can
+          }
+        }
+      }
+    },
+    [agentId, fetchListing],
+  );
+
   useEffect(() => {
     if (!normalizedPath) return;
 
     const { path, isDirectory } = normalizedPath;
 
     if (isDirectory) {
-      // Directory view (e.g. breadcrumb click): show folder contents, no file selected
       setCurrentPath(path);
       setSelectedFile(null);
+      // Expand the directory and all its ancestors in the tree
+      expandAncestors(path + '/__placeholder__');
+      handleToggleExpand(path, true);
       fetchListing({ path, recursive: false, agentId }).catch((error) => {
-        // If directory doesn't exist (404), redirect to root
         if (error.response?.status === 404) {
           setCurrentPath('/');
           setSelectedFile(null);
@@ -196,20 +278,17 @@ export default function WorkspaceExplorer({
         }
       });
     } else {
-      // File view: select file and show parent in tree
       const lastSlash = path.lastIndexOf('/');
       const parentPath = lastSlash <= 0 ? '/' : path.slice(0, lastSlash);
       const fileName = lastSlash < 0 ? path : path.slice(lastSlash + 1);
 
       setCurrentPath(parentPath);
-      setSelectedFile({
-        path,
-        name: fileName,
-        type: 'file',
-      });
+      setSelectedFile({ path, name: fileName, type: 'file' });
+
+      // Expand all ancestor folders so the file is visible in the tree
+      expandAncestors(path);
 
       fetchListing({ path: parentPath, recursive: false, agentId }).catch((error) => {
-        // If parent directory doesn't exist (404), redirect to root
         if (error.response?.status === 404) {
           setCurrentPath('/');
           setSelectedFile(null);
@@ -225,10 +304,18 @@ export default function WorkspaceExplorer({
     agentId,
     navigate,
     actualRouteBase,
+    expandAncestors,
+    handleToggleExpand,
   ]);
 
   // Initial load
   useEffect(() => {
+    // If the store was synchronously reset during this render (new mount with stale
+    // store state), currentPath in this closure may differ from what's now in the
+    // store. Skip this invocation — the store update will trigger a re-render with
+    // the correct currentPath, and this effect will run again with the right value.
+    if (currentPath !== useWorkspaceStore.getState().currentPath) return;
+
     // Avoid infinite retry loops: if this path/view already failed, wait for user action (refresh).
     if (!currentListing && !isLoadingListing && !currentListingError) {
       fetchListing({ path: currentPath, recursive, agentId }).catch((error) => {
@@ -258,7 +345,8 @@ export default function WorkspaceExplorer({
       // Clear all cached file contents to ensure fresh data when reopening files
       useWorkspaceStore.getState().clearAllContentCache();
 
-      // Force tree remount to collapse all expanded folders
+      // Collapse all folders and force tree remount
+      setExpandedPaths(new Set());
       setTreeKey((prev) => prev + 1);
 
       // Clear selected file to force refetch when reselected
@@ -275,8 +363,16 @@ export default function WorkspaceExplorer({
 
   const handleFileSelect = (file) => {
     setSelectedFile(file);
-    if (file.type === 'directory' && viewMode === 'flat') {
-      setCurrentPath(file.path);
+    if (file.type === 'directory') {
+      // Expand the clicked folder and ensure its ancestors are also expanded
+      expandAncestors(file.path + '/__placeholder__');
+      handleToggleExpand(file.path, true);
+      if (viewMode === 'flat') {
+        setCurrentPath(file.path);
+      }
+    } else {
+      // Expand all ancestor folders so the selected file is visible in context
+      expandAncestors(file.path);
     }
     // Update URL so the link is shareable
     if (file.type === 'file') {
@@ -361,7 +457,7 @@ export default function WorkspaceExplorer({
     return crumbs;
   }, [rootSegments, currentPath]);
 
-  // Filter files by search query
+  // Filter files by search query (used for flat view and custom renderers)
   const filteredFiles =
     currentListing?.files?.filter((file) => {
       if (!searchQuery.trim()) return true;
@@ -370,6 +466,15 @@ export default function WorkspaceExplorer({
 
   // Since we're always fetching non-recursively, filteredFiles already contains only immediate children
   const flatFiles = filteredFiles;
+
+  // For tree view: always show root listing so the tree is rooted at "/" and
+  // folders are expanded via expandedPaths rather than by changing currentPath.
+  const rootListing = listings[`${agentId}:/:false`];
+  const rootFiles =
+    rootListing?.files?.filter((file) => {
+      if (!searchQuery.trim()) return true;
+      return file.name.toLowerCase().includes(searchQuery.toLowerCase());
+    }) || [];
 
   // Handle context menu
   const handleContextMenu = (e, file) => {
@@ -825,11 +930,13 @@ export default function WorkspaceExplorer({
                 loadingPaths,
                 searchQuery,
                 currentPath,
+                expandedPaths,
+                onToggleExpand: handleToggleExpand,
               })
             ) : viewMode === 'tree' ? (
               <WorkspaceTree
                 key={treeKey}
-                files={flatFiles}
+                files={rootFiles}
                 selectedFile={selectedFile}
                 onSelectFile={handleFileSelect}
                 onFetchChildren={handleFetchChildren}
@@ -839,8 +946,8 @@ export default function WorkspaceExplorer({
                 onDragStart={handleDragStart}
                 onDrop={handleDrop}
                 canModify={canModify}
-                currentPath={currentPath}
-                onGoUpOneLevel={handleGoUpOneLevel}
+                expandedPaths={expandedPaths}
+                onToggleExpand={handleToggleExpand}
               />
             ) : (
               <div className="py-2">

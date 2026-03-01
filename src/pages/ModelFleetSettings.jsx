@@ -97,16 +97,19 @@ export default function ModelFleetSettings() {
       const matchesSearch =
         !searchTerm ||
         model.id.toLowerCase().includes(searchLower) ||
+        (model.alias && model.alias.toLowerCase().includes(searchLower)) ||
         model.name.toLowerCase().includes(searchLower);
 
       return matchesSearch;
     });
 
-    // Sort: default model first, then alphabetically by name
+    // Sort: default model first, then alphabetically by alias (or name as fallback)
     return filtered.sort((a, b) => {
       if (a.isDefault) return -1;
       if (b.isDefault) return 1;
-      return a.name.localeCompare(b.name);
+      const aLabel = a.alias || a.name;
+      const bLabel = b.alias || b.name;
+      return aLabel.localeCompare(bLabel);
     });
   }, [models, searchTerm]);
 
@@ -124,7 +127,7 @@ export default function ModelFleetSettings() {
     setDeleteConfirmModal({
       isOpen: true,
       modelId: model.id,
-      modelName: model.name,
+      modelName: model.alias || model.name,
     });
   };
 
@@ -282,7 +285,7 @@ export default function ModelFleetSettings() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-base font-semibold text-dark-100 truncate">
-                          {model.name}
+                          {model.alias || model.name}
                         </h3>
                         {model.isDefault && (
                           <StarIconSolid

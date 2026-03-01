@@ -129,7 +129,7 @@ function statusMeta(status) {
 
 // ─── RunRow ──────────────────────────────────────────────────────────────────
 
-function RunRow({ run, index: _index, isLatest }) {
+function RunRow({ run, index: _index, isLatest, models = [] }) {
   const [isOpen, setIsOpen] = useState(isLatest);
   const [messages, setMessages] = useState(null); // null = not yet loaded
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -346,7 +346,7 @@ function RunRow({ run, index: _index, isLatest }) {
               {!isLoadingMessages && messages && messages.length > 0 && (
                 <div className="space-y-3">
                   {messages.map((msg, i) => (
-                    <MessageBubble key={i} message={msg} />
+                    <MessageBubble key={i} message={msg} models={models} />
                   ))}
                 </div>
               )}
@@ -416,7 +416,7 @@ function ToolCallChip({ tc }) {
   );
 }
 
-function MessageBubble({ message }) {
+function MessageBubble({ message, models = [] }) {
   const [thinkingOpen, setThinkingOpen] = useState(false);
 
   // `blocks` is the raw content array from the API; `content` is the pre-extracted text string.
@@ -461,7 +461,9 @@ function MessageBubble({ message }) {
             {displayRole}
           </span>
           {message.model && (
-            <span className="text-xs text-dark-400">{formatModel(message.model)}</span>
+            <span className="text-xs text-dark-400">
+              {models.find((m) => m.id === message.model)?.alias || formatModel(message.model)}
+            </span>
           )}
         </div>
         {message.timestamp && (
@@ -521,7 +523,7 @@ function MessageBubble({ message }) {
 
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
-export default function CronRunHistoryPanel({ isOpen, onClose, job }) {
+export default function CronRunHistoryPanel({ isOpen, onClose, job, models = [] }) {
   const [runs, setRuns] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -774,6 +776,7 @@ export default function CronRunHistoryPanel({ isOpen, onClose, job }) {
                               run={run}
                               index={i + 1}
                               isLatest={i === runs.length - 1}
+                              models={models}
                             />
                           ))}
                         </div>

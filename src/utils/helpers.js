@@ -234,3 +234,87 @@ export const isFileOrPathInsideSymlink = (file, childrenCache, agentId) => {
   // Check if any ancestor directory is a symlink
   return isPathInsideSymlink(file.path, childrenCache, agentId);
 };
+
+/**
+ * Detect programming language from file extension for syntax highlighting.
+ * Returns the language identifier used by react-syntax-highlighter.
+ * @param {string} fileName - The file name (e.g., "script.js", "style.css")
+ * @returns {string|null} - Language identifier or null if not recognized
+ */
+export const detectLanguageFromFileName = (fileName) => {
+  if (!fileName || typeof fileName !== 'string') return null;
+
+  const extension = fileName.split('.').pop()?.toLowerCase();
+  if (!extension) return null;
+
+  // Map file extensions to language identifiers
+  const languageMap = {
+    // JavaScript/TypeScript
+    js: 'javascript',
+    jsx: 'jsx',
+    mjs: 'javascript',
+    cjs: 'javascript',
+    ts: 'typescript',
+    tsx: 'tsx',
+    // Web
+    html: 'html',
+    htm: 'html',
+    css: 'css',
+    scss: 'scss',
+    sass: 'sass',
+    less: 'less',
+    // Data formats
+    json: 'json',
+    yaml: 'yaml',
+    yml: 'yaml',
+    xml: 'xml',
+    toml: 'toml',
+    // Shell scripts
+    sh: 'bash',
+    bash: 'bash',
+    zsh: 'bash',
+    fish: 'bash',
+    // Python
+    py: 'python',
+    pyw: 'python',
+    // Java
+    java: 'java',
+    // C/C++
+    c: 'c',
+    cpp: 'cpp',
+    cc: 'cpp',
+    cxx: 'cpp',
+    h: 'c',
+    hpp: 'cpp',
+    // C#
+    cs: 'csharp',
+    // Go
+    go: 'go',
+    // Rust
+    rs: 'rust',
+    // PHP
+    php: 'php',
+    // Ruby
+    rb: 'ruby',
+    // Swift
+    swift: 'swift',
+    // Kotlin
+    kt: 'kotlin',
+    // SQL
+    sql: 'sql',
+    // Docker
+    dockerfile: 'dockerfile',
+    // Configuration
+    ini: 'ini',
+    conf: 'ini',
+    config: 'ini',
+    // Markdown (handled separately, but included for completeness)
+    md: 'markdown',
+    markdown: 'markdown',
+    // Other
+    txt: 'text',
+    log: 'text',
+  };
+
+  return languageMap[extension] || null;
+};
