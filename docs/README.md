@@ -5,7 +5,7 @@ These docs describe the **MosBot Dashboard** (the UI/control plane) and how it f
 - If you're a **human/operator**, start with: `mosbot-os/overview.md`
 - If you're a **developer**, start with: `getting-started/local-development.md`
 
-> **Looking for full MosBot OS docs?** The [mosbot-api repository](https://github.com/bymosbot/mosbot-api) is the canonical documentation home for the full system. A dedicated `mosbot-docs` repo is planned — when it exists, all docs will be consolidated there.
+> **Looking for full MosBot OS docs?** Visit **[bymosbot.github.io/mosbot-docs](https://bymosbot.github.io/mosbot-docs/)** — the official documentation site covering setup, OpenClaw integration, skills, configuration, and deployment.
 
 ## What this docs folder is (and isn't)
 

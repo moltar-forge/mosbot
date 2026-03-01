@@ -19,13 +19,13 @@ export default function Docs() {
     fetchAgents();
   }, [fetchAgents]);
 
-  // Ensure /shared/docs directory exists (create if missing)
+  // Ensure /docs directory exists (create if missing)
   useEffect(() => {
     const ensureDocsDir = async () => {
       if (isEnsuring || ensureComplete) return;
 
       setIsEnsuring(true);
-      setWorkspaceRootPath('/shared/docs');
+      setWorkspaceRootPath('/docs');
 
       try {
         // Try to create the directory (will succeed if it doesn't exist)
@@ -56,13 +56,13 @@ export default function Docs() {
             agent={{
               id: 'docs',
               name: 'Documentation',
-              workspaceRootPath: '/shared/docs',
+              workspaceRootPath: '/docs',
               icon: '📚',
             }}
             initialFilePath={filePathParam || null}
             routeBase="/docs"
             showAgentSelector={false}
-            workspaceRootPath="/shared/docs"
+            workspaceRootPath="/docs"
           />
         ) : (
           <div className="flex items-center justify-center h-full">

@@ -261,7 +261,9 @@ function ActionPills({ log }) {
   }
 
   if (log.workspace_path) {
-    const isProject = log.workspace_path.startsWith('/shared/projects');
+    const isProject =
+      log.workspace_path.startsWith('/projects') ||
+      log.workspace_path.startsWith('/shared/projects');
     const isOpenClawConfig = log.workspace_path === '/openclaw.json';
 
     let linkTo, linkLabel;

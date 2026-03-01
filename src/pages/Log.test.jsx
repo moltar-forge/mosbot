@@ -250,13 +250,13 @@ describe('Log', () => {
     });
   });
 
-  it('displays Projects pill for /shared/projects workspace paths', async () => {
+  it('displays Projects pill for /projects workspace paths', async () => {
     const mockLogs = [
       makeLog({
         id: '1',
         title: 'File Created',
         event_type: 'workspace_file_created',
-        workspace_path: '/shared/projects/foo/plan.md',
+        workspace_path: '/projects/foo/plan.md',
       }),
     ];
 

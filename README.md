@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/bymosbot/mosbot-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/bymosbot/mosbot-dashboard/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-bymosbot.github.io-blue)](https://bymosbot.github.io/mosbot-docs/)
 
 The **UI layer** of [MosBot OS](https://github.com/bymosbot/mosbot-api) — a self-hosted operating system for AI agent work.
 
@@ -76,11 +77,18 @@ make build      # build for production (output: dist/)
 
 ## Documentation
 
-- [Configuration](docs/getting-started/configuration.md)
-- [Architecture](docs/architecture.md)
-- [Deployment](docs/deployment.md)
-- [Security / secrets](docs/security/secrets.md)
-- [Features](docs/README.md)
+**Full documentation: [bymosbot.github.io/mosbot-docs](https://bymosbot.github.io/mosbot-docs/)**
+
+| Topic | Link |
+| ----- | ---- |
+| Getting started | [Quickstart](https://bymosbot.github.io/mosbot-docs/getting-started/quickstart) |
+| Features | [Task management](https://bymosbot.github.io/mosbot-docs/features/task-management) · [Agent Monitor](https://bymosbot.github.io/mosbot-docs/features/agent-monitor) · [Org Chart](https://bymosbot.github.io/mosbot-docs/features/org-chart) |
+| Skills | [Overview](https://bymosbot.github.io/mosbot-docs/skills/overview) |
+| OpenClaw integration | [Overview](https://bymosbot.github.io/mosbot-docs/openclaw/overview) |
+| Deployment | [Docker](https://bymosbot.github.io/mosbot-docs/deployment/docker) · [Kubernetes](https://bymosbot.github.io/mosbot-docs/deployment/kubernetes) |
+| Security | [Roles & permissions](https://bymosbot.github.io/mosbot-docs/security/roles-permissions) |
+
+Developer-focused docs (component architecture, local dev setup) remain in [`docs/`](docs/README.md).
 
 ## Contributing
 

@@ -8,7 +8,7 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useAuthStore } from '../stores/authStore';
 
 const AGENT_ID = 'projects';
-const ROOT_PATH = '/shared/projects';
+const ROOT_PATH = '/projects';
 
 export default function Projects() {
   const { '*': filePathParam } = useParams();
