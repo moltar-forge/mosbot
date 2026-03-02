@@ -5,8 +5,6 @@ sidebar_label: Sample Config
 sidebar_position: 2
 ---
 
-# Sample openclaw.json Configuration
-
 This is a complete, annotated `openclaw.json` configuration for a multi-agent MosBot OS setup. It
 demonstrates a team of 5 agents with Telegram integration, Ollama local models, and OpenRouter cloud
 models.

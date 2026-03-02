@@ -5,8 +5,6 @@ sidebar_label: Configuration
 sidebar_position: 4
 ---
 
-# Configuration Reference
-
 All MosBot API configuration is provided via environment variables. Copy `.env.example` to `.env` in
 the `mosbot-api` directory to get started.
 
@@ -16,7 +14,7 @@ These must be set before the API will start:
 
 | Variable      | Description                                                                                                   |
 | ------------- | ------------------------------------------------------------------------------------------------------------- |
-| `DB_PASSWORD` | PostgreSQL password                                                                                           |
+| `DB_PASSWORD` | PostgreSQL password. Set this to match your PostgreSQL configuration or generate a secure password.           |
 | `JWT_SECRET`  | JWT signing secret. Generate with: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
 | `CORS_ORIGIN` | Exact dashboard origin (e.g. `http://localhost:5173`). Cannot be `*`.                                         |
 
@@ -30,20 +28,20 @@ These must be set before the API will start:
 
 ## Database
 
-| Variable      | Default     | Description                      |
-| ------------- | ----------- | -------------------------------- |
-| `DB_HOST`     | `localhost` | PostgreSQL host                  |
-| `DB_PORT`     | `5432`      | PostgreSQL port                  |
-| `DB_NAME`     | `mosbot`    | Database name                    |
-| `DB_USER`     | `mosbot`    | Database user                    |
-| `DB_PASSWORD` | —           | Database password (**required**) |
+| Variable      | Default     | Description                                                 |
+| ------------- | ----------- | ----------------------------------------------------------- |
+| `DB_HOST`     | `localhost` | PostgreSQL host                                             |
+| `DB_PORT`     | `5432`      | PostgreSQL port                                             |
+| `DB_NAME`     | `mosbot`    | Database name                                               |
+| `DB_USER`     | `mosbot`    | Database user                                               |
+| `DB_PASSWORD` | —           | See [Required variables](#required-variables) section above |
 
 ## Authentication
 
-| Variable         | Default | Description                                                                   |
-| ---------------- | ------- | ----------------------------------------------------------------------------- |
-| `JWT_SECRET`     | —       | JWT signing secret (**required**). Use a long random string (≥ 48 hex chars). |
-| `JWT_EXPIRES_IN` | `7d`    | Token expiry duration (e.g. `7d`, `24h`, `1h`)                                |
+| Variable         | Default | Description                                                 |
+| ---------------- | ------- | ----------------------------------------------------------- |
+| `JWT_SECRET`     | —       | See [Required variables](#required-variables) section above |
+| `JWT_EXPIRES_IN` | `7d`    | Token expiry duration (e.g. `7d`, `24h`, `1h`)              |
 
 ## Bootstrap (first run only)
 
@@ -67,18 +65,20 @@ Completed tasks are automatically archived after a configurable number of days.
 | `ARCHIVE_AFTER_DAYS` | `7`         | Archive tasks completed more than N days ago     |
 | `ARCHIVE_ON_STARTUP` | `false`     | Run archiver immediately on startup              |
 
-## OpenClaw Workspace (optional)
+## OpenClaw Workspace
 
-Required to enable workspace file browsing, skills management, and config editing.
+Required for workspace file browsing, skills management, and config editing. Without these
+variables, the workspace browser and skills features will be unavailable.
 
-| Variable                   | Default | Description                                                          |
-| -------------------------- | ------- | -------------------------------------------------------------------- |
-| `OPENCLAW_WORKSPACE_URL`   | —       | URL of the OpenClaw workspace service (e.g. `http://localhost:8080`) |
-| `OPENCLAW_WORKSPACE_TOKEN` | —       | Bearer token for workspace service authentication                    |
+| Variable                   | Default | Description                                                                          |
+| -------------------------- | ------- | ------------------------------------------------------------------------------------ |
+| `OPENCLAW_WORKSPACE_URL`   | —       | URL of the OpenClaw workspace service (e.g. `http://localhost:8080`)                 |
+| `OPENCLAW_WORKSPACE_TOKEN` | —       | Bearer token for workspace service authentication. Obtain from OpenClaw admin panel. |
 
-## OpenClaw Gateway (optional)
+## OpenClaw Gateway
 
-Required to enable agent monitoring, live session data, and runtime control.
+Required for agent monitoring, live session data, and runtime control. Without these variables, the
+org chart and agent monitoring features will be unavailable.
 
 | Variable                      | Default | Description                                                 |
 | ----------------------------- | ------- | ----------------------------------------------------------- |
@@ -86,17 +86,18 @@ Required to enable agent monitoring, live session data, and runtime control.
 | `OPENCLAW_GATEWAY_TOKEN`      | —       | Bearer token for gateway authentication                     |
 | `OPENCLAW_GATEWAY_TIMEOUT_MS` | `15000` | Request timeout in milliseconds                             |
 
-## OpenClaw Device Auth (optional)
+## OpenClaw Device Auth
 
 Required for full session access with `operator.read`/`operator.write` scopes. These values are
-generated by the OpenClaw device pairing flow.
+generated by the OpenClaw device pairing flow. Without these, session details in the Agent Monitor
+will be limited.
 
-| Variable                      | Description                             |
-| ----------------------------- | --------------------------------------- |
-| `OPENCLAW_DEVICE_ID`          | Device identifier from the pairing flow |
-| `OPENCLAW_DEVICE_PUBLIC_KEY`  | Ed25519 public key (base64url encoded)  |
-| `OPENCLAW_DEVICE_PRIVATE_KEY` | Ed25519 private key (base64url encoded) |
-| `OPENCLAW_DEVICE_TOKEN`       | Device pairing token                    |
+| Variable                      | Description                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| `OPENCLAW_DEVICE_ID`          | Device identifier from the pairing flow                                                   |
+| `OPENCLAW_DEVICE_PUBLIC_KEY`  | Ed25519 public key (base64url encoded). Generated during OpenClaw device pairing process. |
+| `OPENCLAW_DEVICE_PRIVATE_KEY` | Ed25519 private key (base64url encoded)                                                   |
+| `OPENCLAW_DEVICE_TOKEN`       | Device pairing token                                                                      |
 
 ## Data retention
 

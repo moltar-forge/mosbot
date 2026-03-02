@@ -1,11 +1,9 @@
 ---
 id: overview
-title: OpenClaw Integration Overview
+title: OpenClaw Integration
 sidebar_label: Overview
 sidebar_position: 1
 ---
-
-# OpenClaw Integration
 
 OpenClaw is the AI agent runtime that powers MosBot OS. It manages agents, workspaces, sessions,
 channels, and cron jobs. MosBot API connects to OpenClaw to expose this data through a
@@ -13,10 +11,10 @@ human-friendly interface.
 
 ![OpenClaw Configuration](/img/screenshots/mosbot-openclaw-config.png)
 
-## What OpenClaw integration enables
+## What OpenClaw provides
 
-Without OpenClaw, MosBot OS provides task management and user management. With OpenClaw connected,
-you unlock:
+OpenClaw is the foundation of the complete MosBot OS experience. Without it, MosBot OS provides only
+basic task management and user management. With OpenClaw connected, you get:
 
 | Feature                              | Requires          |
 | ------------------------------------ | ----------------- |
@@ -25,24 +23,31 @@ you unlock:
 | Workspace file browser               | Workspace service |
 | Skills management                    | Workspace service |
 | Agent configuration editing          | Workspace service |
-| Standups (AI-generated)              | Gateway           |
 
-## OpenClaw services
+## Services MosBot connects to
 
-OpenClaw exposes two services that MosBot API connects to:
+MosBot API connects to two services alongside OpenClaw:
 
 ### Workspace service (port 8080)
 
-An HTTP REST service that provides access to the OpenClaw workspace filesystem. MosBot uses it to:
+A lightweight HTTP REST sidecar **provided by MosBot OS** that runs alongside OpenClaw and exposes
+the OpenClaw workspace filesystem over HTTP. It is not part of the standard OpenClaw distribution —
+you need to deploy it as an additional container next to your OpenClaw instance, sharing the same
+workspace volume.
+
+MosBot uses it to:
 
 - Read and write workspace files
 - Read and update `openclaw.json` configuration
 - List agents and their workspace paths
 - Manage skills
 
+See [Workspace Service](./workspace-service) for deployment instructions.
+
 ### Gateway (port 18789)
 
-An HTTP + WebSocket service that provides runtime control and session data. MosBot uses it to:
+OpenClaw's own HTTP + WebSocket service that provides runtime control and session data. MosBot uses
+it to:
 
 - Query live agent sessions
 - Retrieve session costs and token usage
@@ -51,7 +56,7 @@ An HTTP + WebSocket service that provides runtime control and session data. MosB
 
 ## Architecture
 
-```
+```text
 MosBot Dashboard
       │
       │ REST API (JWT auth)
@@ -68,11 +73,14 @@ Workspace PVC / filesystem
 (agents, workspaces, openclaw.json)
 ```
 
-## Integration is optional and graceful
+## Without OpenClaw
 
 When OpenClaw is not configured (no `OPENCLAW_WORKSPACE_URL` or `OPENCLAW_GATEWAY_URL` in `.env`),
-endpoints that depend on OpenClaw return `503 SERVICE_NOT_CONFIGURED`. The dashboard shows a
-degraded state for those features but continues to work for everything else.
+endpoints that depend on OpenClaw return `503 SERVICE_NOT_CONFIGURED`. The dashboard will show a
+degraded state — task management and user management work, but agent monitoring, workspace browsing,
+org chart, and skills will be unavailable.
+
+For the complete MosBot OS experience, OpenClaw should be installed and connected.
 
 ## Next steps
 

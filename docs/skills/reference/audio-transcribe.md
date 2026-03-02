@@ -5,10 +5,8 @@ sidebar_label: audio_transcribe
 sidebar_position: 3
 ---
 
-# audio_transcribe
-
-:::warning WIP - Work in Progress This skill is currently under development and may change
-significantly. :::
+:::warning Work in Progress This skill is currently under development and may change significantly.
+:::
 
 **Type**: Shared Skill  
 **Scope**: All agents  
@@ -95,6 +93,7 @@ Additional processing flags:
       fontSize: '16px',
       cursor: 'pointer',
       lineHeight: '1.6',
+      title: 'Copy SKILL.md',
     }}
   >📋</button>
 

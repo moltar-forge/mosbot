@@ -5,311 +5,115 @@ sidebar_label: Examples
 sidebar_position: 5
 ---
 
-# Example Skills
+This page shows the structure and patterns for building skills. For a collection of ready-to-use
+skills you can copy directly into your installation, see
+[Skill Reference](./reference/memory-flush).
 
-A collection of ready-to-use skills you can add to your MosBot OS installation. All examples follow
-the snake_case folder structure.
+---
 
-## Skill Folder Structure
+## Skill folder structure
 
-Each skill lives in its own folder with a `SKILL.md` file:
+Every skill lives in its own snake_case folder inside the relevant skills directory:
 
-```
+```text
 skills/
 └── <skill_name>/          ← snake_case folder name
-    ├── SKILL.md           ← Required: Skill definition
-    ├── references/        ← Optional: Reference files
-    └── scripts/           ← Optional: Helper scripts
+    ├── SKILL.md           ← Required: skill definition and instructions
+    ├── references/        ← Optional: reference files the agent can read
+    └── scripts/           ← Optional: helper scripts
+```
+
+**Shared skill** (available to all agents):
+
+```text
+skills/
+└── summarize/
+    └── SKILL.md
+```
+
+**Agent-specific skill** (available only to that agent):
+
+```text
+workspace-cto/
+└── skills/
+    └── architecture_review/
+        ├── SKILL.md
+        └── references/
+            └── adr_template.md
 ```
 
 ---
 
-## General purpose (shared skills)
-
-### summarize
-
-**Location**: `skills/summarize/SKILL.md`
-
-Summarize any document or conversation.
-
-<details>
-<summary>📋 Click to view SKILL.md content (copy-ready)</summary>
+## SKILL.md structure
 
 ```markdown
 ---
-name: summarize
-description: Summarize a document or conversation into key points
+name: <skill-name>
+description: <short description shown in the dashboard>
 ---
 
-# Summarize
+# Skill Title
 
-Read the provided content and produce a concise summary.
+Brief description of what this skill does and when to use it.
+
+## Input
+
+What the agent should expect as input.
 
 ## Output format
 
-1. **TL;DR** — one sentence capturing the essence
-2. **Key points** — 3–5 bullet points
-3. **Action items** — any decisions or next steps (omit if none)
+How the output should be structured.
 
 ## Guidelines
 
-- Aim for 20% of the original length
-- Preserve important numbers, dates, and names
-- Use plain language — avoid jargon
+- Specific rules or constraints
+- Quality standards
+- Edge cases to handle
 ```
 
-</details>
+The `name` and `description` frontmatter fields are used for display in the MosBot Dashboard. The
+`description` field is also crucial for natural language skill matching — include trigger keywords
+and phrases that users might use when requesting this skill. The body is the instruction set the
+agent follows when the skill is invoked.
 
 ---
 
-### daily_brief
+## Common patterns
 
-**Location**: `skills/daily_brief/SKILL.md`
+### Shared general-purpose skill
 
-Generate a daily activity briefing.
-
-<details>
-<summary>📋 Click to view SKILL.md content (copy-ready)</summary>
-
-```markdown
----
-name: daily-brief
-description: Generate a daily briefing from recent activity and tasks
----
-
-# Daily Brief
-
-Generate a concise daily briefing covering yesterday's activity and today's priorities.
-
-## Structure
-
-### Yesterday
-
-- Completed tasks
-- In-progress work
-- Blockers encountered
-
-### Today
-
-- Planned tasks and priorities
-- Deadlines or meetings
-
-### Flags
-
-- Items needing attention or a decision
-
-## Guidelines
-
-- 3–5 bullet points per section
-- Highlight blockers prominently
-- Write "Nothing to report" for empty sections
-- Keep the tone professional and direct
+```text
+skills/summarize/SKILL.md
 ```
 
-</details>
+Shared skills are for tasks any agent might need — summarizing, researching, writing reports, etc.
+The folder name becomes the command: `/summarize`.
 
----
+### Agent-specific skill
 
-### research
-
-**Location**: `skills/research/SKILL.md`
-
-Research a topic and produce a structured report.
-
-<details>
-<summary>📋 Click to view SKILL.md content (copy-ready)</summary>
-
-```markdown
----
-name: research
-description: Research a topic and produce a structured report with sources
----
-
-# Research
-
-Research the provided topic thoroughly and produce a structured report.
-
-## Output format
-
-### Overview
-
-2–3 sentence introduction to the topic.
-
-### Key findings
-
-5–7 bullet points covering the most important information.
-
-### Analysis
-
-Your assessment of the findings and their implications.
-
-### Sources
-
-List the sources consulted (URLs, documents, or knowledge references).
-
-## Guidelines
-
-- Prioritize recent and authoritative sources
-- Distinguish between facts and opinions
-- Note any conflicting information or uncertainty
-- Keep the report actionable — focus on what matters
+```text
+workspace-pm/skills/task_writing/SKILL.md
 ```
 
-</details>
+Agent-specific skills are for tasks tied to a particular agent's role. The PM agent's
+`/task_writing` skill is only available when chatting with that agent.
 
----
+### Skill with references
 
-## Agent-specific skill examples
-
-### architecture_review (CTO agent)
-
-**Location**: `workspace-cto/skills/architecture_review/SKILL.md`
-
-<details>
-<summary>📋 Click to view SKILL.md content (copy-ready)</summary>
-
-```markdown
----
-name: architecture-review
-description: Review a system architecture proposal and provide technical recommendations
----
-
-# Architecture Review
-
-Review the provided architecture proposal and give structured technical feedback.
-
-## Review criteria
-
-Evaluate against these dimensions:
-
-1. **Scalability** — will it handle 10x growth?
-2. **Reliability** — single points of failure, redundancy
-3. **Security** — authentication, authorization, data protection
-4. **Maintainability** — complexity, team capability, operational burden
-5. **Cost** — infrastructure and operational costs
-
-## Output format
-
-### Summary
-
-One paragraph assessment.
-
-### Strengths
-
-What the design gets right (2–4 points).
-
-### Concerns
-
-Issues that need to be addressed, ranked by severity:
-
-- 🔴 **Critical** — must fix before proceeding
-- 🟡 **Important** — should fix before production
-- 🟢 **Minor** — nice to have
-
-### Recommendations
-
-Specific, actionable changes with rationale.
-
-### Open questions
-
-Questions that need answers before the design can be finalized.
+```text
+workspace-cto/skills/architecture_review/
+├── SKILL.md
+└── references/
+    ├── adr_template.md
+    └── decision_matrix.xlsx
 ```
 
-</details>
+Use the `references/` folder for templates, checklists, or context the agent should consult when
+running the skill.
 
 ---
 
-### campaign_brief (CMO agent)
-
-**Location**: `workspace-cmo/skills/campaign_brief/SKILL.md`
-
-<details>
-<summary>📋 Click to view SKILL.md content (copy-ready)</summary>
-
-```markdown
----
-name: campaign-brief
-description: Create a marketing campaign brief from a product or feature description
----
-
-# Campaign Brief
-
-Create a structured marketing campaign brief based on the provided information.
-
-## Output format
-
-### Campaign overview
-
-- **Objective**: what we want to achieve
-- **Target audience**: who we're reaching
-- **Key message**: the single most important thing to communicate
-- **Tone**: how we want to sound
-
-### Channels
-
-Recommended channels and rationale (e.g. social, email, content, paid).
-
-### Content ideas
-
-5–7 specific content ideas with format and channel.
-
-### Success metrics
-
-How we'll measure if the campaign worked.
-
-### Timeline
-
-Suggested phases and milestones.
-
-## Guidelines
-
-- Focus on the customer's perspective, not the product's features
-- Lead with benefits, not specifications
-- Keep the key message to one sentence
-```
-
-</details>
-
----
-
-## Heartbeat skill
-
-Skills can also be used to define agent behavior for scheduled heartbeats. The heartbeat prompt in
-`openclaw.json` can reference a `HEARTBEAT.md` file in the agent's workspace.
-
-**Location**: `workspace-coo/HEARTBEAT.md` (note: not in skills folder, placed directly in
-workspace)
-
-<details>
-<summary>📋 Click to view HEARTBEAT.md content (copy-ready)</summary>
-
-```markdown
-<!-- workspace-coo/HEARTBEAT.md -->
-
-# Heartbeat Context
-
-You are MosBot, the COO agent. This is your regular heartbeat check-in.
-
-## Current priorities
-
-1. Review open tasks and update statuses
-2. Check for any blocked items that need escalation
-3. Review recent agent activity for anything requiring attention
-
-## Standing instructions
-
-- If tasks are blocked, create a note in the task and notify the relevant agent
-- If nothing needs attention, reply HEARTBEAT_OK
-- Keep responses brief — this is a check-in, not a full session
-```
-
-</details>
-
----
-
-## Quick Copy: Complete Skill Folder
-
-To create a skill from these examples:
+## Adding a skill to your installation
 
 1. **Create the folder** (snake_case):
 
@@ -317,22 +121,40 @@ To create a skill from these examples:
    mkdir -p skills/summarize
    ```
 
-2. **Create SKILL.md** with the content above:
+2. **Create `SKILL.md`**:
 
    ```bash
    cat > skills/summarize/SKILL.md << 'EOF'
    ---
    name: summarize
-   description: Summarize a document or conversation into key points
+   description: Summarize documents, conversations, or content into key points. Use when asked to summarize, create a summary, provide a brief overview, or extract key takeaways.
    ---
 
    # Summarize
+
+   Read the provided content and produce a concise summary.
    ...
    EOF
    ```
 
 3. **Add optional references**:
+
    ```bash
    mkdir -p skills/summarize/references
-   cp my-template.txt skills/summarize/references/
+   cp my-template.md skills/summarize/references/
    ```
+
+The skill is immediately available to agents once the file is in place.
+
+---
+
+## Ready-to-use skills
+
+The **[Skill Reference](./reference/memory-flush)** section contains copy-ready `SKILL.md` files for
+common tasks. Each reference page includes:
+
+- The skill's purpose, type (shared or agent-specific), and location
+- A copy button for the full `SKILL.md` content
+- Usage examples and options
+
+Browse the reference skills in the sidebar under **Skill Reference**.

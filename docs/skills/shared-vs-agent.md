@@ -5,8 +5,6 @@ sidebar_label: Shared vs Agent-Specific
 sidebar_position: 2
 ---
 
-# Shared vs Agent-Specific Skills
-
 MosBot OS supports two categories of skills, each stored in a different location in the OpenClaw
 workspace filesystem.
 
@@ -23,12 +21,12 @@ Use shared skills for:
 - Common workflows used across multiple agents
 - Organization-wide standards and templates
 
-```
+```text
 /skills/
 ├── summarize           ← any agent can use /summarize
-├── write-report
-├── code-review
-└── daily-brief
+├── write_report
+├── code_review
+└── daily_brief
 ```
 
 ## Agent-specific skills
@@ -44,15 +42,15 @@ Use agent-specific skills for:
 - Skills that reference agent-specific context or tools
 - Specialized workflows for a particular agent
 
-```
+```text
 /workspace-cto/skills/
-├── architecture-review ← only the CTO agent can use this
-├── code-audit
-└── tech-debt-analysis
+├── architecture_review ← only the CTO agent can use this
+├── code_audit
+└── tech_debt_analysis
 
 /workspace-cmo/skills/
-├── campaign-brief      ← only the CMO agent can use this
-└── market-analysis
+├── campaign_brief      ← only the CMO agent can use this
+└── market_analysis
 ```
 
 ## How the Skills page organizes them
@@ -73,12 +71,12 @@ In the MosBot Dashboard's Skills page, skills are grouped into two sections:
 
 ## Skill naming
 
-Skill names are derived from the filename (without extension). A file named `code-review` becomes
-the `/code-review` command.
+Skill names are derived from the folder name. A folder named `code_review` becomes the
+`/code_review` command.
 
-Keep skill names:
+Keep skill folder names:
 
-- Lowercase and hyphenated
+- snake_case (lowercase with underscores)
 - Short and descriptive
 - Unique within their scope (shared or per-agent)
 

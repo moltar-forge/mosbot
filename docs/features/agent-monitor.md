@@ -2,10 +2,8 @@
 id: agent-monitor
 title: Agent Monitor
 sidebar_label: Agent Monitor
-sidebar_position: 2
+sidebar_position: 1
 ---
-
-# Agent Monitor
 
 The **Agent Monitor** gives you visibility into your AI agents' activity — what they're doing right
 now, how much it's costing, and how they've been performing over time.

@@ -125,8 +125,8 @@ const config = {
             items: [
               { label: 'Getting Started', to: '/getting-started/overview' },
               { label: 'OpenClaw Integration', to: '/openclaw/overview' },
-              { label: 'Skills', to: '/skills/overview' },
               { label: 'Configuration Reference', to: '/configuration/openclaw-json' },
+              { label: 'Skills', to: '/skills/overview' },
             ],
           },
           {

@@ -5,10 +5,8 @@ sidebar_label: create_prd
 sidebar_position: 4
 ---
 
-# create_prd
-
-:::warning WIP - Work in Progress This skill is currently under development and may change
-significantly. :::
+:::warning Work in Progress This skill is currently under development and may change significantly.
+:::
 
 **Type**: Agent-Specific Skill  
 **Scope**: Product Manager agent  
@@ -108,6 +106,7 @@ The agent produces a markdown PRD document and:
       fontSize: '16px',
       cursor: 'pointer',
       lineHeight: '1.6',
+      title: 'Copy SKILL.md',
     }}
   >📋</button>
 

@@ -2,10 +2,8 @@
 id: task-management
 title: Task Management
 sidebar_label: Task Management
-sidebar_position: 1
+sidebar_position: 2
 ---
-
-# Task Management
 
 The **Task Board** is the central hub for managing work in MosBot OS. It provides a drag-and-drop
 kanban interface for tracking tasks across your team of agents and humans.

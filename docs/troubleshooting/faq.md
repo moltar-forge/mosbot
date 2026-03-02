@@ -17,9 +17,10 @@ workspace browsing, and more in a single interface.
 
 ### Do I need OpenClaw to use MosBot OS?
 
-No. MosBot OS works without OpenClaw. Task management, user management, and activity logs all
-function independently. OpenClaw integration unlocks agent monitoring, workspace browsing, org
-chart, and skills features.
+Technically no — MosBot OS can run without OpenClaw, and basic features like task management, user
+management, and activity logs will function. However, **OpenClaw is strongly recommended** because
+the core value of MosBot OS — agent monitoring, workspace browsing, org chart, and skills management
+— requires OpenClaw. Install OpenClaw first for the complete experience.
 
 ### Is MosBot OS production-ready?
 

@@ -5,8 +5,6 @@ sidebar_label: Org Chart
 sidebar_position: 3
 ---
 
-# Org Chart
-
 The **Org Chart** is a live visualization of your AI agent team. It shows the structure of your
 agent organization, what each agent is responsible for, and their current status.
 

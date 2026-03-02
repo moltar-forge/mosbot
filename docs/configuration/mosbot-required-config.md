@@ -5,8 +5,6 @@ sidebar_label: MosBot Required Config
 sidebar_position: 4
 ---
 
-# Key openclaw.json Settings for MosBot
-
 MosBot API connects to OpenClaw via two services: the workspace service (port 8080) and the gateway
 (port 18789). Certain `openclaw.json` settings must be configured correctly for MosBot features to
 work. This page lists the settings that matter most.
@@ -205,7 +203,7 @@ the workspace root. This makes shared documentation available as memory to all a
 
 :::info Workspace path convention MosBot expects shared content at the workspace root:
 
-```
+```text
 /                         ← workspace root
 ├── workspace-coo/        ← agent workspace
 ├── workspace-cto/        ← agent workspace

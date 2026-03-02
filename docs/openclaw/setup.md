@@ -5,46 +5,89 @@ sidebar_label: Setup
 sidebar_position: 2
 ---
 
-# Setting Up OpenClaw
-
-OpenClaw is the AI agent runtime that MosBot OS connects to. This guide covers the basics of getting
-OpenClaw running so you can connect MosBot to it.
+OpenClaw is the AI agent runtime that MosBot OS connects to. This guide covers what you need to run
+alongside OpenClaw to enable the full MosBot OS integration.
 
 :::info OpenClaw Documentation
 
 OpenClaw has its own documentation. This guide covers only what you need to know to integrate it
 with MosBot OS. :::
 
-## OpenClaw deployment options
+## What MosBot needs alongside OpenClaw
 
-OpenClaw can run in several ways:
+MosBot API connects to two services:
+
+| Service           | Port  | Provided by             |
+| ----------------- | ----- | ----------------------- |
+| Workspace service | 8080  | **MosBot OS** (sidecar) |
+| Gateway           | 18789 | **OpenClaw** (built-in) |
+
+The **gateway** (port 18789) is built into OpenClaw — no extra setup required.
+
+The **workspace service** (port 8080) is a lightweight HTTP sidecar provided by MosBot OS. It runs
+alongside OpenClaw and exposes the OpenClaw workspace filesystem over HTTP. You need to deploy it
+next to your OpenClaw instance, sharing the same workspace directory or volume.
+
+## Deploying the workspace service sidecar
 
 ### Option A: Docker (local)
 
-The simplest way to get started. OpenClaw runs as a Docker container on your local machine alongside
-MosBot.
+Add the MosBot workspace service to the same Docker Compose file as OpenClaw. It must share the same
+workspace volume:
 
-Refer to the OpenClaw documentation for the Docker Compose setup. Once running, the services will be
-available at:
+```yaml
+services:
+  openclaw:
+    image: openclaw/openclaw:latest
+    volumes:
+      - openclaw-workspace:/home/user/.openclaw/workspace
+    ports:
+      - '18789:18789'
+
+  mosbot-workspace:
+    image: ghcr.io/bymosbot/mosbot-workspace-service:latest
+    environment:
+      WORKSPACE_SERVICE_TOKEN: your-secure-token
+      WORKSPACE_ROOT: /workspace
+    volumes:
+      - openclaw-workspace:/workspace:ro
+    ports:
+      - '8080:8080'
+
+volumes:
+  openclaw-workspace:
+```
+
+Once running, the services are available at:
 
 - Workspace service: `http://localhost:8080`
 - Gateway: `http://localhost:18789`
 
 ### Option B: Kubernetes
 
-OpenClaw runs as a pod in a Kubernetes cluster. This is the recommended setup for persistent,
-always-on agent operation.
+The workspace service runs as a sidecar container in the OpenClaw pod, sharing the same PVC.
 
-See [Kubernetes Deployment](./kubernetes) for the full guide.
+See [Kubernetes Deployment](./kubernetes) for the full guide with manifests.
 
 ### Option C: VPS / remote server
 
-OpenClaw runs on a remote server. Expose ports 8080 and 18789 via firewall rules or a reverse proxy.
+Run the workspace service container on the same server as OpenClaw, mounting the same workspace
+directory:
+
+```bash
+docker run -d \
+  --name mosbot-workspace \
+  -e WORKSPACE_SERVICE_TOKEN=your-secure-token \
+  -e WORKSPACE_ROOT=/workspace \
+  -v /path/to/openclaw/workspace:/workspace:ro \
+  -p 8080:8080 \
+  ghcr.io/bymosbot/mosbot-workspace-service:latest
+```
 
 :::warning Security Note
 
-When exposing OpenClaw ports over the internet, use a VPN or private network. At minimum, use strong
-bearer tokens and TLS. Never expose these ports without authentication. :::
+Do not expose port 8080 to the public internet. Use a VPN or private network, and always use a
+strong bearer token. Port 18789 (gateway) should also be kept private. :::
 
 ## OpenClaw configuration file
 
@@ -61,8 +104,8 @@ See the [Configuration Reference](../configuration/openclaw-json) for a complete
 
 ## Generating tokens
 
-MosBot API authenticates to OpenClaw services using bearer tokens. You need to generate and
-configure these tokens in both OpenClaw and MosBot.
+MosBot API authenticates to both services using bearer tokens. You need to generate and configure
+these tokens.
 
 ### Workspace service token
 
@@ -74,7 +117,7 @@ openssl rand -base64 32
 
 Configure this token in:
 
-1. OpenClaw's workspace service configuration (as `WORKSPACE_SERVICE_TOKEN`)
+1. The workspace service container (as `WORKSPACE_SERVICE_TOKEN`)
 2. MosBot API's `.env` (as `OPENCLAW_WORKSPACE_TOKEN`)
 
 ### Gateway token
@@ -84,20 +127,18 @@ OpenClaw configuration or generate one following OpenClaw's documentation.
 
 Configure this token in MosBot API's `.env` as `OPENCLAW_GATEWAY_TOKEN`.
 
-## Verifying OpenClaw is running
-
-Once OpenClaw is running, verify the services are accessible:
+## Verifying both services are running
 
 ```bash
 # Workspace service health check
 curl -H "Authorization: Bearer <your-workspace-token>" \
   http://localhost:8080/status
 
-# Gateway health check (basic)
+# Gateway health check
 curl http://localhost:18789/health
 ```
 
 ## Next steps
 
-Once OpenClaw is running and you have your tokens, proceed to
+Once both services are running and you have your tokens, proceed to
 [Connecting MosBot API](./integration).

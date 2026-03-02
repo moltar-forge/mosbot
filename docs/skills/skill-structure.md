@@ -5,14 +5,12 @@ sidebar_label: Skill Structure
 sidebar_position: 4
 ---
 
-# Skill File Structure
-
 A skill is a plain text file (no extension required) with YAML frontmatter followed by Markdown
 content.
 
 ## File format
 
-```
+```text
 ---
 name: <skill-name>
 description: <short description>

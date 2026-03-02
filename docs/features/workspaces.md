@@ -5,8 +5,6 @@ sidebar_label: Workspaces
 sidebar_position: 4
 ---
 
-# Workspaces
-
 The **Workspaces** feature lets you browse, view, and edit the files in your agents' workspaces
 directly from the MosBot Dashboard.
 
@@ -19,19 +17,19 @@ Service to be configured. See [OpenClaw Integration](../openclaw/overview). :::
 
 Each agent has its own workspace directory in the OpenClaw filesystem. A typical workspace contains:
 
-```
+```text
 workspace-coo/
 ├── memory/
 │   ├── 2026-03-01.md    ← daily memory files
 │   └── 2026-02-28.md
 ├── skills/
-│   └── daily-brief      ← agent-specific skills
+│   └── daily_brief      ← agent-specific skills
 └── HEARTBEAT.md         ← heartbeat context
 ```
 
 There are also shared directories:
 
-```
+```text
 skills/                  ← shared skills (all agents)
 docs/                    ← shared documentation
 projects/                ← shared project files

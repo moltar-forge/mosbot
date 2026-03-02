@@ -1,14 +1,30 @@
 ---
 id: index
-title: MosBot OS Documentation
+title: MosBot OS
 slug: /
 sidebar_class_name: hidden
 ---
 
-# MosBot OS Documentation
-
 Welcome to the MosBot OS documentation. MosBot OS is a self-hosted operating system for AI agent
-work.
+work built for [OpenClaw](https://openclaw.dev) — the AI agent runtime. It provides a human-operable
+control plane to manage tasks, monitor agents, browse workspaces, and orchestrate agent activity.
+
+## Why MosBot OS?
+
+If you're running AI agents with OpenClaw, MosBot OS gives you the operational control and
+visibility you need to manage them effectively. Whether you're running a single agent, orchestrating
+multiple agents, or managing a shared agent fleet where each human user has their own AI agent under
+one OpenClaw instance — MosBot OS scales to your needs.
+
+- **Visibility** — see what your agents are doing, what they've done, and how much it costs in real
+  time
+- **Control** — manage tasks and delegate work to agents through a structured, human-friendly
+  interface
+- **Auditability** — activity logs and task history provide a complete operational narrative
+- **Self-hosted** — you control the infrastructure, data, and access — no vendor lock-in
+
+MosBot OS is designed for people who run AI agents as part of their daily work — whether that's
+research, product work, software development, or business operations.
 
 ## Start here
 
@@ -31,16 +47,6 @@ work.
 
 Click any image to zoom in.
 
-### Task Board
-
-Drag-and-drop task management with priorities, tags, and dependencies.
-
-![Task Board](/img/screenshots/mosbot-task-board.png)
-
-Task detail view with comments and activity history.
-
-![Task Board Detail](/img/screenshots/mosbot-task-board-detail.png)
-
 ### Agent Monitor
 
 View active sessions, costs, and usage analytics.
@@ -50,6 +56,16 @@ View active sessions, costs, and usage analytics.
 Messages drawer for real-time agent communication.
 
 ![Agent Monitor Messages](/img/screenshots/mosbot-agent-monitor-messages-drawer.png)
+
+### Task Board
+
+Drag-and-drop task management with priorities, tags, and dependencies.
+
+![Task Board](/img/screenshots/mosbot-task-board.png)
+
+Task detail view with comments and activity history.
+
+![Task Board Detail](/img/screenshots/mosbot-task-board-detail.png)
 
 ### Org Chart
 
@@ -96,3 +112,16 @@ Manage and monitor your AI model fleet.
 Configure OpenClaw integration settings.
 
 ![OpenClaw Config](/img/screenshots/mosbot-openclaw-config.png)
+
+## Get Started
+
+Ready to set up MosBot OS? Start with the quickstart guide to get the full stack running in under 10
+minutes.
+
+**[Get Started →](./getting-started/quickstart)**
+
+Or explore the documentation:
+
+- **[What is MosBot OS?](./getting-started/overview)** — understand the system architecture
+- **[Prerequisites](./getting-started/prerequisites)** — what you need before you start
+- **[Configuration](./getting-started/configuration)** — environment variable reference

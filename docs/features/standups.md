@@ -5,13 +5,11 @@ sidebar_label: Standups
 sidebar_position: 5
 ---
 
-# Standups
-
 The **Standups** feature provides daily AI-generated standup summaries from your agent team. Each
 morning, the COO agent orchestrates a standup meeting — collecting reports from each agent and
 producing a consolidated summary.
 
-:::info Requires OpenClaw Gateway Standups require the OpenClaw Gateway to be configured so the COO
+:::info Requires OpenClaw Gateway Standups Require the OpenClaw Gateway to be configured so the COO
 agent can contact other agents. See [OpenClaw Integration](../openclaw/overview). :::
 
 ![Standups](/img/screenshots/mosbot-standup.png)

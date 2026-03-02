@@ -54,9 +54,20 @@ node --version
 
 [Install Node.js →](https://nodejs.org/)
 
-## For OpenClaw integration
+## OpenClaw (strongly recommended)
 
-If you plan to connect MosBot to an OpenClaw instance:
+MosBot OS is designed to work with OpenClaw. While MosBot can technically run without it, the core
+features — agent monitoring, workspace browsing, org chart, and skills — require OpenClaw.
+
+### OpenClaw instance
+
+You need a running OpenClaw instance. OpenClaw can run:
+
+- **Locally** — directly on your machine or in Docker
+- **In Kubernetes** — deployed to a cluster
+- **On a VPS** — on a remote server
+
+See the [OpenClaw Integration](../openclaw/overview) section for setup guidance.
 
 ### kubectl (Kubernetes deployments only)
 
@@ -68,16 +79,6 @@ kubectl version --client
 ```
 
 [Install kubectl →](https://kubernetes.io/docs/tasks/tools/)
-
-### OpenClaw instance
-
-You need a running OpenClaw instance. OpenClaw can run:
-
-- **Locally** — directly on your machine or in Docker
-- **In Kubernetes** — deployed to a cluster
-- **On a VPS** — on a remote server
-
-See the [OpenClaw Integration](../openclaw/overview) section for setup guidance.
 
 ## System requirements
 

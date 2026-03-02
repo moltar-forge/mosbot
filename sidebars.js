@@ -31,6 +31,16 @@ const sidebars = {
     },
     {
       type: 'category',
+      label: 'Configuration Reference',
+      items: [
+        'configuration/openclaw-json',
+        'configuration/sample-config',
+        'configuration/mosbot-required-config',
+        'configuration/best-practices',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Skills',
       items: [
         'skills/overview',
@@ -43,6 +53,7 @@ const sidebars = {
           label: 'Skill Reference',
           collapsed: true,
           items: [
+            'skills/reference/skills-reference-overview',
             'skills/reference/memory-flush',
             'skills/reference/reminder-create',
             'skills/reference/audio-transcribe',
@@ -55,23 +66,14 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'Configuration Reference',
-      items: [
-        'configuration/openclaw-json',
-        'configuration/sample-config',
-        'configuration/mosbot-required-config',
-        'configuration/best-practices',
-      ],
-    },
-    {
-      type: 'category',
       label: 'Features',
       items: [
-        'features/task-management',
         'features/agent-monitor',
+        'features/task-management',
         'features/org-chart',
         'features/workspaces',
         'features/standups',
+        'features/scheduler',
       ],
     },
     {

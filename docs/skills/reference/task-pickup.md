@@ -5,10 +5,8 @@ sidebar_label: task_pickup
 sidebar_position: 6
 ---
 
-# task_pickup
-
-:::warning WIP - Work in Progress This skill is currently under development and may change
-significantly. :::
+:::warning Work in Progress This skill is currently under development and may change significantly.
+:::
 
 **Type**: Agent-Specific Skill  
 **Scope**: All specialized agents (Developer, Designer, QA, etc.)  
@@ -109,6 +107,7 @@ Your current WIP: 2 tasks (limit: 3)
       fontSize: '16px',
       cursor: 'pointer',
       lineHeight: '1.6',
+      title: 'Copy SKILL.md',
     }}
   >📋</button>
 

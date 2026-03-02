@@ -62,10 +62,10 @@ If you have team members who need access:
 
 See [Security → Roles & Permissions](../security/roles-permissions) for the full permissions matrix.
 
-## 5. Configure OpenClaw (optional)
+## 5. Connect OpenClaw
 
-If you have an OpenClaw instance, add the integration variables to your `.env` to unlock agent
-monitoring, workspace browsing, and org chart features:
+If you installed OpenClaw as recommended, add the integration variables to your `.env` to enable
+agent monitoring, workspace browsing, and org chart features:
 
 ```bash
 OPENCLAW_WORKSPACE_URL=http://localhost:8080

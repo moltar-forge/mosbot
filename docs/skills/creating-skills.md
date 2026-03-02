@@ -94,6 +94,50 @@ How the output should be structured.
 - Edge cases to handle
 ```
 
+### Frontmatter Description and Trigger Keywords
+
+The `description` field in the frontmatter is crucial for enabling natural language skill
+invocation. When writing the description:
+
+**Include trigger keywords and phrases** that users or agents might use when requesting this skill.
+This allows the agent to match natural language requests to the appropriate skill, not just exact
+command matches.
+
+**Good examples:**
+
+```yaml
+---
+name: summarize
+description:
+  Summarize documents, conversations, or content into key points. Use when asked to summarize,
+  create a summary, provide a brief overview, or extract key takeaways.
+---
+---
+name: code_review
+description:
+  Review code for quality, security, and best practices. Triggered by requests to review code, check
+  code quality, audit code, or perform code analysis.
+---
+---
+name: task_writing
+description:
+  Create well-structured tasks from descriptions or requirements. Use when asked to create tasks,
+  break down work, generate task lists, or convert requirements into actionable tasks.
+---
+```
+
+**Why this matters:**
+
+- **Natural language matching**: Users can say "Can you summarize this?" instead of needing to know
+  the exact `/summarize` command
+- **Better discoverability**: Agents can suggest relevant skills based on user intent
+- **Flexible interaction**: Supports both technical users (who prefer commands) and non-technical
+  users (who prefer natural language)
+
+:::tip Best Practice Think about how users might naturally ask for this skill and include those
+phrases in your description. Include both the skill name and common synonyms or alternative
+phrasings. :::
+
 ---
 
 ## Method 2: Ask an Agent to Create the Skill
@@ -103,9 +147,9 @@ on skill design or when you need the agent's expertise.
 
 ### Sample Prompt
 
-```
-Please create a new shared skill called "daily_standup" that helps agents generate
-concise daily standup reports. The skill should:
+```markdown
+Please create a new shared skill called "daily_standup" that helps agents generate concise daily
+standup reports. The skill should:
 
 1. Accept input about what the agent worked on yesterday
 2. Ask what they're working on today
@@ -147,7 +191,7 @@ Include a references/ folder with a template.md showing example standup reports.
 | Convention       | Rule                                    | Example                        |
 | ---------------- | --------------------------------------- | ------------------------------ |
 | **Folder name**  | snake_case (lowercase with underscores) | `code_review`, `daily_standup` |
-| **Skill name**   | Lowercase with hyphens                  | `code-review`, `daily-standup` |
+| **Skill name**   | snake_case (lowercase with underscores) | `code_review`, `daily_standup` |
 | **Display name** | Title case in frontmatter               | `Code Review`, `Daily Standup` |
 
 - Use descriptive, action-oriented names
@@ -166,11 +210,9 @@ After creating a skill, test it by invoking it:
 
 Example:
 
-```
-/code_review Please review this function for security issues:
-function authenticate(user, pass) {
-  return db.query("SELECT * FROM users WHERE username='" + user + "'");
-}
+```markdown
+/code_review Please review this function for security issues: function authenticate(user, pass) {
+return db.query("SELECT \* FROM users WHERE username='" + user + "'"); }
 ```
 
 ---

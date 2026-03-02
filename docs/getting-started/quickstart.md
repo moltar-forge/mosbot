@@ -7,6 +7,12 @@ sidebar_position: 3
 
 Get MosBot OS running in under 10 minutes using Docker Compose.
 
+:::tip OpenClaw first
+
+For the complete MosBot OS experience — including agent monitoring, workspace browsing, and org
+chart — [install OpenClaw first](../openclaw/overview). While MosBot OS can start without it, the
+core functionality requires OpenClaw. :::
+
 ## Step 1: Clone both repositories
 
 MosBot OS consists of two repos that must be cloned **side-by-side** into the same parent folder:
@@ -24,8 +30,10 @@ parent-folder/
 └── mosbot-dashboard/
 ```
 
-:::warning Keep repos side-by-side The Docker Compose setup in `mosbot-api` mounts
-`../mosbot-dashboard` as a volume. If the repos are not siblings, the dashboard will not load. :::
+:::warning Keep repos side-by-side
+
+The Docker Compose setup in `mosbot-api` mounts `../mosbot-dashboard` as a volume. If the repos are
+not siblings, the dashboard will not load. :::
 
 ## Step 2: Configure environment variables
 
@@ -80,11 +88,11 @@ docker compose up -d
 
 This starts three services:
 
-| Service          | URL                   | Description                          |
-| ---------------- | --------------------- | ------------------------------------ |
-| MosBot API       | http://localhost:3000 | Backend API                          |
-| MosBot Dashboard | http://localhost:5173 | UI (Vite dev server with hot-reload) |
-| PostgreSQL       | localhost:5432        | Database (internal)                  |
+| Service          | URL                                            | Description                          |
+| ---------------- | ---------------------------------------------- | ------------------------------------ |
+| MosBot API       | [http://localhost:3000](http://localhost:3000) | Backend API                          |
+| MosBot Dashboard | [http://localhost:5173](http://localhost:5173) | UI (Vite dev server with hot-reload) |
+| PostgreSQL       | localhost:5432                                 | Database (internal)                  |
 
 Wait for all services to be healthy (usually 15–30 seconds):
 
@@ -103,8 +111,8 @@ curl http://localhost:3000/health
 
 ## Step 5: Log in
 
-Open **http://localhost:5173** in your browser and log in with the credentials you set in
-`BOOTSTRAP_OWNER_EMAIL` and `BOOTSTRAP_OWNER_PASSWORD`.
+Open **[http://localhost:5173](http://localhost:5173)** in your browser and log in with the
+credentials you set in `BOOTSTRAP_OWNER_EMAIL` and `BOOTSTRAP_OWNER_PASSWORD`.
 
 You should see the MosBot Dashboard with an empty task board.
 
@@ -123,8 +131,8 @@ After your first successful login:
 
 ## What's next?
 
-- **Connect OpenClaw** — unlock agent monitoring, workspace browsing, and org chart features. See
-  [OpenClaw Integration](../openclaw/overview).
+- **Connect OpenClaw** — if you haven't already, connect your OpenClaw instance to enable agent
+  monitoring, workspace browsing, and org chart. See [OpenClaw Integration](../openclaw/overview).
 - **Invite users** — add team members under **Settings → Users**.
 - **Create tasks** — start using the task board to manage work.
 - **Explore features** — see the [Features](../features/task-management) section for a full

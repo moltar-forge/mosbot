@@ -5,10 +5,8 @@ sidebar_label: task_writing
 sidebar_position: 5
 ---
 
-# task_writing
-
-:::warning WIP - Work in Progress This skill is currently under development and may change
-significantly. :::
+:::warning Work in Progress This skill is currently under development and may change significantly.
+:::
 
 **Type**: Agent-Specific Skill  
 **Scope**: Project Manager agent  
@@ -116,6 +114,7 @@ Add rate limiting to prevent API abuse...
       fontSize: '16px',
       cursor: 'pointer',
       lineHeight: '1.6',
+      title: 'Copy SKILL.md',
     }}
   >📋</button>
 
@@ -212,13 +211,13 @@ Creates well-structured, actionable tasks from vague descriptions, meetings, or 
 
 ## Usage
 
-```
+```text
 /task_writing [description or context]
 ```
 
 ## Examples
 
-```
+```text
 /task_writing From the sprint planning meeting:
 - Need to update the login page
 - Fix the API rate limiting issue
@@ -271,7 +270,7 @@ Add rate limiting to prevent API abuse...
 
 ## Options
 
-```
+```text
 /task_writing --from-meeting [meeting notes]
 /task_writing --from-prd [prd-id]
 /task_writing --break-down [epic-description]
