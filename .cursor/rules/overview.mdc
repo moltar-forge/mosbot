@@ -1,0 +1,23 @@
+---
+description: How to apply MosBot Workspace Service Cursor rules
+alwaysApply: true
+---
+
+# MosBot Workspace Service — Rules Overview
+
+These rules exist to keep changes **secure**, **testable**, and **consistent** for a service that can modify files on a mounted workspace volume.
+
+## How and when to use these rules
+
+- `overview.mdc` is **always applied** as the default guidance.
+- All other rules are **not always-on** (`alwaysApply: false`). Use them when they match the area you are changing.
+- Prefer applying the most relevant rule(s) rather than trying to follow every rule at once.
+
+## Rules index
+
+| File | Covers |
+| ---- | ------ |
+| `security.mdc` | Secrets, auth defaults, logging hygiene, path safety, Docker/CI considerations |
+| `architecture.mdc` | App structure, route conventions, response semantics, error handling, backward compatibility |
+| `openclaw-integration.mdc` | Symlink remapping behavior, path normalization, cross-container workspace assumptions |
+| `contributing.mdc` | Formatting, tests/coverage gates, dependency hygiene, PR conventions |

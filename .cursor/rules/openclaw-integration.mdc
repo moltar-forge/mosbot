@@ -1,0 +1,31 @@
+---
+description: OpenClaw workspace integration rules (symlink remapping and path safety)
+alwaysApply: false
+---
+
+# OpenClaw Integration — Workspace Service
+
+## Purpose
+
+This service runs alongside OpenClaw and exposes the same workspace volume. OpenClaw may produce absolute symlinks that are valid in the OpenClaw container but not in this container. Remapping exists to make those paths reachable **without weakening safety**.
+
+## Symlink remapping rules
+
+- Remapping is driven by `SYMLINK_REMAP_PREFIXES` (comma-separated), defaulting to `/home/node/.openclaw`.
+- Only remap **absolute** symlink targets that match a configured prefix.
+- Remapping must translate:
+  - `/<foreign-prefix>/...` → `<WORKSPACE_ROOT>/...` (preserving the relative suffix)
+- If a symlink is broken and cannot be remapped, treat it as unreachable (return `404` where appropriate), and avoid leaking internal path details in responses.
+
+## Path safety (do not trade away for convenience)
+
+- Keep `assertWithinRoot` as the defence-in-depth guard against escaping the exposed root.
+- Preserve normalization behavior:
+  - Normalize backslashes for Windows-style input (treat as `/`).
+  - Normalize and anchor paths so `/` is always treated as workspace-root-relative.
+
+## Behavioral contracts (tests must continue to pass)
+
+- `/health` remains a simple unauthenticated liveness endpoint.
+- Traversal-like inputs (e.g. `/../../../etc/passwd`) must never escape the exposed root; they should resolve safely and simply be “not found” if absent.
+- Symlink remap behavior must remain covered by tests under `__tests__/symlink-remap.test.js`.

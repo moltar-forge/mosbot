@@ -1,0 +1,37 @@
+---
+description: Code style, quality gates, and PR conventions for mosbot-workspace-service
+alwaysApply: false
+---
+
+# Contributing — Workspace Service
+
+## Purpose
+
+Keep changes small, well-tested, and consistently formatted for a security-sensitive Node.js service.
+
+## Do
+
+- Preserve the existing formatting conventions (Prettier). Use:
+  - `npm run format` before committing
+  - `npm run format:check` in CI/PR readiness checks
+- Maintain **100% Jest coverage** (see `jest.config.js` thresholds).
+- Add/adjust tests whenever you change behavior:
+  - API behavior: use **supertest** against `createApp()`
+  - Entrypoint behavior: cover both direct `require()` and child-process exit behavior (see `__tests__/index.test.js`)
+- Keep PRs focused and minimal; prefer incremental changes over broad rewrites.
+
+## Don’t
+
+- Don’t commit generated output (`coverage/`, `node_modules/`, etc.).
+- Don’t add dependencies without a clear need; if you do, ensure the lockfile stays in sync.
+- Don’t reduce coverage thresholds or remove tests to “get it passing”.
+- Don’t introduce synchronous filesystem calls in request handlers.
+
+## Commands
+
+```bash
+npm run test:run
+npm run test:coverage
+npm run format
+npm run format:check
+```

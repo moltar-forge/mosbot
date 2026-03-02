@@ -1,0 +1,21 @@
+[extend]
+# Use the default gitleaks ruleset as the base
+useDefault = true
+
+[allowlist]
+description = "Global allowlist for known safe patterns"
+regexes = [
+  # Placeholder tokens in documentation examples
+  '''your-secure-token''',
+  # Test tokens used in test files
+  '''test-token''',
+  '''dev-token''',
+]
+paths = [
+  # Documentation files with example values
+  '''README\.md''',
+  '''SETUP\.md''',
+  '''CONTRIBUTING\.md''',
+  # Test files
+  '''__tests__/.*''',
+]
