@@ -25,9 +25,6 @@ k8s/overlays/*/secret.yaml
 *service-account*.json
 *credentials*.json
 
-# Docker — override is local-dev only, never deploy
-docker-compose.override.yml
-
 # IDE
 .vscode/
 .idea/

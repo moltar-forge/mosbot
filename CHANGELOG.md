@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Committed `docker-compose.override.yml` for local development convenience (auto-loaded by docker compose)
+- Development override swaps production nginx dashboard for Vite dev server with HMR and bind-mounted source
+
 ## [0.1.2] - 2026-03-01
 
 ### Changed
