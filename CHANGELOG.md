@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Committed `docker-compose.override.yml` for local development convenience (auto-loaded by docker compose)
 - Development override swaps production nginx dashboard for Vite dev server with HMR and bind-mounted source
 
+### Changed
+
+- Improved CORS configuration to handle requests with no origin (mobile apps, curl requests)
+- Updated Helmet security middleware configuration with crossOriginResourcePolicy
+- Reordered middleware (CORS before Helmet) to avoid configuration conflicts
+
 ## [0.1.2] - 2026-03-01
 
 ### Changed

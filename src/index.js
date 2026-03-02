@@ -14,13 +14,28 @@ config.validate();
 
 const app = express();
 
-// Security middleware
-app.use(helmet());
-
+// CORS middleware - must be applied before Helmet to avoid conflicts
 app.use(
   cors({
-    origin: config.corsOrigin,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      // Check if origin matches configured CORS origin
+      if (origin === config.corsOrigin) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
+  }),
+);
+
+// Security middleware
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
   }),
 );
 
