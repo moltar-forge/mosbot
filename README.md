@@ -1,5 +1,9 @@
 # MosBot Workspace Service
 
+[![CI](https://github.com/bymosbot/mosbot-workspace-service/actions/workflows/ci.yml/badge.svg)](https://github.com/bymosbot/mosbot-workspace-service/actions/workflows/ci.yml)
+[![Coverage](https://coveralls.io/repos/github/bymosbot/mosbot-workspace-service/badge.svg?branch=main)](https://coveralls.io/github/bymosbot/mosbot-workspace-service)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Lightweight HTTP service that exposes OpenClaw workspace files over REST API. This service runs as a sidecar container alongside OpenClaw and provides file access for MosBot OS.
 
 ## Features
