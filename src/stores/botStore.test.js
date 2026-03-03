@@ -2,18 +2,22 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useBotStore, MOODS } from './botStore';
 import api from '../api/client';
 import logger from '../utils/logger';
+import { getOpenClawSessions, getOpenClawSessionStatus } from '../api/client';
 
 // Mock the API client
 vi.mock('../api/client', () => ({
   default: {
     get: vi.fn(),
   },
+  getOpenClawSessions: vi.fn(),
+  getOpenClawSessionStatus: vi.fn(),
 }));
 
 // Mock logger
 vi.mock('../utils/logger', () => ({
   default: {
     warn: vi.fn(),
+    error: vi.fn(),
   },
 }));
 
@@ -28,6 +32,13 @@ describe('botStore', () => {
       lastSuccessAt: null,
       isConnected: true,
       healthCheckInterval: null,
+      connectionStableTimer: null,
+      sessions: [],
+      sessionsLoaded: false,
+      sessionsError: null,
+      sessionCounts: { running: 0, active: 0, idle: 0, total: 0 },
+      dailyCost: 0,
+      sessionPollingInterval: null,
       currentMood: MOODS.CALM,
       moodTimers: {},
     });
@@ -260,6 +271,7 @@ describe('botStore', () => {
 
   describe('checkOpenClawHealth', () => {
     it('sets isConnected to true when health check succeeds', async () => {
+      useBotStore.setState({ isConnected: false });
       api.get.mockResolvedValue({
         data: {
           data: { accessible: true },
@@ -270,6 +282,7 @@ describe('botStore', () => {
 
       expect(api.get).toHaveBeenCalledWith('/openclaw/workspace/status');
       expect(result).toBe(true);
+      vi.advanceTimersByTime(1000);
       expect(useBotStore.getState().isConnected).toBe(true);
     });
 
@@ -284,6 +297,17 @@ describe('botStore', () => {
 
       expect(result).toBe(false);
       expect(useBotStore.getState().isConnected).toBe(false);
+    });
+
+    it('does not schedule online timer when already connected and healthy', async () => {
+      useBotStore.setState({ isConnected: true, connectionStableTimer: null });
+      api.get.mockResolvedValue({
+        data: { data: { accessible: true } },
+      });
+
+      const result = await useBotStore.getState().checkOpenClawHealth();
+      expect(result).toBe(true);
+      expect(useBotStore.getState().connectionStableTimer).toBeNull();
     });
 
     it('handles health check error', async () => {
@@ -352,6 +376,111 @@ describe('botStore', () => {
       // Fast-forward another 30 seconds
       vi.advanceTimersByTime(30000);
       expect(api.get).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('session data and polling', () => {
+    it('setSessionCounts normalizes missing fields', () => {
+      useBotStore.getState().setSessionCounts({ running: 2 });
+      expect(useBotStore.getState().sessionCounts).toEqual({
+        running: 2,
+        active: 0,
+        idle: 0,
+        total: 0,
+      });
+    });
+
+    it('setSessionCounts resets to zeros on invalid input', () => {
+      useBotStore.getState().setSessionCounts(null);
+      expect(useBotStore.getState().sessionCounts).toEqual({
+        running: 0,
+        active: 0,
+        idle: 0,
+        total: 0,
+      });
+    });
+
+    it('fetchSessionStatus updates counts from gateway response', async () => {
+      getOpenClawSessionStatus.mockResolvedValue({
+        running: 1,
+        active: 2,
+        idle: 3,
+        total: 6,
+      });
+
+      await useBotStore.getState().fetchSessionStatus();
+      expect(useBotStore.getState().sessionCounts).toEqual({
+        running: 1,
+        active: 2,
+        idle: 3,
+        total: 6,
+      });
+    });
+
+    it('fetchSessionStatus logs warning on error and keeps state', async () => {
+      useBotStore.setState({ sessionCounts: { running: 9, active: 0, idle: 0, total: 9 } });
+      const err = new Error('status failed');
+      getOpenClawSessionStatus.mockRejectedValue(err);
+
+      await useBotStore.getState().fetchSessionStatus();
+      expect(logger.warn).toHaveBeenCalledWith('Failed to fetch session status', err);
+      expect(useBotStore.getState().sessionCounts.running).toBe(9);
+    });
+
+    it('fetchSessions handles raw array response shape', async () => {
+      getOpenClawSessions.mockResolvedValue([{ id: 1, status: 'running' }]);
+
+      const sessions = await useBotStore.getState().fetchSessions();
+
+      expect(sessions).toEqual([{ id: 1, status: 'running' }]);
+      expect(useBotStore.getState().dailyCost).toBe(0);
+      expect(useBotStore.getState().sessionCounts.total).toBe(1);
+      expect(useBotStore.getState().sessionsLoaded).toBe(true);
+    });
+
+    it('fetchSessions returns stale sessions when request fails', async () => {
+      useBotStore.setState({ sessions: [{ id: 'stale', status: 'idle' }] });
+      getOpenClawSessions.mockRejectedValue(new Error('boom'));
+
+      const sessions = await useBotStore.getState().fetchSessions();
+
+      expect(sessions).toEqual([{ id: 'stale', status: 'idle' }]);
+      expect(useBotStore.getState().sessionsError).toBe('boom');
+      expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('startSessionPolling starts once and polls every 30s', async () => {
+      getOpenClawSessionStatus.mockResolvedValue({
+        running: 0,
+        active: 1,
+        idle: 0,
+        total: 1,
+      });
+
+      useBotStore.getState().startSessionPolling();
+      const interval = useBotStore.getState().sessionPollingInterval;
+      expect(interval).not.toBeNull();
+      expect(getOpenClawSessionStatus).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(30000);
+      expect(getOpenClawSessionStatus).toHaveBeenCalledTimes(2);
+
+      useBotStore.getState().startSessionPolling();
+      expect(useBotStore.getState().sessionPollingInterval).toBe(interval);
+    });
+
+    it('stopSessionPolling clears polling interval', () => {
+      getOpenClawSessionStatus.mockResolvedValue({
+        running: 0,
+        active: 0,
+        idle: 0,
+        total: 0,
+      });
+      useBotStore.getState().startSessionPolling();
+      expect(useBotStore.getState().sessionPollingInterval).not.toBeNull();
+
+      useBotStore.getState().stopSessionPolling();
+      expect(useBotStore.getState().sessionPollingInterval).toBeNull();
     });
   });
 
@@ -436,6 +565,24 @@ describe('botStore', () => {
       expect(useBotStore.getState().getActivityStatus()).toBe('Working');
     });
 
+    it('returns "Working" when running session count is positive', () => {
+      useBotStore.setState({
+        isConnected: true,
+        inflightRequests: 0,
+        sessionCounts: { running: 1, active: 0, idle: 0, total: 1 },
+      });
+      expect(useBotStore.getState().getActivityStatus()).toBe('Working');
+    });
+
+    it('returns "Active" when no running requests but active sessions exist', () => {
+      useBotStore.setState({
+        isConnected: true,
+        inflightRequests: 0,
+        sessionCounts: { running: 0, active: 2, idle: 0, total: 2 },
+      });
+      expect(useBotStore.getState().getActivityStatus()).toBe('Active');
+    });
+
     it('returns "Idle" when connected and no requests', () => {
       useBotStore.setState({ isConnected: true, inflightRequests: 0 });
 
@@ -454,6 +601,33 @@ describe('botStore', () => {
       useBotStore.setState({ isConnected: true, inflightRequests: 1 });
 
       expect(useBotStore.getState().getActivityLabel()).toBe('Working on tasks...');
+    });
+
+    it('returns singular running agent label', () => {
+      useBotStore.setState({
+        isConnected: true,
+        inflightRequests: 0,
+        sessionCounts: { running: 1, active: 0, idle: 0, total: 1 },
+      });
+      expect(useBotStore.getState().getActivityLabel()).toBe('1 agent running');
+    });
+
+    it('returns plural running agent label', () => {
+      useBotStore.setState({
+        isConnected: true,
+        inflightRequests: 0,
+        sessionCounts: { running: 3, active: 0, idle: 0, total: 3 },
+      });
+      expect(useBotStore.getState().getActivityLabel()).toBe('3 agents running');
+    });
+
+    it('returns active session label when no running sessions', () => {
+      useBotStore.setState({
+        isConnected: true,
+        inflightRequests: 0,
+        sessionCounts: { running: 0, active: 2, idle: 0, total: 2 },
+      });
+      expect(useBotStore.getState().getActivityLabel()).toBe('2 agents active');
     });
 
     it('returns ready message when idle', () => {

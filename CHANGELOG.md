@@ -11,12 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Tool call display support in SessionDetailPanel with expandable argument details
 - ToolCallChip component for displaying tool calls with preview and expandable JSON arguments
+- Comprehensive test suite covering App, API client, components (GlobalSessionPoller, JsonBlock, Layout, LiveAgentStatus, TerminalBlock), stores (activityStore, agentStore, authStore, botStore, schedulerStore, toastStore, workspaceStore), config (agencyOrgChart), and utilities (helpers, orgChartValidation, pathValidation)
+- `.claude/` project rules and configuration (CLAUDE.md + rules for architecture, contributing, security, testing)
 
 ### Changed
 
 - Message rendering now handles both string and array content formats (blocks-based messages)
 - Tool calls are now displayed alongside message content in session detail view
 - Improved handling of assistant messages with no content or tool calls (skips empty messages)
+- CI workflow updated to include test execution step
+- Vite config updated to support test environment
+- `.gitignore` updated to exclude additional generated files
 
 ## [0.1.4] - 2026-03-02
 

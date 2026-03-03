@@ -439,6 +439,150 @@ describe('activityStore', () => {
     });
   });
 
+  describe('setFilters', () => {
+    it('applies new filters and resets pagination', async () => {
+      useActivityStore.setState({
+        logs: [{ id: 1, action: 'created', task_id: 1 }],
+        currentOffset: 50,
+        filters: {
+          startDate: null,
+          endDate: null,
+          category: null,
+          agentId: null,
+          source: null,
+          event_type: null,
+          severity: null,
+          job_id: null,
+          session_key: null,
+        },
+      });
+
+      api.get.mockResolvedValue({
+        data: {
+          data: [],
+        },
+      });
+
+      useActivityStore.getState().setFilters({ category: 'task', agentId: '123' });
+
+      expect(useActivityStore.getState().filters.category).toBe('task');
+      expect(useActivityStore.getState().filters.agentId).toBe('123');
+      expect(useActivityStore.getState().currentOffset).toBe(0);
+      expect(useActivityStore.getState().logs).toEqual([]);
+      expect(useActivityStore.getState().hasMore).toBe(true);
+    });
+  });
+
+  describe('resetFilters', () => {
+    it('resets all filters to default values and refetches', async () => {
+      useActivityStore.setState({
+        logs: [{ id: 1, action: 'created', task_id: 1 }],
+        currentOffset: 50,
+        filters: {
+          startDate: '2024-01-01',
+          endDate: '2024-01-31',
+          category: 'task',
+          agentId: '123',
+          source: 'api',
+          event_type: 'created',
+          severity: 'info',
+          job_id: '456',
+          session_key: '789',
+        },
+      });
+
+      api.get.mockResolvedValue({
+        data: {
+          data: [],
+        },
+      });
+
+      useActivityStore.getState().resetFilters();
+
+      expect(useActivityStore.getState().filters).toEqual({
+        startDate: null,
+        endDate: null,
+        category: null,
+        agentId: null,
+        source: null,
+        event_type: null,
+        severity: null,
+        job_id: null,
+        session_key: null,
+      });
+      expect(useActivityStore.getState().currentOffset).toBe(0);
+      expect(useActivityStore.getState().logs).toEqual([]);
+      expect(useActivityStore.getState().hasMore).toBe(true);
+      expect(api.get).toHaveBeenCalledWith('/activity/feed', {
+        params: { limit: 50, offset: 0 },
+      });
+    });
+  });
+
+  describe('fetchLiveSessions', () => {
+    it('successfully fetches live sessions', async () => {
+      const mockSessions = [
+        { session_key: 'session1', agent_id: 'agent1' },
+        { session_key: 'session2', agent_id: 'agent2' },
+      ];
+
+      api.get.mockResolvedValue({
+        data: {
+          data: mockSessions,
+        },
+      });
+
+      await useActivityStore.getState().fetchLiveSessions();
+
+      expect(api.get).toHaveBeenCalledWith('/openclaw/sessions');
+      expect(useActivityStore.getState().liveSessions).toEqual(mockSessions);
+      expect(useActivityStore.getState().isLoadingSessions).toBe(false);
+    });
+
+    it('handles response with data array directly', async () => {
+      const mockSessions = [{ session_key: 'session1' }];
+
+      api.get.mockResolvedValue({
+        data: mockSessions,
+      });
+
+      await useActivityStore.getState().fetchLiveSessions();
+
+      expect(useActivityStore.getState().liveSessions).toEqual(mockSessions);
+    });
+
+    it('handles empty response', async () => {
+      api.get.mockResolvedValue({
+        data: null,
+      });
+
+      await useActivityStore.getState().fetchLiveSessions();
+
+      expect(useActivityStore.getState().liveSessions).toEqual([]);
+      expect(useActivityStore.getState().isLoadingSessions).toBe(false);
+    });
+
+    it('handles non-array response', async () => {
+      api.get.mockResolvedValue({
+        data: { session_key: 'session1' },
+      });
+
+      await useActivityStore.getState().fetchLiveSessions();
+
+      expect(useActivityStore.getState().liveSessions).toEqual([]);
+      expect(useActivityStore.getState().isLoadingSessions).toBe(false);
+    });
+
+    it('handles fetch errors gracefully', async () => {
+      api.get.mockRejectedValue(new Error('Network error'));
+
+      await useActivityStore.getState().fetchLiveSessions();
+
+      expect(useActivityStore.getState().isLoadingSessions).toBe(false);
+      expect(useActivityStore.getState().liveSessions).toEqual([]);
+    });
+  });
+
   describe('clearLogs', () => {
     it('clears all logs and error state', () => {
       useActivityStore.setState({

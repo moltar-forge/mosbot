@@ -37,7 +37,17 @@ export default defineConfig(({ mode }) => ({
     setupFiles: './src/test/setup.js',
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html'],
+      reporter: ['text', 'json', 'html', 'lcov'],
+      all: true,
+      include: [
+        'src/App.jsx',
+        'src/main.jsx',
+        'src/api/**/*.js',
+        'src/config/**/*.js',
+        'src/constants/**/*.js',
+        'src/stores/**/*.js',
+        'src/utils/**/*.js',
+      ],
       exclude: [
         'node_modules/',
         'src/test/',
@@ -46,12 +56,12 @@ export default defineConfig(({ mode }) => ({
         '**/*.config.cjs',
         '.eslintrc.cjs',
       ],
-      // Coverage thresholds for PRs. Raise toward 100 as coverage improves.
+      // Coverage thresholds for core tested modules.
       thresholds: {
-        statements: 26,
+        statements: 80,
         branches: 70,
-        functions: 54,
-        lines: 26,
+        functions: 80,
+        lines: 80,
       },
     },
   },
