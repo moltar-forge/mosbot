@@ -27,12 +27,24 @@ For application-level changes, see the changelogs in the respective repositories
   compose)
 - Development override swaps production nginx dashboard for Vite dev server with HMR and
   bind-mounted source
+- Comprehensive test suite covering config, app entry point, database migrations, jobs
+  (archiveDoneTasks, runDailyStandup), routes (activity, auth, models, openclaw, standups, tasks,
+  users, admin/users agent-config), services (activityLogService, modelPricingService,
+  openclawGatewayClient, openclawWorkspaceClient, sessionUsageService, standupService,
+  subagentsRuntimeService), and utilities (configParser, jwt, logger)
+- `.claude/` project rules and configuration (CLAUDE.md + rules for architecture, contributing,
+  openclaw, security, testing)
 
 #### Changed
 
 - Improved CORS configuration to handle requests with no origin (mobile apps, curl requests)
 - Updated Helmet security middleware configuration with crossOriginResourcePolicy
 - Reordered middleware (CORS before Helmet) to avoid configuration conflicts
+- CI workflow updated to include test execution step
+- Jest config updated to support full test suite
+- Various route and service refinements to support test coverage (activity, openclaw, admin/users,
+  tasks, users)
+- `.gitignore` updated to exclude additional generated files
 
 ### mosbot-dashboard
 
@@ -40,12 +52,21 @@ For application-level changes, see the changelogs in the respective repositories
 
 - Tool call display support in SessionDetailPanel with expandable argument details
 - ToolCallChip component for displaying tool calls with preview and expandable JSON arguments
+- Comprehensive test suite covering App, API client, components (GlobalSessionPoller, JsonBlock,
+  Layout, LiveAgentStatus, TerminalBlock), stores (activityStore, agentStore, authStore, botStore,
+  schedulerStore, toastStore, workspaceStore), config (agencyOrgChart), and utilities (helpers,
+  orgChartValidation, pathValidation)
+- `.claude/` project rules and configuration (CLAUDE.md + rules for architecture, contributing,
+  security, testing)
 
 #### Changed
 
 - Message rendering now handles both string and array content formats (blocks-based messages)
 - Tool calls are now displayed alongside message content in session detail view
 - Improved handling of assistant messages with no content or tool calls (skips empty messages)
+- CI workflow updated to include test execution step
+- Vite config updated to support test environment
+- `.gitignore` updated to exclude additional generated files
 
 ---
 
