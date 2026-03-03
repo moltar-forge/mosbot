@@ -1,5 +1,10 @@
 # MosBot OS Documentation
 
+[![CI](https://github.com/bymosbot/mosbot-docs/actions/workflows/ci.yml/badge.svg)](https://github.com/bymosbot/mosbot-docs/actions/workflows/ci.yml)
+[![Build and Deploy](https://github.com/bymosbot/mosbot-docs/actions/workflows/main.yml/badge.svg)](https://github.com/bymosbot/mosbot-docs/actions/workflows/main.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Documentation Status](https://img.shields.io/badge/docs-passing-brightgreen)](https://bymosbot.github.io/mosbot-docs/)
+
 This repository contains the official documentation for
 [MosBot OS](https://github.com/bymosbot/mosbot-api) — a self-hosted operating system for AI agent
 work.

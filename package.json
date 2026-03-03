@@ -15,6 +15,11 @@
     "lint": "eslint *.js",
     "lint:fix": "eslint *.js --fix",
     "lint:check": "eslint *.js --max-warnings 0",
+    "lint:md": "markdownlint \"./**/*.md\" --ignore node_modules",
+    "lint:md:fix": "markdownlint \"./**/*.md\" --ignore node_modules --fix",
+    "test:links": "remark . --quiet --frail",
+    "test": "npm run lint:md && npm run test:links",
+    "test:ci": "npm run lint:md && npm run test:links",
     "format": "prettier --write \"**/*.{js,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{js,json,md,yml,yaml}\"",
     "prepare": "husky"
@@ -36,7 +41,10 @@
     "eslint": "^9.0.0",
     "husky": "^9.0.0",
     "lint-staged": "^15.0.0",
-    "prettier": "^3.0.0"
+    "markdownlint-cli": "^0.31.1",
+    "prettier": "^3.0.0",
+    "remark-cli": "^12.0.1",
+    "remark-validate-links": "^13.1.0"
   },
   "overrides": {
     "serialize-javascript": "^7.0.3",
