@@ -77,6 +77,23 @@ describe('toastStore', () => {
     expect(currentToasts[0].show).toBe(false);
   });
 
+  it('should remove toast from array after hideToast animation completes', () => {
+    const { showToast, hideToast } = useToastStore.getState();
+
+    showToast('Test message', 'success');
+
+    const toastId = useToastStore.getState().toasts[0].id;
+    hideToast(toastId);
+
+    expect(useToastStore.getState().toasts).toHaveLength(1);
+    expect(useToastStore.getState().toasts[0].show).toBe(false);
+
+    // Fast-forward time by 300ms (animation duration)
+    vi.advanceTimersByTime(300);
+
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
   it('should handle multiple toasts', () => {
     const { showToast } = useToastStore.getState();
 

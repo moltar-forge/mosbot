@@ -1,6 +1,6 @@
 name: CI (PR)
 
-# Runs on pull requests to any branch. Enforces lint, tests, and 100% code coverage.
+# Runs on pull requests to any branch. Enforces lint, tests, and coverage thresholds.
 
 on:
   pull_request:
@@ -10,6 +10,8 @@ jobs:
   lint-and-test:
     name: Lint, Test, and Coverage
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -32,6 +34,13 @@ jobs:
         env:
           VITE_API_URL: http://localhost:3000/api/v1
           VITE_APP_NAME: MosBot
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: coverage/lcov.info
+          format: lcov
 
       - name: Build
         run: npm run build

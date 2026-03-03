@@ -1,6 +1,7 @@
 # MosBot Dashboard
 
 [![CI](https://github.com/bymosbot/mosbot-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/bymosbot/mosbot-dashboard/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/bymosbot/mosbot-dashboard/badge.svg?branch=main)](https://coveralls.io/github/bymosbot/mosbot-dashboard?branch=main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-bymosbot.github.io-blue)](https://bymosbot.github.io/mosbot-docs/)
 
@@ -13,7 +14,7 @@ MosBot Dashboard is a React 18 + Vite SPA that provides task management, org cha
 ## Screenshots
 
 | Feature | Preview |
-|--------|---------|
+| ------- | ------- |
 | **Task Board** | ![Task Board](https://bymosbot.github.io/mosbot-docs/img/screenshots/mosbot-task-board.png) |
 | **Agent Monitor** | ![Agent Monitor](https://bymosbot.github.io/mosbot-docs/img/screenshots/mosbot-agent-monitor.png) |
 | **Org Chart** | ![Org Chart](https://bymosbot.github.io/mosbot-docs/img/screenshots/mosbot-org-chart.png) |
@@ -100,7 +101,7 @@ Developer-focused docs (component architecture, local dev setup) remain in [`doc
 
 - [ ] Fix the known issues above.
 - [ ] Org chart: reference OpenClaw agents list and org-chart JSON file for supplementary metadata.
-- [ ] Increase code coverage to 100% for Dashboard.
+- [ ] Increase code coverage to meet thresholds (80% statements/lines/functions, 70% branches).
 
 ## Contributing
 

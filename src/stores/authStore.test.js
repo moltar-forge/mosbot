@@ -138,6 +138,69 @@ describe('authStore', () => {
     });
   });
 
+  describe('initialize', () => {
+    it('initializes with token from localStorage and checks auth', async () => {
+      const mockToken = 'stored-token';
+      const mockUser = { id: 1, email: 'test@example.com' };
+
+      localStorageMock.getItem.mockReturnValue(mockToken);
+      api.get.mockResolvedValue({
+        data: {
+          data: mockUser,
+        },
+      });
+
+      await useAuthStore.getState().initialize();
+
+      expect(localStorageMock.getItem).toHaveBeenCalledWith('auth_token');
+      expect(useAuthStore.getState().token).toBe(mockToken);
+      expect(useAuthStore.getState().user).toEqual(mockUser);
+      expect(useAuthStore.getState().isAuthenticated).toBe(true);
+      expect(useAuthStore.getState().isInitialized).toBe(true);
+    });
+
+    it('initializes without token when localStorage is empty', async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+
+      await useAuthStore.getState().initialize();
+
+      expect(useAuthStore.getState().token).toBeNull();
+      expect(useAuthStore.getState().isLoading).toBe(false);
+      expect(useAuthStore.getState().isInitialized).toBe(true);
+      expect(api.get).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateUser', () => {
+    it('updates user data', () => {
+      const initialUser = { id: 1, email: 'test@example.com', name: 'Old Name' };
+      useAuthStore.setState({
+        user: initialUser,
+      });
+
+      useAuthStore.getState().updateUser({ name: 'New Name', role: 'admin' });
+
+      expect(useAuthStore.getState().user).toEqual({
+        id: 1,
+        email: 'test@example.com',
+        name: 'New Name',
+        role: 'admin',
+      });
+    });
+
+    it('preserves existing user properties when updating', () => {
+      const initialUser = { id: 1, email: 'test@example.com', name: 'Test User' };
+      useAuthStore.setState({
+        user: initialUser,
+      });
+
+      useAuthStore.getState().updateUser({ name: 'Updated Name' });
+
+      expect(useAuthStore.getState().user.email).toBe('test@example.com');
+      expect(useAuthStore.getState().user.name).toBe('Updated Name');
+    });
+  });
+
   describe('isAdmin', () => {
     it('returns true for admin user', () => {
       useAuthStore.setState({

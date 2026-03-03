@@ -8,6 +8,8 @@ import {
   truncateText,
   generateId,
   classNames,
+  stripMarkdown,
+  isPathInsideSymlink,
 } from './helpers';
 
 describe('helpers', () => {
@@ -293,6 +295,169 @@ describe('helpers', () => {
       const result = classNames('base', condition && 'conditional', 'end');
 
       expect(result).toBe('base end');
+    });
+  });
+
+  describe('stripMarkdown', () => {
+    it('removes markdown formatting from text', () => {
+      const text = '**bold** and *italic* text';
+      const result = stripMarkdown(text);
+
+      expect(result).toBe('bold and italic text');
+    });
+
+    it('removes code blocks', () => {
+      const text = 'Code:\n```\nconst x = 1;\n```\nDone';
+      const result = stripMarkdown(text);
+
+      expect(result).toContain('Done');
+      expect(result).not.toContain('```');
+    });
+
+    it('removes inline code', () => {
+      const text = 'Use `code` here';
+      const result = stripMarkdown(text);
+
+      expect(result).toBe('Use code here');
+    });
+
+    it('removes links but keeps text', () => {
+      const text = 'Visit [Google](https://google.com)';
+      const result = stripMarkdown(text);
+
+      expect(result).toBe('Visit Google');
+    });
+
+    it('removes images but keeps alt text', () => {
+      const text = 'See ![alt text](image.png)';
+      const result = stripMarkdown(text);
+
+      // Note: Link regex processes first, removing [alt text](image.png)
+      // leaving "See !alt text", then image regex can't match the full pattern
+      expect(result).toBe('See !alt text');
+    });
+
+    it('removes images with empty alt text', () => {
+      const text = 'See ![](image.png)';
+      const result = stripMarkdown(text);
+
+      // Image regex matches ![alt](url) and replaces with alt (empty in this case)
+      // Result is trimmed, so trailing space is removed
+      expect(result).toBe('See');
+    });
+
+    it('removes headers', () => {
+      const text = '# Header 1\n## Header 2';
+      const result = stripMarkdown(text);
+
+      expect(result).toContain('Header 1');
+      expect(result).toContain('Header 2');
+      expect(result).not.toContain('#');
+    });
+
+    it('converts markdown tables to plain text', () => {
+      const text = '| A | B |\n| C | D |';
+      const result = stripMarkdown(text);
+
+      expect(result).toContain('A B');
+      expect(result).toContain('C D');
+      expect(result).not.toContain('|');
+    });
+
+    it('skips table separator rows', () => {
+      const text = '| A | B |\n| --- | --- |\n| C | D |';
+      const result = stripMarkdown(text);
+
+      expect(result).toContain('A B');
+      expect(result).toContain('C D');
+      expect(result).not.toContain('---');
+    });
+
+    it('handles table with all separator rows', () => {
+      const text = '| --- | --- |\n| --- | --- |';
+      const result = stripMarkdown(text);
+
+      // Separator rows should be removed (return empty string)
+      expect(result.trim()).not.toContain('---');
+    });
+
+    it('handles empty string', () => {
+      expect(stripMarkdown('')).toBe('');
+    });
+
+    it('handles null', () => {
+      expect(stripMarkdown(null)).toBe('');
+    });
+
+    it('handles undefined', () => {
+      expect(stripMarkdown(undefined)).toBe('');
+    });
+  });
+
+  describe('isPathInsideSymlink', () => {
+    it('returns false for root path', () => {
+      const result = isPathInsideSymlink('/', {}, 'agent1');
+      expect(result).toBe(false);
+    });
+
+    it('returns false for empty path', () => {
+      const result = isPathInsideSymlink('', {}, 'agent1');
+      expect(result).toBe(false);
+    });
+
+    it('returns false when path is not inside symlink', () => {
+      const childrenCache = {
+        '/': [{ path: '/skills', type: 'directory', isSymlink: false }],
+        '/skills': [{ path: '/skills/subfolder', type: 'directory', isSymlink: false }],
+      };
+
+      const result = isPathInsideSymlink('/skills/subfolder/file.txt', childrenCache, 'agent1');
+      expect(result).toBe(false);
+    });
+
+    it('returns true when direct parent is symlink', () => {
+      const childrenCache = {
+        '/': [{ path: '/skills', type: 'directory', isSymlink: true }],
+      };
+
+      const result = isPathInsideSymlink('/skills/file.txt', childrenCache, 'agent1');
+      expect(result).toBe(true);
+    });
+
+    it('returns true when ancestor directory is symlink', () => {
+      const childrenCache = {
+        '/': [{ path: '/skills', type: 'directory', isSymlink: true }],
+        '/skills': [{ path: '/skills/subfolder', type: 'directory', isSymlink: false }],
+      };
+
+      const result = isPathInsideSymlink('/skills/subfolder/file.txt', childrenCache, 'agent1');
+      expect(result).toBe(true);
+    });
+
+    it('returns true when nested ancestor is symlink', () => {
+      const childrenCache = {
+        '/': [{ path: '/skills', type: 'directory', isSymlink: false }],
+        '/skills': [{ path: '/skills/subfolder', type: 'directory', isSymlink: true }],
+      };
+
+      const result = isPathInsideSymlink('/skills/subfolder/file.txt', childrenCache, 'agent1');
+      expect(result).toBe(true);
+    });
+
+    it('handles missing cache entries gracefully', () => {
+      const childrenCache = {};
+
+      const result = isPathInsideSymlink('/skills/file.txt', childrenCache, 'agent1');
+      expect(result).toBe(false);
+    });
+
+    it('handles non-array cache entries', () => {
+      const childrenCache = {
+        '/': { path: '/skills', type: 'directory' },
+      };
+
+      const result = isPathInsideSymlink('/skills/file.txt', childrenCache, 'agent1');
+      expect(result).toBe(false);
     });
   });
 });

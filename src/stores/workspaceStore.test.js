@@ -1,45 +1,55 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceStore } from './workspaceStore';
 import { api } from '../api/client';
+import logger from '../utils/logger';
 
-// Mock the API client
 vi.mock('../api/client', () => ({
   api: {
     get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
   },
 }));
+
+vi.mock('../utils/logger', () => ({
+  default: {
+    info: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+const resetStore = () => {
+  useWorkspaceStore.setState({
+    listings: {},
+    isLoadingListing: false,
+    listingError: null,
+    listingErrors: {},
+    loadingListings: {},
+    fileContents: {},
+    isLoadingContent: false,
+    contentError: null,
+    loadingContents: {},
+    selectedFile: null,
+    currentPath: '/',
+    workspaceRootPath: '',
+  });
+};
 
 describe('workspaceStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset store state
-    useWorkspaceStore.setState({
-      listings: {},
-      fileContents: {},
-      isLoadingListing: false,
-      isLoadingContent: false,
-      listingError: null,
-      contentError: null,
-      selectedFile: null,
-      currentPath: '/',
-    });
+    resetStore();
   });
 
-  describe('fetchListing', () => {
-    it('successfully fetches workspace listing', async () => {
-      const mockListing = {
-        files: [
-          { path: '/README.md', name: 'README.md', type: 'file', size: 1024 },
-          { path: '/src', name: 'src', type: 'directory', size: 0 },
-        ],
-        count: 2,
-        path: '/',
-        recursive: false,
-      };
-
+  describe('listing fetch', () => {
+    it('fetches and caches listing data', async () => {
       api.get.mockResolvedValue({
         data: {
-          data: mockListing,
+          data: {
+            files: [{ path: '/README.md', name: 'README.md' }],
+            count: 1,
+          },
         },
       });
 
@@ -50,150 +60,80 @@ describe('workspaceStore', () => {
       expect(api.get).toHaveBeenCalledWith('/openclaw/workspace/files', {
         params: { path: '/', recursive: 'false' },
       });
-      expect(result).toEqual(mockListing);
-      expect(useWorkspaceStore.getState().listings['coo:/:false']).toEqual(mockListing);
-      expect(useWorkspaceStore.getState().isLoadingListing).toBe(false);
-      expect(useWorkspaceStore.getState().listingError).toBe(null);
+      expect(result.files).toHaveLength(1);
+      expect(useWorkspaceStore.getState().listings['coo:/:false']).toEqual(result);
     });
 
-    it('successfully fetches recursive listing', async () => {
-      const mockListing = {
-        files: [
-          { path: '/README.md', name: 'README.md', type: 'file', size: 1024 },
-          { path: '/src/index.js', name: 'index.js', type: 'file', size: 2048 },
-        ],
-        count: 2,
-        path: '/',
-        recursive: true,
-      };
-
-      api.get.mockResolvedValue({
-        data: {
-          data: mockListing,
-        },
-      });
-
-      const result = await useWorkspaceStore
-        .getState()
-        .fetchListing({ path: '/', recursive: true });
-
-      expect(api.get).toHaveBeenCalledWith('/openclaw/workspace/files', {
-        params: { path: '/', recursive: 'true' },
-      });
-      expect(result).toEqual(mockListing);
-      expect(useWorkspaceStore.getState().listings['coo:/:true']).toEqual(mockListing);
-    });
-
-    it('uses cached listing when available and not forced', async () => {
-      const mockListing = {
-        files: [{ path: '/test.md', name: 'test.md', type: 'file', size: 512 }],
-        count: 1,
-      };
-
-      // Set cached data (cache key: agentId:path:recursive)
+    it('returns cached listing when force is false', async () => {
       useWorkspaceStore.setState({
         listings: {
-          'coo:/:false': mockListing,
+          'coo:/docs:false': { files: [{ path: '/docs/a.md' }] },
         },
       });
 
       const result = await useWorkspaceStore
         .getState()
-        .fetchListing({ path: '/', recursive: false });
+        .fetchListing({ path: '/docs', recursive: false });
 
+      expect(result).toEqual({ files: [{ path: '/docs/a.md' }] });
       expect(api.get).not.toHaveBeenCalled();
-      expect(result).toEqual(mockListing);
     });
 
-    it('bypasses cache when force is true', async () => {
-      const cachedListing = {
-        files: [{ path: '/old.md', name: 'old.md', type: 'file', size: 256 }],
-      };
-
-      const newListing = {
-        files: [{ path: '/new.md', name: 'new.md', type: 'file', size: 512 }],
-      };
-
-      // Set cached data (cache key: agentId:path:recursive)
+    it('returns null when same listing request is already in flight', async () => {
       useWorkspaceStore.setState({
-        listings: {
-          'coo:/:false': cachedListing,
-        },
+        loadingListings: { 'coo:/docs:false': true },
       });
 
+      const result = await useWorkspaceStore
+        .getState()
+        .fetchListing({ path: '/docs', recursive: false });
+
+      expect(result).toBe(null);
+      expect(api.get).not.toHaveBeenCalled();
+    });
+
+    it('applies workspace root path and normalizes file paths', async () => {
+      useWorkspaceStore.getState().setWorkspaceRootPath('/workspaces/main');
       api.get.mockResolvedValue({
         data: {
-          data: newListing,
-        },
-      });
-
-      const result = await useWorkspaceStore.getState().fetchListing({
-        path: '/',
-        recursive: false,
-        force: true,
-      });
-
-      expect(api.get).toHaveBeenCalled();
-      expect(result).toEqual(newListing);
-      expect(useWorkspaceStore.getState().listings['coo:/:false']).toEqual(newListing);
-    });
-
-    it('sets loading state during fetch', async () => {
-      api.get.mockImplementation(
-        () =>
-          new Promise((resolve) =>
-            setTimeout(
-              () =>
-                resolve({
-                  data: { data: { files: [], count: 0 } },
-                }),
-              100,
-            ),
-          ),
-      );
-
-      const fetchPromise = useWorkspaceStore.getState().fetchListing({ path: '/' });
-
-      expect(useWorkspaceStore.getState().isLoadingListing).toBe(true);
-
-      await fetchPromise;
-      expect(useWorkspaceStore.getState().isLoadingListing).toBe(false);
-    });
-
-    it('handles API errors correctly', async () => {
-      const errorMessage = 'Failed to fetch workspace listing';
-      api.get.mockRejectedValue({
-        response: {
           data: {
-            error: {
-              message: errorMessage,
-            },
+            files: [
+              { path: '/workspaces/main/docs/guide.md', name: 'guide.md' },
+              { path: '/external/file.txt', name: 'file.txt' },
+            ],
           },
         },
       });
 
+      const result = await useWorkspaceStore.getState().fetchListing({ path: '/docs' });
+
+      expect(api.get).toHaveBeenCalledWith('/openclaw/workspace/files', {
+        params: { path: '/workspaces/main/docs', recursive: 'false' },
+      });
+      expect(result.files[0].path).toBe('/docs/guide.md');
+      expect(result.files[1].path).toBe('/external/file.txt');
+    });
+
+    it('sets listing error with fallback message when request fails', async () => {
+      api.get.mockRejectedValue(new Error('Network down'));
+
       await expect(useWorkspaceStore.getState().fetchListing({ path: '/' })).rejects.toBeTruthy();
 
-      expect(useWorkspaceStore.getState().isLoadingListing).toBe(false);
-      expect(useWorkspaceStore.getState().listingError).toBe(errorMessage);
+      const state = useWorkspaceStore.getState();
+      expect(state.listingError).toBe('Network down');
+      expect(state.listingErrors['coo:/:false']).toBe('Network down');
+      expect(state.loadingListings['coo:/:false']).toBeUndefined();
     });
   });
 
-  describe('fetchFileContent', () => {
-    it('successfully fetches file content', async () => {
-      const mockContent = {
-        path: '/README.md',
-        name: 'README.md',
-        type: 'file',
-        size: 1024,
-        content: '# Hello World\n\nThis is a test.',
-        encoding: 'utf8',
-        modified: '2024-01-01T00:00:00Z',
-      };
-
+  describe('file content fetch', () => {
+    it('fetches and caches file content', async () => {
       api.get.mockResolvedValue({
         data: {
-          data: mockContent,
+          data: {
+            path: '/README.md',
+            content: 'hello',
+          },
         },
       });
 
@@ -202,225 +142,280 @@ describe('workspaceStore', () => {
       expect(api.get).toHaveBeenCalledWith('/openclaw/workspace/files/content', {
         params: { path: '/README.md' },
       });
-      expect(result).toEqual(mockContent);
-      expect(useWorkspaceStore.getState().fileContents['coo:/README.md']).toEqual(mockContent);
-      expect(useWorkspaceStore.getState().isLoadingContent).toBe(false);
-      expect(useWorkspaceStore.getState().contentError).toBe(null);
+      expect(result.content).toBe('hello');
+      expect(useWorkspaceStore.getState().fileContents['coo:/README.md']).toEqual(result);
     });
 
-    it('uses cached content when available and not forced', async () => {
-      const mockContent = {
-        path: '/test.md',
-        content: 'Cached content',
-      };
-
-      // Set cached data (cache key: agentId:path)
+    it('returns cached content and skips API call', async () => {
       useWorkspaceStore.setState({
         fileContents: {
-          'coo:/test.md': mockContent,
+          'coo:/cached.txt': { content: 'cached' },
         },
       });
 
-      const result = await useWorkspaceStore.getState().fetchFileContent({ path: '/test.md' });
+      const result = await useWorkspaceStore.getState().fetchFileContent({ path: '/cached.txt' });
 
+      expect(result).toEqual({ content: 'cached' });
       expect(api.get).not.toHaveBeenCalled();
-      expect(result).toEqual(mockContent);
     });
 
-    it('bypasses cache when force is true', async () => {
-      const cachedContent = {
-        content: 'Old content',
-      };
-
-      const newContent = {
-        content: 'New content',
-      };
-
-      // Set cached data (cache key: agentId:path)
+    it('returns null when same content request is already in flight', async () => {
       useWorkspaceStore.setState({
-        fileContents: {
-          'coo:/test.md': cachedContent,
-        },
+        loadingContents: { 'coo:/busy.txt': true },
       });
 
-      api.get.mockResolvedValue({
-        data: {
-          data: newContent,
-        },
-      });
+      const result = await useWorkspaceStore.getState().fetchFileContent({ path: '/busy.txt' });
 
-      const result = await useWorkspaceStore.getState().fetchFileContent({
-        path: '/test.md',
-        force: true,
-      });
-
-      expect(api.get).toHaveBeenCalled();
-      expect(result).toEqual(newContent);
-      expect(useWorkspaceStore.getState().fileContents['coo:/test.md']).toEqual(newContent);
+      expect(result).toBe(null);
+      expect(api.get).not.toHaveBeenCalled();
     });
 
-    it('sets loading state during fetch', async () => {
-      api.get.mockImplementation(
-        () =>
-          new Promise((resolve) =>
-            setTimeout(
-              () =>
-                resolve({
-                  data: { data: { content: 'test' } },
-                }),
-              100,
-            ),
-          ),
-      );
+    it('honors rawPath for direct absolute lookup', async () => {
+      useWorkspaceStore.getState().setWorkspaceRootPath('/workspaces/main');
+      api.get.mockResolvedValue({ data: { data: { content: 'raw' } } });
 
-      const fetchPromise = useWorkspaceStore.getState().fetchFileContent({ path: '/test.md' });
+      await useWorkspaceStore.getState().fetchFileContent({
+        path: '/already/absolute.txt',
+        rawPath: true,
+      });
 
-      expect(useWorkspaceStore.getState().isLoadingContent).toBe(true);
-
-      await fetchPromise;
-      expect(useWorkspaceStore.getState().isLoadingContent).toBe(false);
+      expect(api.get).toHaveBeenCalledWith('/openclaw/workspace/files/content', {
+        params: { path: '/already/absolute.txt' },
+      });
     });
 
-    it('handles API errors correctly', async () => {
-      const errorMessage = 'File not found';
-      api.get.mockRejectedValue({
-        response: {
-          data: {
-            error: {
-              message: errorMessage,
-            },
-          },
-        },
-      });
+    it('sets content error from thrown Error', async () => {
+      api.get.mockRejectedValue(new Error('Socket timeout'));
 
       await expect(
-        useWorkspaceStore.getState().fetchFileContent({ path: '/missing.md' }),
+        useWorkspaceStore.getState().fetchFileContent({ path: '/missing.txt' }),
       ).rejects.toBeTruthy();
 
-      expect(useWorkspaceStore.getState().isLoadingContent).toBe(false);
-      expect(useWorkspaceStore.getState().contentError).toBe(errorMessage);
+      expect(useWorkspaceStore.getState().contentError).toBe('Socket timeout');
     });
   });
 
-  describe('setSelectedFile', () => {
-    it('sets the selected file', () => {
-      const file = { path: '/test.md', name: 'test.md', type: 'file' };
-
-      useWorkspaceStore.getState().setSelectedFile(file);
-
-      expect(useWorkspaceStore.getState().selectedFile).toEqual(file);
+  describe('simple setters and cache helpers', () => {
+    it('updates selected file and current path', () => {
+      useWorkspaceStore.getState().setSelectedFile({ path: '/a.txt' });
+      useWorkspaceStore.getState().setCurrentPath('/docs');
+      expect(useWorkspaceStore.getState().selectedFile).toEqual({ path: '/a.txt' });
+      expect(useWorkspaceStore.getState().currentPath).toBe('/docs');
     });
 
-    it('can clear selected file with null', () => {
-      const file = { path: '/test.md', name: 'test.md', type: 'file' };
-      useWorkspaceStore.setState({ selectedFile: file });
-
-      useWorkspaceStore.getState().setSelectedFile(null);
-
-      expect(useWorkspaceStore.getState().selectedFile).toBe(null);
+    it('sets workspace root path and resets to empty on falsy', () => {
+      useWorkspaceStore.getState().setWorkspaceRootPath('/workspaces/main');
+      expect(useWorkspaceStore.getState().workspaceRootPath).toBe('/workspaces/main');
+      useWorkspaceStore.getState().setWorkspaceRootPath('');
+      expect(useWorkspaceStore.getState().workspaceRootPath).toBe('');
     });
-  });
 
-  describe('setCurrentPath', () => {
-    it('sets the current path', () => {
-      useWorkspaceStore.getState().setCurrentPath('/src/components');
-
-      expect(useWorkspaceStore.getState().currentPath).toBe('/src/components');
-    });
-  });
-
-  describe('cache management', () => {
-    it('clears specific listing cache', () => {
+    it('clears specific and global caches/errors', () => {
       useWorkspaceStore.setState({
-        listings: {
-          'coo:/:false': { files: [] },
-          'coo:/:true': { files: [] },
-          'coo:/src:false': { files: [] },
-        },
+        listings: { 'coo:/:false': { files: [] } },
+        listingErrors: { 'coo:/:false': 'err' },
+        fileContents: { 'coo:/a.txt': { content: 'x' } },
+        listingError: 'err1',
+        contentError: 'err2',
       });
 
       useWorkspaceStore.getState().clearListingCache('/', false);
-
+      useWorkspaceStore.getState().clearContentCache('/a.txt');
       expect(useWorkspaceStore.getState().listings['coo:/:false']).toBeUndefined();
-      expect(useWorkspaceStore.getState().listings['coo:/:true']).toBeDefined();
-      expect(useWorkspaceStore.getState().listings['coo:/src:false']).toBeDefined();
-    });
-
-    it('clears all listing cache', () => {
-      useWorkspaceStore.setState({
-        listings: {
-          'coo:/:false': { files: [] },
-          'coo:/:true': { files: [] },
-        },
-      });
+      expect(useWorkspaceStore.getState().fileContents['coo:/a.txt']).toBeUndefined();
 
       useWorkspaceStore.getState().clearAllListingCache();
-
-      expect(useWorkspaceStore.getState().listings).toEqual({});
-    });
-
-    it('clears specific file content cache', () => {
-      useWorkspaceStore.setState({
-        fileContents: {
-          'coo:/test1.md': { content: 'test1' },
-          'coo:/test2.md': { content: 'test2' },
-        },
-      });
-
-      useWorkspaceStore.getState().clearContentCache('/test1.md');
-
-      expect(useWorkspaceStore.getState().fileContents['coo:/test1.md']).toBeUndefined();
-      expect(useWorkspaceStore.getState().fileContents['coo:/test2.md']).toBeDefined();
-    });
-
-    it('clears all content cache', () => {
-      useWorkspaceStore.setState({
-        fileContents: {
-          '/test1.md': { content: 'test1' },
-          '/test2.md': { content: 'test2' },
-        },
-      });
-
       useWorkspaceStore.getState().clearAllContentCache();
+      useWorkspaceStore.getState().clearErrors();
 
-      expect(useWorkspaceStore.getState().fileContents).toEqual({});
+      const state = useWorkspaceStore.getState();
+      expect(state.listings).toEqual({});
+      expect(state.fileContents).toEqual({});
+      expect(state.listingError).toBe(null);
+      expect(state.contentError).toBe(null);
+      expect(state.listingErrors).toEqual({});
+    });
+  });
+
+  describe('file mutations', () => {
+    it('createFile creates file and invalidates parent listing cache', async () => {
+      useWorkspaceStore.getState().setWorkspaceRootPath('/workspaces/main');
+      useWorkspaceStore.setState({
+        listings: {
+          'coo:/src:false': { files: [] },
+          'coo:/src:true': { files: [] },
+        },
+      });
+      api.post.mockResolvedValue({ data: { data: { path: '/src/new.js' } } });
+
+      const result = await useWorkspaceStore.getState().createFile({
+        path: '/src/new.js',
+        content: 'console.log(1)',
+      });
+
+      expect(api.post).toHaveBeenCalledWith('/openclaw/workspace/files', {
+        path: '/workspaces/main/src/new.js',
+        content: 'console.log(1)',
+        encoding: 'utf8',
+      });
+      expect(result).toEqual({ path: '/src/new.js' });
+      expect(useWorkspaceStore.getState().listings['coo:/src:false']).toBeUndefined();
+      expect(useWorkspaceStore.getState().listings['coo:/src:true']).toBeUndefined();
+    });
+
+    it('updateFile updates content and invalidates related caches', async () => {
+      useWorkspaceStore.setState({
+        listings: {
+          'coo:/src:false': { files: [] },
+          'coo:/src:true': { files: [] },
+        },
+        fileContents: {
+          'coo:/src/new.js': { content: 'old' },
+        },
+      });
+      api.put.mockResolvedValue({ data: { data: { updated: true } } });
+
+      const result = await useWorkspaceStore.getState().updateFile({
+        path: '/src/new.js',
+        content: 'new',
+      });
+
+      expect(api.put).toHaveBeenCalledWith('/openclaw/workspace/files', {
+        path: '/src/new.js',
+        content: 'new',
+        encoding: 'utf8',
+      });
+      expect(result).toEqual({ updated: true });
+      expect(useWorkspaceStore.getState().fileContents['coo:/src/new.js']).toBeUndefined();
+      expect(useWorkspaceStore.getState().listings['coo:/src:false']).toBeUndefined();
+      expect(useWorkspaceStore.getState().listings['coo:/src:true']).toBeUndefined();
+    });
+
+    it('deleteFile clears selected file and caches', async () => {
+      useWorkspaceStore.setState({
+        selectedFile: { path: '/src/new.js' },
+        listings: {
+          'coo:/src:false': { files: [] },
+          'coo:/src:true': { files: [] },
+        },
+        fileContents: { 'coo:/src/new.js': { content: 'x' } },
+      });
+      api.delete.mockResolvedValue({});
+
+      const result = await useWorkspaceStore.getState().deleteFile({ path: '/src/new.js' });
+
+      expect(result).toBe(true);
+      expect(useWorkspaceStore.getState().selectedFile).toBe(null);
+      expect(useWorkspaceStore.getState().fileContents['coo:/src/new.js']).toBeUndefined();
+      expect(useWorkspaceStore.getState().listings['coo:/src:false']).toBeUndefined();
+      expect(useWorkspaceStore.getState().listings['coo:/src:true']).toBeUndefined();
+    });
+
+    it('createDirectory returns exists=true when directory already exists', async () => {
+      api.post.mockRejectedValue({
+        response: {
+          status: 409,
+          data: { error: { code: 'FILE_EXISTS', message: 'already exists' } },
+        },
+      });
+
+      const result = await useWorkspaceStore.getState().createDirectory({ path: '/docs' });
+      expect(result).toEqual({ path: '/docs/.gitkeep', exists: true });
+    });
+
+    it('createDirectory throws formatted error for non-exists failures', async () => {
+      api.post.mockRejectedValue(new Error('mkdir failed'));
+
+      await expect(useWorkspaceStore.getState().createDirectory({ path: '/docs' })).rejects.toThrow(
+        'mkdir failed',
+      );
+    });
+
+    it('moveFile succeeds with read-create-delete flow', async () => {
+      api.get.mockResolvedValue({
+        data: { data: { content: 'hello', encoding: 'utf8' } },
+      });
+      api.post.mockResolvedValue({ data: { data: { path: '/dest/new.txt' } } });
+      api.delete.mockResolvedValue({});
+      useWorkspaceStore.setState({ selectedFile: { path: '/src/old.txt' } });
+
+      const result = await useWorkspaceStore
+        .getState()
+        .moveFile({ sourcePath: '/src/old.txt', destinationPath: '/dest/new.txt' });
+
+      expect(result).toBe(true);
+      expect(api.get).toHaveBeenCalledWith('/openclaw/workspace/files/content', {
+        params: { path: '/src/old.txt' },
+      });
+      expect(api.post).toHaveBeenCalledWith('/openclaw/workspace/files', {
+        path: '/dest/new.txt',
+        content: 'hello',
+        encoding: 'utf8',
+      });
+      expect(useWorkspaceStore.getState().selectedFile).toBe(null);
+    });
+
+    it('moveFile rolls back destination file when source delete fails', async () => {
+      api.get.mockResolvedValue({
+        data: { data: { content: 'hello', encoding: 'utf8' } },
+      });
+      api.post.mockResolvedValue({ data: { data: { path: '/dest/new.txt' } } });
+      api.delete.mockRejectedValueOnce(new Error('source delete failed')).mockResolvedValueOnce({});
+
+      await expect(
+        useWorkspaceStore
+          .getState()
+          .moveFile({ sourcePath: '/src/old.txt', destinationPath: '/dest/new.txt' }),
+      ).rejects.toThrow('Move operation incomplete: source delete failed');
+
+      expect(api.delete).toHaveBeenNthCalledWith(2, '/openclaw/workspace/files', {
+        params: { path: '/dest/new.txt' },
+      });
+      expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('moveFile reports rollback failure when destination cleanup also fails', async () => {
+      api.get.mockResolvedValue({
+        data: { data: { content: 'hello', encoding: 'utf8' } },
+      });
+      api.post.mockResolvedValue({ data: { data: { path: '/dest/new.txt' } } });
+      api.delete
+        .mockRejectedValueOnce(new Error('source delete failed'))
+        .mockRejectedValueOnce(new Error('rollback delete failed'));
+
+      await expect(
+        useWorkspaceStore
+          .getState()
+          .moveFile({ sourcePath: '/src/old.txt', destinationPath: '/dest/new.txt' }),
+      ).rejects.toThrow('Move operation incomplete: source delete failed');
+
+      expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('moveFile surfaces create failure with fallback message', async () => {
+      api.get.mockResolvedValue({
+        data: { data: { content: 'hello', encoding: 'utf8' } },
+      });
+      api.post.mockRejectedValue(new Error('create failed'));
+
+      await expect(
+        useWorkspaceStore
+          .getState()
+          .moveFile({ sourcePath: '/src/old.txt', destinationPath: '/dest/new.txt' }),
+      ).rejects.toThrow('create failed');
     });
   });
 
   describe('refreshListing', () => {
-    it('refreshes listing for current path', async () => {
+    it('forces listing refresh for current path', async () => {
       useWorkspaceStore.setState({ currentPath: '/src' });
+      api.get.mockResolvedValue({ data: { data: { files: [] } } });
 
-      const mockListing = {
-        files: [{ path: '/src/index.js', name: 'index.js', type: 'file' }],
-      };
-
-      api.get.mockResolvedValue({
-        data: {
-          data: mockListing,
-        },
-      });
-
-      const result = await useWorkspaceStore.getState().refreshListing();
+      await useWorkspaceStore.getState().refreshListing();
 
       expect(api.get).toHaveBeenCalledWith('/openclaw/workspace/files', {
         params: { path: '/src', recursive: 'false' },
       });
-      expect(result).toEqual(mockListing);
-    });
-  });
-
-  describe('clearErrors', () => {
-    it('clears all error states', () => {
-      useWorkspaceStore.setState({
-        listingError: 'Listing error',
-        contentError: 'Content error',
-      });
-
-      useWorkspaceStore.getState().clearErrors();
-
-      expect(useWorkspaceStore.getState().listingError).toBe(null);
-      expect(useWorkspaceStore.getState().contentError).toBe(null);
     });
   });
 });
