@@ -55,12 +55,14 @@ describe('OpenClaw Workspace Access Control', () => {
     originalFetch = global.fetch;
     mockOpenClawUrl = 'http://mock-openclaw:8080';
     process.env.OPENCLAW_WORKSPACE_URL = mockOpenClawUrl;
+    process.env.OPENCLAW_PATH_REMAP_PREFIXES = '/home/node/.openclaw';
   });
 
   afterAll(() => {
     // Restore original fetch
     global.fetch = originalFetch;
     delete process.env.OPENCLAW_WORKSPACE_URL;
+    delete process.env.OPENCLAW_PATH_REMAP_PREFIXES;
   });
 
   beforeEach(() => {
@@ -135,6 +137,34 @@ describe('OpenClaw Workspace Access Control', () => {
 
       expect(response.status).toBe(401);
       expect(response.body.error.message).toBe('Invalid or expired token');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('should remap host-absolute OpenClaw paths before forwarding', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/workspace/files')
+        .set('Authorization', `Bearer ${token}`)
+        .query({ path: '/home/node/.openclaw/workspace/test.txt', recursive: 'false' });
+
+      expect(response.status).toBe(200);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/files?path=%2Fworkspace%2Ftest.txt&recursive=false'),
+        expect.any(Object),
+      );
+    });
+
+    it('should reject non-remapped absolute paths outside allowlist', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/workspace/files')
+        .set('Authorization', `Bearer ${token}`)
+        .query({ path: '/tmp/not-allowed', recursive: 'false' });
+
+      expect(response.status).toBe(403);
+      expect(response.body.error.code).toBe('PATH_NOT_ALLOWED');
       expect(global.fetch).not.toHaveBeenCalled();
     });
   });
@@ -633,6 +663,30 @@ describe('OpenClaw Workspace Access Control', () => {
       expect(response.status).toBe(401);
       expect(response.body.error.message).toBe('Authorization required');
       expect(global.fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /api/v1/openclaw/agents fallback', () => {
+    it('returns COO + archived fallback when config is unreadable', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () => 'Internal Server Error',
+      });
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/agents')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(Array.isArray(response.body.data)).toBe(true);
+      expect(response.body.data).toHaveLength(2);
+      expect(response.body.data[0].id).toBe('coo');
+      expect(response.body.data[0].workspace).toBe('/workspace');
+      expect(response.body.data[1].id).toBe('archived');
+      expect(response.body.data[1].workspace).toBe('/home/node/.openclaw/_archived_workspace_main');
     });
   });
 });
