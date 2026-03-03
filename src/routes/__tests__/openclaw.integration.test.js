@@ -73,7 +73,7 @@ describe('OpenClaw Workspace Access Control', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        files: [{ name: 'test.txt', path: '/workspace/test.txt', type: 'file', size: 100 }],
+        files: [{ name: 'test.txt', path: '/workspace-main/test.txt', type: 'file', size: 100 }],
       }),
       text: async () => 'OK',
     });
@@ -148,11 +148,14 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .get('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .query({ path: '/home/node/.openclaw/workspace/workspace/test.txt', recursive: 'false' });
+        .query({
+          path: '/home/node/.openclaw/workspace/workspace-main/test.txt',
+          recursive: 'false',
+        });
 
       expect(response.status).toBe(200);
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/files?path=%2Fworkspace%2Ftest.txt&recursive=false'),
+        expect.stringContaining('/files?path=%2Fworkspace-main%2Ftest.txt&recursive=false'),
         expect.any(Object),
       );
     });
@@ -163,11 +166,11 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .get('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .query({ path: '~/.openclaw/workspace/workspace/foo', recursive: 'false' });
+        .query({ path: '~/.openclaw/workspace/workspace-main/foo', recursive: 'false' });
 
       expect(response.status).toBe(200);
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/files?path=%2Fworkspace%2Ffoo&recursive=false'),
+        expect.stringContaining('/files?path=%2Fworkspace-main%2Ffoo&recursive=false'),
         expect.any(Object),
       );
     });
@@ -237,6 +240,19 @@ describe('OpenClaw Workspace Access Control', () => {
       expect(response.body.error.code).toBe('PATH_NOT_ALLOWED');
       expect(global.fetch).not.toHaveBeenCalled();
     });
+
+    it('should reject legacy /workspace path alias', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/workspace/files')
+        .set('Authorization', `Bearer ${token}`)
+        .query({ path: '/workspace', recursive: 'false' });
+
+      expect(response.status).toBe(403);
+      expect(response.body.error.code).toBe('PATH_NOT_ALLOWED');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
   });
 
   describe('GET /api/v1/openclaw/workspace/files/content', () => {
@@ -261,7 +277,7 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .get('/api/v1/openclaw/workspace/files/content')
         .set('Authorization', `Bearer ${token}`)
-        .query({ path: '/workspace/test.txt' });
+        .query({ path: '/workspace-main/test.txt' });
 
       expect(response.status).toBe(200);
       expect(response.body.data).toBeDefined();
@@ -278,7 +294,7 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .get('/api/v1/openclaw/workspace/files/content')
         .set('Authorization', `Bearer ${token}`)
-        .query({ path: '/workspace/test.txt' });
+        .query({ path: '/workspace-main/test.txt' });
 
       expect(response.status).toBe(200);
       expect(response.body.data).toBeDefined();
@@ -305,7 +321,7 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .get('/api/v1/openclaw/workspace/files/content')
         .set('Authorization', `Bearer ${token}`)
-        .query({ path: '/workspace/test.txt' });
+        .query({ path: '/workspace-main/test.txt' });
 
       expect(response.status).toBe(403);
       expect(response.body.error.message).toBe('Admin access required');
@@ -315,7 +331,7 @@ describe('OpenClaw Workspace Access Control', () => {
     it('should deny unauthenticated access (401)', async () => {
       const response = await request(app)
         .get('/api/v1/openclaw/workspace/files/content')
-        .query({ path: '/workspace/test.txt' });
+        .query({ path: '/workspace-main/test.txt' });
 
       expect(response.status).toBe(401);
       expect(response.body.error.message).toBe('Authorization required');
@@ -356,7 +372,7 @@ describe('OpenClaw Workspace Access Control', () => {
             ok: true,
             status: 201,
             json: async () => ({
-              path: '/workspace/new-file.txt',
+              path: '/workspace-main/new-file.txt',
               created: true,
             }),
             text: async () => 'Created',
@@ -367,7 +383,7 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .post('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .send({ path: '/workspace/new-file.txt', content: 'Hello', encoding: 'utf8' });
+        .send({ path: '/workspace-main/new-file.txt', content: 'Hello', encoding: 'utf8' });
 
       expect(response.status).toBe(201);
       expect(response.body.data).toBeDefined();
@@ -394,7 +410,7 @@ describe('OpenClaw Workspace Access Control', () => {
             ok: true,
             status: 201,
             json: async () => ({
-              path: '/workspace/new-file.txt',
+              path: '/workspace-main/new-file.txt',
               created: true,
             }),
             text: async () => 'Created',
@@ -405,7 +421,7 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .post('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .send({ path: '/workspace/new-file.txt', content: 'Hello', encoding: 'utf8' });
+        .send({ path: '/workspace-main/new-file.txt', content: 'Hello', encoding: 'utf8' });
 
       expect(response.status).toBe(201);
       expect(response.body.data).toBeDefined();
@@ -417,7 +433,7 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .post('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .send({ path: '/workspace/new-file.txt', content: 'Hello', encoding: 'utf8' });
+        .send({ path: '/workspace-main/new-file.txt', content: 'Hello', encoding: 'utf8' });
 
       expect(response.status).toBe(403);
       expect(response.body.error.message).toBe('Admin access required');
@@ -445,7 +461,7 @@ describe('OpenClaw Workspace Access Control', () => {
               ok: true,
               status: 201,
               json: async () => ({
-                path: '/workspace/new-file.txt',
+                path: '/workspace-main/new-file.txt',
                 created: true,
               }),
               text: async () => 'Created',
@@ -456,7 +472,7 @@ describe('OpenClaw Workspace Access Control', () => {
         const response = await request(app)
           .post('/api/v1/openclaw/workspace/files')
           .set('Authorization', `Bearer ${token}`)
-          .send({ path: '/workspace/new-file.txt', content: 'Hello', encoding: 'utf8' });
+          .send({ path: '/workspace-main/new-file.txt', content: 'Hello', encoding: 'utf8' });
 
         expect(response.status).toBe(201);
         expect(response.body.data).toBeDefined();
@@ -492,7 +508,11 @@ describe('OpenClaw Workspace Access Control', () => {
         const response = await request(app)
           .post('/api/v1/openclaw/workspace/files')
           .set('Authorization', `Bearer ${token}`)
-          .send({ path: '/workspace/existing-file.txt', content: 'New content', encoding: 'utf8' });
+          .send({
+            path: '/workspace-main/existing-file.txt',
+            content: 'New content',
+            encoding: 'utf8',
+          });
 
         expect(response.status).toBe(409);
         expect(response.body.error).toBeDefined();
@@ -622,7 +642,7 @@ describe('OpenClaw Workspace Access Control', () => {
         ok: true,
         status: 200,
         json: async () => ({
-          path: '/workspace/test.txt',
+          path: '/workspace-main/test.txt',
           updated: true,
         }),
         text: async () => 'OK',
@@ -635,7 +655,7 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .put('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .send({ path: '/workspace/test.txt', content: 'Updated', encoding: 'utf8' });
+        .send({ path: '/workspace-main/test.txt', content: 'Updated', encoding: 'utf8' });
 
       expect(response.status).toBe(200);
       expect(response.body.data).toBeDefined();
@@ -648,7 +668,7 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .put('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .send({ path: '/workspace/test.txt', content: 'Updated', encoding: 'utf8' });
+        .send({ path: '/workspace-main/test.txt', content: 'Updated', encoding: 'utf8' });
 
       expect(response.status).toBe(200);
       expect(response.body.data).toBeDefined();
@@ -660,7 +680,7 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .put('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .send({ path: '/workspace/test.txt', content: 'Updated', encoding: 'utf8' });
+        .send({ path: '/workspace-main/test.txt', content: 'Updated', encoding: 'utf8' });
 
       expect(response.status).toBe(403);
       expect(response.body.error.message).toBe('Admin access required');
@@ -685,7 +705,7 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .delete('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .query({ path: '/workspace/test.txt' });
+        .query({ path: '/workspace-main/test.txt' });
 
       expect(response.status).toBe(204);
       expect(global.fetch).toHaveBeenCalled();
@@ -697,7 +717,7 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .delete('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .query({ path: '/workspace/test.txt' });
+        .query({ path: '/workspace-main/test.txt' });
 
       expect(response.status).toBe(204);
     });
@@ -708,7 +728,7 @@ describe('OpenClaw Workspace Access Control', () => {
       const response = await request(app)
         .delete('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .query({ path: '/workspace/test.txt' });
+        .query({ path: '/workspace-main/test.txt' });
 
       expect(response.status).toBe(403);
       expect(response.body.error.message).toBe('Admin access required');
@@ -825,7 +845,7 @@ describe('OpenClaw Workspace Access Control', () => {
       expect(Array.isArray(response.body.data)).toBe(true);
       expect(response.body.data).toHaveLength(2);
       expect(response.body.data[0].id).toBe('coo');
-      expect(response.body.data[0].workspace).toBe('/workspace');
+      expect(response.body.data[0].workspace).toBe('/');
       expect(response.body.data[1].id).toBe('archived');
       expect(response.body.data[1].workspace).toBe('/_archived_workspace_main');
     });

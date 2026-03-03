@@ -157,8 +157,7 @@ function isAllowedWorkspacePath(workspacePath) {
   )
     return true;
 
-  // Allow agent workspaces
-  if (workspacePath.startsWith('/workspace/') || workspacePath === '/workspace') return true;
+  // Allow agent workspaces (canonical main workspace is "/"; no "/workspace" alias)
   if (workspacePath.startsWith('/workspace-') || /^\/workspace-[a-z]+(\/|$)/.test(workspacePath))
     return true;
 
@@ -598,7 +597,7 @@ router.get('/agents', requireAuth, async (req, res, next) => {
                 title: null,
                 description: 'Operations and workflow management',
                 icon: '📊',
-                workspace: '/workspace',
+                workspace: '/',
                 isDefault: true,
               },
             ];
@@ -646,7 +645,7 @@ router.get('/agents', requireAuth, async (req, res, next) => {
             label: 'Chief Operating Officer',
             description: 'Operations and workflow management',
             icon: '📊',
-            workspace: '/workspace',
+            workspace: '/',
             isDefault: true,
           },
           {
