@@ -65,7 +65,7 @@ const config = {
       return process.env.OPENCLAW_WORKSPACE_TOKEN || null;
     },
     get pathRemapPrefixes() {
-      return process.env.OPENCLAW_PATH_REMAP_PREFIXES || '/home/node/.openclaw';
+      return process.env.OPENCLAW_PATH_REMAP_PREFIXES || '/home/node/.openclaw,~/.openclaw';
     },
     subagentRetentionDays: parseInt(process.env.SUBAGENT_RETENTION_DAYS || '30', 10),
     activityLogRetentionDays: parseInt(process.env.ACTIVITY_LOG_RETENTION_DAYS || '7', 10),

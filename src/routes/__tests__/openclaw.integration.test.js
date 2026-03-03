@@ -55,7 +55,7 @@ describe('OpenClaw Workspace Access Control', () => {
     originalFetch = global.fetch;
     mockOpenClawUrl = 'http://mock-openclaw:8080';
     process.env.OPENCLAW_WORKSPACE_URL = mockOpenClawUrl;
-    process.env.OPENCLAW_PATH_REMAP_PREFIXES = '/home/node/.openclaw';
+    process.env.OPENCLAW_PATH_REMAP_PREFIXES = '/home/node/.openclaw,~/.openclaw';
   });
 
   afterAll(() => {
@@ -155,6 +155,21 @@ describe('OpenClaw Workspace Access Control', () => {
       );
     });
 
+    it('should remap tilde OpenClaw paths before forwarding', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/workspace/files')
+        .set('Authorization', `Bearer ${token}`)
+        .query({ path: '~/.openclaw/workspace/foo', recursive: 'false' });
+
+      expect(response.status).toBe(200);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/files?path=%2Fworkspace%2Ffoo&recursive=false'),
+        expect.any(Object),
+      );
+    });
+
     it('should reject non-remapped absolute paths outside allowlist', async () => {
       const token = getToken('admin-id', 'admin');
 
@@ -212,6 +227,21 @@ describe('OpenClaw Workspace Access Control', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.data).toBeDefined();
+    });
+
+    it('should remap tilde config paths to /openclaw.json', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/workspace/files/content')
+        .set('Authorization', `Bearer ${token}`)
+        .query({ path: '~/.openclaw/openclaw.json' });
+
+      expect(response.status).toBe(200);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/files/content?path=%2Fopenclaw.json'),
+        expect.any(Object),
+      );
     });
 
     it('should deny regular user access to read file content (403)', async () => {
@@ -663,6 +693,62 @@ describe('OpenClaw Workspace Access Control', () => {
       expect(response.status).toBe(401);
       expect(response.body.error.message).toBe('Authorization required');
       expect(global.fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /api/v1/openclaw/agents mapping', () => {
+    it('maps missing workspace for default/main agents to root and others to /workspace-<id>', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: JSON.stringify({
+            agents: {
+              list: [
+                {
+                  id: 'main',
+                  name: 'main',
+                  default: false,
+                },
+                {
+                  id: 'coo',
+                  name: 'coo',
+                  default: true,
+                },
+                {
+                  id: 'helper',
+                  name: 'helper',
+                },
+                {
+                  id: 'clawboard-worker',
+                  name: 'Clawboard Worker',
+                  workspace: '~/.openclaw/workspace-clawboard-worker',
+                },
+              ],
+            },
+          }),
+        }),
+        text: async () => 'OK',
+      });
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/agents')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(Array.isArray(response.body.data)).toBe(true);
+
+      const mainAgent = response.body.data.find((a) => a.id === 'main');
+      const defaultAgent = response.body.data.find((a) => a.id === 'coo');
+      const helperAgent = response.body.data.find((a) => a.id === 'helper');
+      const explicitWorkspaceAgent = response.body.data.find((a) => a.id === 'clawboard-worker');
+
+      expect(mainAgent.workspace).toBe('/');
+      expect(defaultAgent.workspace).toBe('/');
+      expect(helperAgent.workspace).toBe('/workspace-helper');
+      expect(explicitWorkspaceAgent.workspace).toBe('~/.openclaw/workspace-clawboard-worker');
     });
   });
 

@@ -75,7 +75,7 @@ If you have an OpenClaw instance, add the integration variables to `.env`:
 ```bash
 OPENCLAW_WORKSPACE_URL=http://localhost:8080
 OPENCLAW_WORKSPACE_TOKEN=your-workspace-token
-OPENCLAW_PATH_REMAP_PREFIXES=/home/node/.openclaw
+OPENCLAW_PATH_REMAP_PREFIXES=/home/node/.openclaw,~/.openclaw
 OPENCLAW_GATEWAY_URL=http://localhost:18789
 OPENCLAW_GATEWAY_TOKEN=your-gateway-token
 ```

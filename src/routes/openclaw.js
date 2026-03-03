@@ -93,6 +93,19 @@ function normalizeRemapAndValidateWorkspacePath(inputPath) {
   return remapWorkspacePathPrefixes(normalizedPath);
 }
 
+function resolveAgentWorkspacePath(agent) {
+  if (typeof agent?.workspace === 'string' && agent.workspace.trim()) {
+    return agent.workspace;
+  }
+
+  if (agent?.default === true || agent?.id === 'main') {
+    return '/';
+  }
+
+  const agentId = typeof agent?.id === 'string' && agent.id.trim() ? agent.id.trim() : 'agent';
+  return `/workspace-${agentId}`;
+}
+
 /**
  * Validate that a workspace path is allowed for access
  * @param {string} workspacePath - Normalized workspace path
@@ -551,7 +564,7 @@ router.get('/agents', requireAuth, async (req, res, next) => {
               title: agent.identity?.title || null,
               description: agent.identity?.theme || `${agent.identity?.name || agent.id} workspace`,
               icon: agent.identity?.emoji || '🤖',
-              workspace: agent.workspace,
+              workspace: resolveAgentWorkspacePath(agent),
               isDefault: agent.default === true,
             }))
           : [

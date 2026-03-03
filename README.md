@@ -132,7 +132,7 @@ To use agent management, workspace browsing, and org chart features, MosBot API 
 
 Add to `.env`: `OPENCLAW_WORKSPACE_URL`, `OPENCLAW_WORKSPACE_TOKEN`, `OPENCLAW_GATEWAY_URL`,
 `OPENCLAW_GATEWAY_TOKEN`, and optionally `OPENCLAW_PATH_REMAP_PREFIXES` (default:
-`/home/node/.openclaw`) when your agent workspaces are reported as host-absolute paths. See
+`/home/node/.openclaw,~/.openclaw`) when your agent workspaces are reported as host-absolute paths. See
 [docs/openclaw/README.md](docs/openclaw/README.md) and
 [docs/guides/openclaw-local-development.md](docs/guides/openclaw-local-development.md) for details.
 
