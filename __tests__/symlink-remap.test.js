@@ -48,6 +48,12 @@ describe("Symlink remapping", () => {
       expect(ctx.resolvedPath).toBe(path.join(configRoot, "openclaw.json"));
     });
 
+    it("maps /workspace/* to workspace-relative path", () => {
+      expect(app._getMainWorkspaceAliasPath("/workspace/real/file.txt")).toBe(
+        "/real/file.txt",
+      );
+    });
+
     it("routes workspace paths to workspace root", () => {
       const ctx = app._resolvePathContext("/real/file.txt");
       expect(ctx.rootPath).toBe(wsRoot);

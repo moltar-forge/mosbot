@@ -79,7 +79,7 @@ function createApp(opts) {
     }
 
     if (normalizedPath.startsWith("/workspace/")) {
-      return normalizedPath.substring("/workspace".length) || "/";
+      return normalizedPath.substring("/workspace".length);
     }
 
     return null;

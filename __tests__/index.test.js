@@ -115,10 +115,15 @@ describe("src/index.js — direct require (coverage)", () => {
     );
   });
 
-  it("calls process.exit(1) when MAIN_WORKSPACE_DIR is invalid", () => {
+  it.each([
+    { value: " ", label: "blank" },
+    { value: ".", label: "dot" },
+    { value: "..", label: "dotdot" },
+    { value: "../workspace", label: "path" },
+  ])("calls process.exit(1) when MAIN_WORKSPACE_DIR is invalid (%s)", ({ value }) => {
     process.env.WORKSPACE_SERVICE_TOKEN = "test-token";
     process.env.CONFIG_ROOT = "/tmp/config";
-    process.env.MAIN_WORKSPACE_DIR = "../workspace";
+    process.env.MAIN_WORKSPACE_DIR = value;
 
     expect(() => require("../src/index")).toThrow("process.exit called");
     expect(exitMock).toHaveBeenCalledWith(1);
