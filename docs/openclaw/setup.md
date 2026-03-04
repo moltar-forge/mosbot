@@ -33,14 +33,14 @@ next to your OpenClaw instance, sharing the same workspace directory or volume.
 ### Option A: Docker (local)
 
 Add the MosBot workspace service to the same Docker Compose file as OpenClaw. It must share the same
-workspace volume:
+OpenClaw home directory volume:
 
 ```yaml
 services:
   openclaw:
     image: openclaw/openclaw:latest
     volumes:
-      - openclaw-workspace:/home/user/.openclaw/workspace
+      - ~/.openclaw:/home/node/.openclaw
     ports:
       - '18789:18789'
 
@@ -48,15 +48,25 @@ services:
     image: ghcr.io/bymosbot/mosbot-workspace-service:latest
     environment:
       WORKSPACE_SERVICE_TOKEN: your-secure-token
-      WORKSPACE_ROOT: /workspace
+      CONFIG_ROOT: /openclaw-config
+      MAIN_WORKSPACE_DIR: workspace
     volumes:
-      - openclaw-workspace:/workspace:ro
+      - ~/.openclaw:/openclaw-config
     ports:
       - '8080:8080'
-
-volumes:
-  openclaw-workspace:
 ```
+
+:::info Path contract
+
+- `CONFIG_ROOT` is the single mounted OpenClaw root (typically `~/.openclaw`).
+- `MAIN_WORKSPACE_DIR` selects the main workspace subdirectory inside that root (default:
+  `workspace`).
+- Main workspace virtual path is `/workspace`.
+- Sub-agent workspaces resolve from `/workspace-<agent>` to `~/.openclaw/workspace-<agent>`.
+- Shared dirs `/projects`, `/skills`, `/docs` resolve to `~/.openclaw/{projects,skills,docs}`.
+- Use a read-write mount for normal MosBot usage (Projects/Skills/Docs and config edits).
+
+:::
 
 Once running, the services are available at:
 
@@ -71,18 +81,25 @@ See [Kubernetes Deployment](./kubernetes) for the full guide with manifests.
 
 ### Option C: VPS / remote server
 
-Run the workspace service container on the same server as OpenClaw, mounting the same workspace
+Run the workspace service container on the same server as OpenClaw, mounting the same workspace home
 directory:
 
 ```bash
 docker run -d \
   --name mosbot-workspace \
   -e WORKSPACE_SERVICE_TOKEN=your-secure-token \
-  -e WORKSPACE_ROOT=/workspace \
-  -v /path/to/openclaw/workspace:/workspace:ro \
+  -e CONFIG_ROOT=/openclaw-config \
+  -e MAIN_WORKSPACE_DIR=workspace \
+  -v /path/to/openclaw/config:/openclaw-config \
   -p 8080:8080 \
   ghcr.io/bymosbot/mosbot-workspace-service:latest
 ```
+
+## Migration from old workspace env model
+
+- Old: `WORKSPACE_FS_ROOT` + `CONFIG_FS_ROOT`
+- New: `CONFIG_ROOT` + `MAIN_WORKSPACE_DIR`
+- Old variables are no longer honored.
 
 :::warning Security Note
 

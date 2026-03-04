@@ -17,6 +17,18 @@ next to your OpenClaw instance. The image supports both `linux/amd64` and `linux
 
 See [Setting Up OpenClaw](./setup) for Docker and Kubernetes deployment examples. :::
 
+## Recommended mount configuration
+
+For full MosBot functionality (agent discovery + Projects/Skills/Docs file edits), use:
+
+- `CONFIG_ROOT=/openclaw-config`
+- `MAIN_WORKSPACE_DIR=workspace`
+- A single read-write mount for OpenClaw root (for example `~/.openclaw:/openclaw-config`)
+
+`openclaw.json`, `org-chart.json`, shared folders (`projects`, `skills`, `docs`), and sub-agent
+workspaces (`workspace-<agent>`) are resolved from `CONFIG_ROOT`. Main workspace virtual path
+`/workspace` resolves to `CONFIG_ROOT/MAIN_WORKSPACE_DIR`.
+
 ## What the workspace service provides
 
 - **File access**: read, create, update, and delete files in agent workspaces
@@ -35,8 +47,9 @@ OpenClaw Workspace Service (port 8080)
     │
     │ Filesystem access
     ▼
-Workspace PVC / directory
-(workspace-coo/, workspace-cto/, skills/, shared/, etc.)
+Workspace PVC / directories
+(`CONFIG_ROOT`: openclaw.json, org-chart.json, projects/, skills/, docs/, workspace-<agent>/...
+ `CONFIG_ROOT/MAIN_WORKSPACE_DIR`: main workspace for virtual path `/workspace`)
 ```
 
 In Kubernetes, the workspace service runs as a sidecar container in the OpenClaw pod and shares the
@@ -74,21 +87,25 @@ internet:
 
 ## Workspace directory structure
 
-A typical OpenClaw workspace layout:
+A typical OpenClaw layout:
 
 ```text
-/                           ← workspace root
-├── workspace-coo/          ← agent workspace (COO agent)
+/openclaw-config            ← CONFIG_ROOT
+├── openclaw.json           ← OpenClaw configuration
+├── org-chart.json          ← Org chart configuration
+├── workspace               ← main workspace (MAIN_WORKSPACE_DIR, virtual path "/workspace")
+│   ├── memory/
+│   └── HEARTBEAT.md
+├── workspace-coo/          ← sub-agent workspace (virtual path "/workspace-coo")
 │   ├── memory/             ← agent memory files
 │   ├── skills/             ← agent-specific skills
 │   └── HEARTBEAT.md        ← heartbeat context file
-├── workspace-cto/          ← agent workspace (CTO agent)
+├── workspace-cto/          ← sub-agent workspace (virtual path "/workspace-cto")
 │   ├── memory/
 │   └── skills/
-├── skills/                 ← shared skills (available to all agents)
-├── docs/                   ← shared documentation
-├── projects/               ← shared project files
-└── openclaw.json           ← OpenClaw configuration
+├── projects/               ← shared project files (virtual path "/projects")
+├── skills/                 ← shared skills (virtual path "/skills")
+└── docs/                   ← shared docs (virtual path "/docs")
 ```
 
 ## API endpoints (via MosBot API)
@@ -99,10 +116,10 @@ MosBot API proxies workspace requests through its own authenticated endpoints:
 | ---------------------------------------- | ---------------------------------------- |
 | `GET /api/v1/openclaw/workspace/status`  | Check workspace service connectivity     |
 | `GET /api/v1/openclaw/workspace/files`   | List files (params: `path`, `recursive`) |
-| `GET /api/v1/openclaw/workspace/file`    | Read a file (param: `path`)              |
-| `POST /api/v1/openclaw/workspace/file`   | Create a new file                        |
-| `PUT /api/v1/openclaw/workspace/file`    | Update an existing file                  |
-| `DELETE /api/v1/openclaw/workspace/file` | Delete a file                            |
+| `GET /api/v1/openclaw/workspace/files/content` | Read a file (param: `path`)        |
+| `POST /api/v1/openclaw/workspace/files`  | Create a new file                        |
+| `PUT /api/v1/openclaw/workspace/files`   | Update an existing file                  |
+| `DELETE /api/v1/openclaw/workspace/files` | Delete a file                           |
 | `GET /api/v1/openclaw/config`            | Read `openclaw.json`                     |
 | `PUT /api/v1/openclaw/config`            | Update `openclaw.json`                   |
 | `GET /api/v1/openclaw/agents`            | List agents from `openclaw.json`         |
@@ -129,6 +146,13 @@ curl -H "Authorization: Bearer <mosbot-jwt>" \
 
 **401 Unauthorized** The token doesn't match. Verify `OPENCLAW_WORKSPACE_TOKEN` in MosBot API's
 `.env` matches the token configured in the workspace service.
+
+**Workspace loads but models/agents fail**
+`CONFIG_ROOT` is not mounted correctly. Verify `/files/content?path=/openclaw.json` succeeds on
+the workspace service.
+
+**Config edits fail but file browsing works**
+`CONFIG_ROOT` is mounted read-only or points to the wrong directory.
 
 **Path traversal errors** The path contains `..` or other traversal sequences. Use absolute paths
 from the workspace root (e.g. `/workspace-coo/memory/2026-03-01.md`).

@@ -50,6 +50,21 @@ curl http://localhost:18789/health
 
 ---
 
+### Workspace status returns root path errors
+
+**Cause**: `CONFIG_ROOT` and/or `MAIN_WORKSPACE_DIR` are misconfigured, or the mounted
+`CONFIG_ROOT` path is missing.
+
+**Fix**:
+
+1. Set `CONFIG_ROOT` to the OpenClaw root mount (for example `/openclaw-config`)
+2. Set `MAIN_WORKSPACE_DIR` to the main workspace folder name (for example `workspace`)
+3. Verify `CONFIG_ROOT` exists and is readable by the workspace service container
+4. Verify `${CONFIG_ROOT}/${MAIN_WORKSPACE_DIR}` exists for main workspace access
+5. Use a read-write mount for normal dashboard usage (Projects/Skills/Docs and config editing)
+
+---
+
 ### 401 Unauthorized on OpenClaw endpoints
 
 **Cause**: The bearer token in MosBot's `.env` doesn't match the token configured in OpenClaw.
@@ -96,6 +111,63 @@ curl -H "Authorization: Bearer <mosbot-jwt>" \
    ```bash
    docker compose logs api --tail=50
    ```
+
+---
+
+### Workspace loads, but models/agents fail
+
+**Cause**: `CONFIG_ROOT` is not mounted correctly, so
+`/openclaw.json` cannot be read.
+
+**Fix**:
+
+1. Verify workspace service env includes `CONFIG_ROOT`
+2. Verify config mount contains `openclaw.json` and `org-chart.json`
+3. Test directly:
+   ```bash
+   curl -H "Authorization: Bearer <workspace-token>" \
+     "http://localhost:8080/files/content?path=/openclaw.json"
+   ```
+
+---
+
+### Config edits fail, but file browsing works
+
+**Cause**: `CONFIG_ROOT` is mounted read-only or points to the wrong directory.
+
+**Fix**:
+
+1. Mount config path read-write
+2. Confirm container user has write permission
+3. Retry editing `openclaw.json` or `org-chart.json` from the dashboard
+
+---
+
+### Path remap errors (`PATH_NOT_ALLOWED`) for host-absolute paths
+
+**Cause**: `OPENCLAW_PATH_REMAP_PREFIXES` does not match the absolute path prefix returned by your
+OpenClaw agent config.
+
+**Fix**:
+
+1. Set `OPENCLAW_PATH_REMAP_PREFIXES` in MosBot API (this env var appends custom prefixes)
+2. Built-in prefixes are always active: `/home/node/.openclaw/workspace`, `~/.openclaw/workspace`, `/home/node/.openclaw`, `~/.openclaw`
+3. Most specific prefix wins when multiple prefixes match
+4. Add any extra custom prefixes via `OPENCLAW_PATH_REMAP_PREFIXES`, comma-separated
+5. Restart MosBot API
+
+---
+
+### `PATH_NOT_ALLOWED` for main workspace files
+
+**Cause**: Main workspace paths must use the canonical `/workspace` namespace.
+
+**Fix**:
+
+1. Use `/workspace` for main workspace root
+2. Use `/workspace/<path>` for files under main workspace (not `/<path>`)
+3. Use `/workspace-<agent>` for sub-agent workspaces
+4. Use `/projects`, `/skills`, `/docs` for shared directories
 
 ---
 
@@ -163,7 +235,7 @@ curl -H "Authorization: Bearer <mosbot-jwt>" \
 
 # List workspace files
 curl -H "Authorization: Bearer <mosbot-jwt>" \
-  "http://localhost:3000/api/v1/openclaw/workspace/files?path=/&recursive=false"
+  "http://localhost:3000/api/v1/openclaw/workspace/files?path=/workspace&recursive=false"
 
 # Check gateway sessions
 curl -H "Authorization: Bearer <mosbot-jwt>" \

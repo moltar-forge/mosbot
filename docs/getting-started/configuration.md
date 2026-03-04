@@ -74,6 +74,13 @@ variables, the workspace browser and skills features will be unavailable.
 | -------------------------- | ------- | ------------------------------------------------------------------------------------ |
 | `OPENCLAW_WORKSPACE_URL`   | —       | URL of the OpenClaw workspace service (e.g. `http://localhost:8080`)                 |
 | `OPENCLAW_WORKSPACE_TOKEN` | —       | Bearer token for workspace service authentication. Obtain from OpenClaw admin panel. |
+| `OPENCLAW_PATH_REMAP_PREFIXES` | `''` | Comma-separated additional host path prefixes remapped to virtual workspace paths before allowlist checks. Built-ins are always active: `/home/node/.openclaw/workspace`, `~/.openclaw/workspace`, `/home/node/.openclaw`, `~/.openclaw` (most specific prefix wins). |
+
+Virtual path conventions:
+
+- Main workspace: `/workspace`
+- Sub-agent workspaces: `/workspace-<agent-id>`
+- Shared directories: `/projects`, `/skills`, `/docs`
 
 ## OpenClaw Gateway
 
