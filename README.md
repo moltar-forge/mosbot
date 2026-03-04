@@ -168,6 +168,26 @@ DELETE /files?path=/path/to/file
 Authorization: Bearer <token>
 ```
 
+### Ensure Shared Docs Symlinks
+
+```bash
+POST /symlinks/ensure
+Authorization: Bearer <token>
+```
+
+Ensures shared docs projection under `CONFIG_ROOT`:
+
+- real shared directory: `CONFIG_ROOT/docs`
+- workspace symlinks:
+  - `CONFIG_ROOT/<MAIN_WORKSPACE_DIR>/docs`
+  - `CONFIG_ROOT/workspace-*/docs` (for existing workspace directories)
+
+Behavior:
+
+- idempotent when symlinks already point to `CONFIG_ROOT/docs`
+- returns `409` with conflict details when a destination exists and is not the expected symlink
+- never overwrites conflicting files/directories
+
 ## Development
 
 ### Local Development

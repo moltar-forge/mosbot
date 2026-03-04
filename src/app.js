@@ -13,6 +13,7 @@ const ALLOWED_CONFIG_PREFIXES = [
 ];
 const WORKSPACE_AGENT_PATH_PATTERN = /^\/workspace-[^/]+(?:\/.*)?$/;
 const PATH_NOT_ALLOWED_CODE = "PATH_NOT_ALLOWED";
+const SHARED_DOCS_DIR = "docs";
 
 function buildPathNotAllowedErrorPayload(err) {
   return {
@@ -316,6 +317,87 @@ function createApp(opts) {
     }
   }
 
+  function pathExists(error) {
+    return error && error.code === "ENOENT";
+  }
+
+  async function listWorkspaceDirsForDocsProjection() {
+    const entries = await fs.readdir(CONFIG_ROOT, { withFileTypes: true });
+    const dirs = [];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      if (entry.name === mainWorkspaceDir || entry.name.startsWith("workspace-")) {
+        dirs.push(path.resolve(CONFIG_ROOT, entry.name));
+      }
+    }
+
+    return dirs;
+  }
+
+  async function ensureDocsSymlinkProjection() {
+    const docsRootPath = path.resolve(CONFIG_ROOT, SHARED_DOCS_DIR);
+    assertWithinRoot(CONFIG_ROOT, docsRootPath);
+
+    const created = [];
+    const existing = [];
+    const conflicts = [];
+
+    await fs.mkdir(docsRootPath, { recursive: true });
+
+    const workspaceDirs = await listWorkspaceDirsForDocsProjection();
+
+    for (const workspaceDir of workspaceDirs) {
+      assertWithinRoot(CONFIG_ROOT, workspaceDir);
+
+      const linkPath = path.resolve(workspaceDir, SHARED_DOCS_DIR);
+      assertWithinRoot(CONFIG_ROOT, linkPath);
+
+      try {
+        const lstat = await fs.lstat(linkPath);
+
+        if (!lstat.isSymbolicLink()) {
+          conflicts.push({
+            path: `/${path.relative(CONFIG_ROOT, linkPath).replace(/\\/g, "/")}`,
+            reason: "Path exists and is not a symlink",
+          });
+          continue;
+        }
+
+        const linkTarget = await fs.readlink(linkPath);
+        const resolvedLinkTarget = path.resolve(path.dirname(linkPath), linkTarget);
+        if (resolvedLinkTarget !== docsRootPath) {
+          conflicts.push({
+            path: `/${path.relative(CONFIG_ROOT, linkPath).replace(/\\/g, "/")}`,
+            reason: "Symlink points to unexpected target",
+            symlinkTarget: linkTarget,
+          });
+          continue;
+        }
+
+        existing.push(`/${path.relative(CONFIG_ROOT, linkPath).replace(/\\/g, "/")}`);
+      } catch (error) {
+        if (!pathExists(error)) {
+          throw error;
+        }
+
+        const relativeTarget = path.relative(workspaceDir, docsRootPath) || ".";
+        await fs.symlink(relativeTarget, linkPath);
+        created.push(`/${path.relative(CONFIG_ROOT, linkPath).replace(/\\/g, "/")}`);
+      }
+    }
+
+    return {
+      sharedDir: `/${SHARED_DOCS_DIR}`,
+      sharedDirPath: docsRootPath,
+      scannedWorkspaces: workspaceDirs.length,
+      created,
+      existing,
+      conflicts,
+    };
+  }
+
   // ── Routes ─────────────────────────────────────────────────────────────────
 
   app.get("/health", (req, res) => {
@@ -535,6 +617,26 @@ function createApp(opts) {
     }
   });
 
+  app.post("/symlinks/ensure", optionalAuth, async (req, res, next) => {
+    try {
+      const result = await ensureDocsSymlinkProjection();
+      if (result.conflicts.length > 0) {
+        return res.status(409).json({
+          error: "Docs symlink projection has conflicts",
+          code: "DOCS_SYMLINK_CONFLICT",
+          ...result,
+        });
+      }
+
+      return res.json({
+        message: "Docs symlink projection ensured",
+        ...result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // ── Error handler ──────────────────────────────────────────────────────────
 
   // eslint-disable-next-line no-unused-vars
@@ -563,6 +665,7 @@ function createApp(opts) {
   app._remapSymlinkTarget = remapSymlinkTarget;
   app._resolveWithRemap = resolveWithRemap;
   app._listDirectory = listDirectory;
+  app._ensureDocsSymlinkProjection = ensureDocsSymlinkProjection;
   app._workspaceFsRoot = MAIN_WORKSPACE_FS_ROOT;
   app._configFsRoot = CONFIG_ROOT;
   app._configRoot = CONFIG_ROOT;
