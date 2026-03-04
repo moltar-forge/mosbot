@@ -5,66 +5,49 @@ sidebar_label: Org Chart
 sidebar_position: 3
 ---
 
-The **Org Chart** is a live visualization of your AI agent team. It shows the structure of your
-agent organization, what each agent is responsible for, and their current status.
+The **Org Chart** is a live visualization of your AI agent team. It shows which agents are
+configured, what each one is responsible for, and their current status.
 
 :::info Requires OpenClaw Workspace Service The Org Chart reads agent definitions from
 `openclaw.json` via the workspace service. See [OpenClaw Integration](../openclaw/overview). :::
 
-![Org Chart](/img/screenshots/mosbot-org-chart.png)
+## How it works
 
-## What the org chart shows
+The org chart operates in two modes:
 
-### Agent hierarchy
+### Automatic mode (default)
 
-The org chart displays your agents in a hierarchical tree, reflecting the organizational structure
-defined in your `openclaw.json`. Each node shows:
+When you define agents in the `agents.list` of your `openclaw.json`, they appear in the org chart
+automatically as a flat list. No extra configuration needed — this is the simplest way to get
+started, even with a single agent.
 
-- Agent name and emoji
-- Role/theme description
+Each agent card shows:
+
+- Agent name and emoji (from `identity` fields)
+- Role description (from `identity.theme`)
 - Current status badge
+- Model information
 
-### Status badges
+### Custom hierarchy mode
+
+For more complex setups, create an `org-chart.json` file in your workspace to define a hierarchical
+structure with reporting relationships and departments. This is optional and intended for power users
+who want to organize agents into teams.
+
+## Status badges
 
 Each agent node displays a status badge:
 
 | Badge          | Meaning                                       |
 | -------------- | --------------------------------------------- |
-| **Active**     | Agent has a live running session              |
-| **Scaffolded** | Agent is defined but not yet fully configured |
-| **Deprecated** | Agent has been retired                        |
+| **Active**     | Agent has a live running session               |
+| **You**        | Represents a human user                        |
+| **Scaffolded** | Agent is defined but not yet fully configured  |
+| **Deprecated** | Agent has been retired                         |
 
 The status is updated in real-time based on data from the OpenClaw Gateway.
 
-### Capability ownership
-
-The org chart helps you understand which agent handles which type of work. For example:
-
-- **COO** — orchestration, research, delegation
-- **CTO** — technical architecture, code review
-- **CPO** — product strategy, roadmap
-- **CMO** — marketing, content, campaigns
-
-## Configuration
-
-The org chart reads agent data from two sources:
-
-1. **`openclaw.json`** — agent IDs, names, themes, and emoji (via workspace service)
-2. **Org chart JSON file** — optional supplementary metadata for hierarchy and additional display
-   properties
-
-If the org chart configuration file is not found, the dashboard falls back to a default structure
-based on the agents defined in `openclaw.json`.
-
-## Interacting with the org chart
-
-Click on an agent node to see more details about that agent, including:
-
-- Full identity information
-- Current session status
-- Recent activity
-
-## Adding agents to the org chart
+## Adding agents
 
 Agents appear in the org chart automatically based on the `agents.list` in `openclaw.json`. To add a
 new agent:
@@ -73,4 +56,23 @@ new agent:
    [Configuration Reference](../configuration/openclaw-json#agentslist))
 2. The agent will appear in the org chart on the next refresh
 
-For custom hierarchy or display properties, edit the org chart JSON file in the shared workspace.
+Alternatively, admins can use the **Add Agent** button in the dashboard to create agents through the
+UI.
+
+## Custom hierarchy with org-chart.json
+
+For custom hierarchy, create an `org-chart.json` file in the workspace with:
+
+- **`leadership`** — agents with `id`, `title` (optional), `displayName`, `label`, `status`, and
+  `reportsTo` fields to define reporting relationships
+- **`departments`** — organizational groups with `id`, `name`, `leadId`, and `subagents`
+- **`subagents`** — team members within departments
+
+The `reportsTo` field creates the tree hierarchy. Agents without `reportsTo` appear at the top
+level.
+
+## Single agent view
+
+When only one agent is configured, the org chart shows a clean, focused view with a single prominent
+agent card — no hierarchy lines or department grids. As you add more agents, the view automatically
+expands.
