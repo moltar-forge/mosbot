@@ -65,7 +65,7 @@ describe('openclawGatewayClient insecure fallback handshake', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    process.env.OPENCLAW_GATEWAY_URL = 'https://moltar.spoved.io';
+    process.env.OPENCLAW_GATEWAY_URL = 'http://localhost:5173';
     process.env.OPENCLAW_GATEWAY_TOKEN = 'test-token';
     delete process.env.OPENCLAW_DEVICE_ID;
     delete process.env.OPENCLAW_DEVICE_PUBLIC_KEY;
