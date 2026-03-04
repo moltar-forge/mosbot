@@ -39,7 +39,7 @@ docs/                    — all documentation source (.md files)
   openclaw/              — OpenClaw integration guides
   configuration/         — openclaw.json reference and best practices
   skills/                — creating and managing agent skills
-  features/              — dashboard feature guides (agent monitor, tasks, org chart…)
+  features/              — dashboard feature guides (agent monitor, tasks, agents page…)
   deployment/            — Docker, Kubernetes, production
   security/              — authentication, roles, secrets
   troubleshooting/       — common issues, FAQ

@@ -7,9 +7,9 @@ sidebar_label: Known Issues
 This page lists currently known issues and limitations in MosBot OS. We are actively working on
 resolving these.
 
-## Organization Chart
+## Agents Page
 
-- **Workspace Creation**: The Org Chart currently only updates the `openclaw.json > agents.list[]`
+- **Workspace Creation**: The Agents page currently only updates the `openclaw.json > agents.list[]`
   configuration. It does **not** automatically trigger the creation of the corresponding workspace
   in OpenClaw. You must manually ensure the workspace exists or prompt the OpenClaw agent to create
   it.

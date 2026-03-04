@@ -24,7 +24,7 @@ This enables:
 
 - Workspace file browser in the dashboard
 - Skills page
-- Org chart (reads agent list from workspace)
+- Agents page (reads agent list from workspace)
 - Configuration editing
 
 ## Full integration (workspace + gateway)

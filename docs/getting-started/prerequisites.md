@@ -57,7 +57,7 @@ node --version
 ## OpenClaw (strongly recommended)
 
 MosBot OS is designed to work with OpenClaw. While MosBot can technically run without it, the core
-features — agent monitoring, workspace browsing, org chart, and skills — require OpenClaw.
+features — agent monitoring, workspace browsing, agents page, and skills — require OpenClaw.
 
 ### OpenClaw instance
 

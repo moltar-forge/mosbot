@@ -70,7 +70,7 @@ const sidebars = {
       items: [
         'features/agent-monitor',
         'features/task-management',
-        'features/org-chart',
+        'features/agents',
         'features/workspaces',
         'features/standups',
         'features/scheduler',

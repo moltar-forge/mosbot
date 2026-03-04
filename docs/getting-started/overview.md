@@ -18,7 +18,7 @@ MosBot OS is composed of three layers that work together:
 ```
 ┌─────────────────────────────────────────────┐
 │         MosBot Dashboard (UI Layer)         │
-│  React SPA — task management, org chart,    │
+│  React SPA — task management, agents page,  │
 │  workspace visualization, agent monitoring  │
 └─────────────────┬───────────────────────────┘
                   │ REST API (HTTP/JSON)
@@ -41,7 +41,7 @@ The UI layer. A React single-page application that provides:
 
 - **Agent Monitor** — view active sessions, costs, and usage analytics
 - **Task Board** — drag-and-drop kanban with priorities, tags, and dependencies
-- **Org Chart** — live visualization of AI agents with real-time session status
+- **Agents** — live visualization of AI agents with real-time session status
 - **Workspaces** — browse and edit agent workspace files
 - **Skills** — manage shared and agent-specific skills
 - **Standups** — daily AI-generated standup summaries
@@ -71,7 +71,7 @@ The AI agent runtime. The source of truth for:
 
 MosBot OS is designed to work with OpenClaw. While the API and Dashboard can start without it (task
 management, users, and activity logs will work), the core value — agent monitoring, workspace
-browsing, org chart, and skills — requires OpenClaw. Install OpenClaw first for the complete
+browsing, agents page, and skills — requires OpenClaw. Install OpenClaw first for the complete
 experience. :::
 
 ## What MosBot OS is for

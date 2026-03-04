@@ -22,7 +22,7 @@ Pages.
 - **OpenClaw Integration** — connecting MosBot to the OpenClaw AI agent runtime
 - **Skills** — creating and managing agent skills
 - **Configuration Reference** — complete `openclaw.json` reference with annotated sample
-- **Features** — task management, agent monitoring, org chart, workspaces, standups
+- **Features** — task management, agent monitoring, agents page, workspaces, standups
 - **Deployment** — Docker, Kubernetes, and production guides
 - **Security** — authentication, roles, and secrets management
 - **Troubleshooting** — common issues and FAQ

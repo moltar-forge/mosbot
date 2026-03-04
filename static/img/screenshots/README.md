@@ -10,7 +10,7 @@ This folder contains screenshots for the MosBot OS documentation.
 | `mosbot-task-board-detail.png`             | Task detail modal         | Homepage, Task Management |
 | `mosbot-agent-monitor.png`                 | Agent monitor dashboard   | Homepage, Agent Monitor   |
 | `mosbot-agent-monitor-messages-drawer.png` | Real-time messages drawer | Homepage, Agent Monitor   |
-| `mosbot-org-chart.png`                     | Organization chart        | Homepage, Org Chart       |
+| `mosbot-org-chart.png`                     | Agents page               | Homepage, Agents          |
 | `mosbot-workspaces.png`                    | Workspace file browser    | Homepage, Workspaces      |
 | `mosbot-standup.png`                       | Standup list view         | Homepage, Standups        |
 | `mosbot-standup-notes.png`                 | Standup detail with notes | Homepage, Standups        |

@@ -9,8 +9,8 @@ Get MosBot OS running in under 10 minutes using Docker Compose.
 
 :::tip OpenClaw first
 
-For the complete MosBot OS experience — including agent monitoring, workspace browsing, and org
-chart — [install OpenClaw first](../openclaw/overview). While MosBot OS can start without it, the
+For the complete MosBot OS experience — including agent monitoring, workspace browsing, and the
+agents page — [install OpenClaw first](../openclaw/overview). While MosBot OS can start without it, the
 core functionality requires OpenClaw. :::
 
 ## Step 1: Clone both repositories
@@ -132,7 +132,7 @@ After your first successful login:
 ## What's next?
 
 - **Connect OpenClaw** — if you haven't already, connect your OpenClaw instance to enable agent
-  monitoring, workspace browsing, and org chart. See [OpenClaw Integration](../openclaw/overview).
+  monitoring, workspace browsing, and the agents page. See [OpenClaw Integration](../openclaw/overview).
 - **Invite users** — add team members under **Settings → Users**.
 - **Create tasks** — start using the task board to manage work.
 - **Explore features** — see the [Features](../features/task-management) section for a full

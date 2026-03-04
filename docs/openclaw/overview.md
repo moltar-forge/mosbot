@@ -19,7 +19,7 @@ basic task management and user management. With OpenClaw connected, you get:
 | Feature                              | Requires          |
 | ------------------------------------ | ----------------- |
 | Agent Monitor (live sessions, costs) | Gateway           |
-| Org Chart (agent visualization)      | Workspace service |
+| Agents (agent visualization)         | Workspace service |
 | Workspace file browser               | Workspace service |
 | Skills management                    | Workspace service |
 | Agent configuration editing          | Workspace service |
@@ -78,7 +78,7 @@ Workspace PVC / filesystem
 When OpenClaw is not configured (no `OPENCLAW_WORKSPACE_URL` or `OPENCLAW_GATEWAY_URL` in `.env`),
 endpoints that depend on OpenClaw return `503 SERVICE_NOT_CONFIGURED`. The dashboard will show a
 degraded state — task management and user management work, but agent monitoring, workspace browsing,
-org chart, and skills will be unavailable.
+agents page, and skills will be unavailable.
 
 For the complete MosBot OS experience, OpenClaw should be installed and connected.
 

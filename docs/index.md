@@ -38,7 +38,7 @@ research, product work, software development, or business operations.
 - **[Skills](./skills/overview)** — create and manage agent skills
 - **[openclaw.json Reference](./configuration/openclaw-json)** — complete configuration reference
   with annotated sample
-- **[Features](./features/task-management)** — task management, agent monitoring, org chart, and
+- **[Features](./features/task-management)** — task management, agent monitoring, agents page, and
   more
 - **[Deployment](./deployment/docker)** — Docker and Kubernetes deployment guides
 - **[Troubleshooting](./troubleshooting/common-issues)** — common issues and FAQ
@@ -68,11 +68,11 @@ Task detail view with comments and activity history.
 
 ![Task Board Detail](/img/screenshots/mosbot-task-board-detail.png)
 
-### Org Chart
+### Agents
 
 Live visualization of AI agents with real-time session status.
 
-![Org Chart](/img/screenshots/mosbot-org-chart.png)
+![Agents](/img/screenshots/mosbot-org-chart.png)
 
 ### Workspaces
 
