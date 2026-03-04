@@ -168,25 +168,57 @@ DELETE /files?path=/path/to/file
 Authorization: Bearer <token>
 ```
 
-### Ensure Shared Docs Symlinks
+### Get Link State
 
 ```bash
-POST /symlinks/ensure
+GET /links/:type/:agentId
 Authorization: Bearer <token>
 ```
 
-Ensures shared docs projection under `CONFIG_ROOT`:
+Returns per-agent link state for supported types.
 
-- real shared directory: `CONFIG_ROOT/docs`
-- workspace symlinks:
-  - `CONFIG_ROOT/<MAIN_WORKSPACE_DIR>/docs`
-  - `CONFIG_ROOT/workspace-*/docs` (for existing workspace directories)
+- Supported `type`: `docs`
+- `agentId`:
+  - `main` maps to `MAIN_WORKSPACE_DIR`
+  - any other valid slug maps to `workspace-<agentId>`
+- Valid states:
+  - `linked`
+  - `missing`
+  - `conflict` (includes `conflict.reason`, and `conflict.symlinkTarget` when relevant)
 
-Behavior:
+### Ensure Link
 
-- idempotent when symlinks already point to `CONFIG_ROOT/docs`
-- returns `409` with conflict details when a destination exists and is not the expected symlink
-- never overwrites conflicting files/directories
+```bash
+PUT /links/:type/:agentId
+Authorization: Bearer <token>
+```
+
+For `type=docs`:
+
+- ensures `CONFIG_ROOT/docs` exists
+- ensures target workspace directory exists
+- creates a managed `docs` symlink only when missing
+- returns `action: "created"` or `action: "unchanged"`
+- returns `409 LINK_CONFLICT` for non-managed/conflicting existing paths
+
+### Delete Managed Link
+
+```bash
+DELETE /links/:type/:agentId
+Authorization: Bearer <token>
+```
+
+For `type=docs`:
+
+- removes only the managed symlink targeting `CONFIG_ROOT/docs`
+- returns `action: "deleted"` or `action: "unchanged"` (when already missing)
+- returns `409 LINK_CONFLICT` for non-managed/conflicting paths
+
+Error codes:
+
+- `LINK_TYPE_UNSUPPORTED` for unsupported `:type`
+- `INVALID_AGENT_ID` for invalid `:agentId`
+- `LINK_CONFLICT` for conflicting existing paths
 
 ## Development
 

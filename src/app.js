@@ -14,6 +14,11 @@ const ALLOWED_CONFIG_PREFIXES = [
 const WORKSPACE_AGENT_PATH_PATTERN = /^\/workspace-[^/]+(?:\/.*)?$/;
 const PATH_NOT_ALLOWED_CODE = "PATH_NOT_ALLOWED";
 const SHARED_DOCS_DIR = "docs";
+const SUPPORTED_LINK_TYPE = "docs";
+const LINK_TYPE_UNSUPPORTED_CODE = "LINK_TYPE_UNSUPPORTED";
+const INVALID_AGENT_ID_CODE = "INVALID_AGENT_ID";
+const LINK_CONFLICT_CODE = "LINK_CONFLICT";
+const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 function buildPathNotAllowedErrorPayload(err) {
   return {
@@ -317,84 +322,133 @@ function createApp(opts) {
     }
   }
 
-  function pathExists(error) {
+  function pathNotFound(error) {
     return error && error.code === "ENOENT";
   }
 
-  async function listWorkspaceDirsForDocsProjection() {
-    const entries = await fs.readdir(CONFIG_ROOT, { withFileTypes: true });
-    const dirs = [];
-
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-
-      if (entry.name === mainWorkspaceDir || entry.name.startsWith("workspace-")) {
-        dirs.push(path.resolve(CONFIG_ROOT, entry.name));
-      }
-    }
-
-    return dirs;
+  function buildUnsupportedLinkTypePayload(linkType) {
+    return {
+      error: "Unsupported link type",
+      code: LINK_TYPE_UNSUPPORTED_CODE,
+      type: linkType,
+    };
   }
 
-  async function ensureDocsSymlinkProjection() {
-    const docsRootPath = path.resolve(CONFIG_ROOT, SHARED_DOCS_DIR);
-    assertWithinRoot(CONFIG_ROOT, docsRootPath);
+  function buildInvalidAgentIdPayload(agentId) {
+    return {
+      error: "Invalid agent ID",
+      code: INVALID_AGENT_ID_CODE,
+      agentId,
+    };
+  }
 
-    const created = [];
-    const existing = [];
-    const conflicts = [];
-
-    await fs.mkdir(docsRootPath, { recursive: true });
-
-    const workspaceDirs = await listWorkspaceDirsForDocsProjection();
-
-    for (const workspaceDir of workspaceDirs) {
-      assertWithinRoot(CONFIG_ROOT, workspaceDir);
-
-      const linkPath = path.resolve(workspaceDir, SHARED_DOCS_DIR);
-      assertWithinRoot(CONFIG_ROOT, linkPath);
-
-      try {
-        const lstat = await fs.lstat(linkPath);
-
-        if (!lstat.isSymbolicLink()) {
-          conflicts.push({
-            path: `/${path.relative(CONFIG_ROOT, linkPath).replace(/\\/g, "/")}`,
-            reason: "Path exists and is not a symlink",
-          });
-          continue;
-        }
-
-        const linkTarget = await fs.readlink(linkPath);
-        const resolvedLinkTarget = path.resolve(path.dirname(linkPath), linkTarget);
-        if (resolvedLinkTarget !== docsRootPath) {
-          conflicts.push({
-            path: `/${path.relative(CONFIG_ROOT, linkPath).replace(/\\/g, "/")}`,
-            reason: "Symlink points to unexpected target",
-            symlinkTarget: linkTarget,
-          });
-          continue;
-        }
-
-        existing.push(`/${path.relative(CONFIG_ROOT, linkPath).replace(/\\/g, "/")}`);
-      } catch (error) {
-        if (!pathExists(error)) {
-          throw error;
-        }
-
-        const relativeTarget = path.relative(workspaceDir, docsRootPath) || ".";
-        await fs.symlink(relativeTarget, linkPath);
-        created.push(`/${path.relative(CONFIG_ROOT, linkPath).replace(/\\/g, "/")}`);
-      }
+  function resolveAgentWorkspaceDirName(agentId) {
+    if (agentId === "main") {
+      return mainWorkspaceDir;
     }
 
+    if (!AGENT_ID_PATTERN.test(agentId)) {
+      return null;
+    }
+
+    return `workspace-${agentId}`;
+  }
+
+  function resolveWorkspaceVirtualPath(agentId) {
+    return agentId === "main" ? "/workspace" : `/workspace-${agentId}`;
+  }
+
+  function buildDocsLinkContext(linkType, agentId) {
+    if (linkType !== SUPPORTED_LINK_TYPE) {
+      return {
+        ok: false,
+        status: 400,
+        payload: buildUnsupportedLinkTypePayload(linkType),
+      };
+    }
+
+    const workspaceDirName = resolveAgentWorkspaceDirName(agentId);
+    if (!workspaceDirName) {
+      return {
+        ok: false,
+        status: 400,
+        payload: buildInvalidAgentIdPayload(agentId),
+      };
+    }
+
+    const workspacePath = path.resolve(CONFIG_ROOT, workspaceDirName);
+    const targetPath = path.resolve(CONFIG_ROOT, SHARED_DOCS_DIR);
+    const linkPath = path.resolve(workspacePath, SHARED_DOCS_DIR);
+    assertWithinRoot(CONFIG_ROOT, workspacePath);
+    assertWithinRoot(CONFIG_ROOT, targetPath);
+    assertWithinRoot(CONFIG_ROOT, linkPath);
+
+    const workspaceVirtualPath = resolveWorkspaceVirtualPath(agentId);
+
     return {
-      sharedDir: `/${SHARED_DOCS_DIR}`,
-      sharedDirPath: docsRootPath,
-      scannedWorkspaces: workspaceDirs.length,
-      created,
-      existing,
-      conflicts,
+      ok: true,
+      linkType,
+      agentId,
+      workspacePath,
+      targetPath,
+      linkPath,
+      workspaceVirtualPath,
+      linkVirtualPath: `${workspaceVirtualPath}/${SHARED_DOCS_DIR}`,
+      targetVirtualPath: `/${SHARED_DOCS_DIR}`,
+    };
+  }
+
+  async function inspectDocsLinkState(context) {
+    try {
+      const lstat = await fs.lstat(context.linkPath);
+
+      if (!lstat.isSymbolicLink()) {
+        return {
+          state: "conflict",
+          conflict: {
+            reason: "Path exists and is not a symlink",
+          },
+        };
+      }
+
+      const symlinkTarget = await fs.readlink(context.linkPath);
+      const resolvedLinkTarget = path.resolve(
+        path.dirname(context.linkPath),
+        symlinkTarget,
+      );
+      if (resolvedLinkTarget !== context.targetPath) {
+        return {
+          state: "conflict",
+          conflict: {
+            reason: "Symlink points to unexpected target",
+            symlinkTarget,
+          },
+        };
+      }
+
+      return {
+        state: "linked",
+        symlinkTarget,
+      };
+    } catch (error) {
+      if (pathNotFound(error)) {
+        return {
+          state: "missing",
+        };
+      }
+      throw error;
+    }
+  }
+
+  function buildLinkResponsePayload(context, stateResult) {
+    return {
+      type: context.linkType,
+      agentId: context.agentId,
+      workspaceVirtualPath: context.workspaceVirtualPath,
+      linkVirtualPath: context.linkVirtualPath,
+      targetVirtualPath: context.targetVirtualPath,
+      state: stateResult.state,
+      ...(stateResult.conflict ? { conflict: stateResult.conflict } : {}),
     };
   }
 
@@ -617,20 +671,87 @@ function createApp(opts) {
     }
   });
 
-  app.post("/symlinks/ensure", optionalAuth, async (req, res, next) => {
+  app.get("/links/:type/:agentId", optionalAuth, async (req, res, next) => {
     try {
-      const result = await ensureDocsSymlinkProjection();
-      if (result.conflicts.length > 0) {
+      const contextResult = buildDocsLinkContext(req.params.type, req.params.agentId);
+      if (!contextResult.ok) {
+        return res.status(contextResult.status).json(contextResult.payload);
+      }
+
+      const stateResult = await inspectDocsLinkState(contextResult);
+      return res.json(buildLinkResponsePayload(contextResult, stateResult));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/links/:type/:agentId", optionalAuth, async (req, res, next) => {
+    try {
+      const contextResult = buildDocsLinkContext(req.params.type, req.params.agentId);
+      if (!contextResult.ok) {
+        return res.status(contextResult.status).json(contextResult.payload);
+      }
+
+      await fs.mkdir(contextResult.targetPath, { recursive: true });
+      await fs.mkdir(contextResult.workspacePath, { recursive: true });
+
+      const stateResult = await inspectDocsLinkState(contextResult);
+      if (stateResult.state === "conflict") {
         return res.status(409).json({
-          error: "Docs symlink projection has conflicts",
-          code: "DOCS_SYMLINK_CONFLICT",
-          ...result,
+          error: "Link conflict",
+          code: LINK_CONFLICT_CODE,
+          ...buildLinkResponsePayload(contextResult, stateResult),
         });
       }
 
+      if (stateResult.state === "linked") {
+        return res.json({
+          action: "unchanged",
+          ...buildLinkResponsePayload(contextResult, stateResult),
+        });
+      }
+
+      const relativeTarget =
+        path.relative(contextResult.workspacePath, contextResult.targetPath) || ".";
+      await fs.symlink(relativeTarget, contextResult.linkPath);
+
+      const createdState = await inspectDocsLinkState(contextResult);
       return res.json({
-        message: "Docs symlink projection ensured",
-        ...result,
+        action: "created",
+        ...buildLinkResponsePayload(contextResult, createdState),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/links/:type/:agentId", optionalAuth, async (req, res, next) => {
+    try {
+      const contextResult = buildDocsLinkContext(req.params.type, req.params.agentId);
+      if (!contextResult.ok) {
+        return res.status(contextResult.status).json(contextResult.payload);
+      }
+
+      const stateResult = await inspectDocsLinkState(contextResult);
+      if (stateResult.state === "conflict") {
+        return res.status(409).json({
+          error: "Link conflict",
+          code: LINK_CONFLICT_CODE,
+          ...buildLinkResponsePayload(contextResult, stateResult),
+        });
+      }
+
+      if (stateResult.state === "missing") {
+        return res.json({
+          action: "unchanged",
+          ...buildLinkResponsePayload(contextResult, stateResult),
+        });
+      }
+
+      await fs.unlink(contextResult.linkPath);
+      return res.json({
+        action: "deleted",
+        ...buildLinkResponsePayload(contextResult, { state: "missing" }),
       });
     } catch (error) {
       next(error);
@@ -665,7 +786,6 @@ function createApp(opts) {
   app._remapSymlinkTarget = remapSymlinkTarget;
   app._resolveWithRemap = resolveWithRemap;
   app._listDirectory = listDirectory;
-  app._ensureDocsSymlinkProjection = ensureDocsSymlinkProjection;
   app._workspaceFsRoot = MAIN_WORKSPACE_FS_ROOT;
   app._configFsRoot = CONFIG_ROOT;
   app._configRoot = CONFIG_ROOT;

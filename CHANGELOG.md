@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Claude Code configuration and project rules
 - Coverage for strict split-root path routing in files API and symlink remap tests
 - Explicit virtual-path allowlist coverage and policy rejection assertions (`PATH_NOT_ALLOWED`)
-- `POST /symlinks/ensure` endpoint to bootstrap shared docs symlink projection under
-  main and agent workspaces
+- Typed per-agent link management endpoints:
+  `GET /links/:type/:agentId`, `PUT /links/:type/:agentId`,
+  and `DELETE /links/:type/:agentId` (docs-only for now)
 
 ### Changed
 
@@ -26,11 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config-root access is limited to `/openclaw.json`, `/agents.json`, `/projects/**`,
   `/skills/**`, `/docs/**`, `/workspace-<agent>/**`, and `/_archived_workspace_main/**`
 - Disallowed virtual paths now return `403 PATH_NOT_ALLOWED` across file endpoints, including `/`
-- Documentation now includes shared docs symlink bootstrap behavior and conflict semantics
+- Docs link management is now per-agent and system-triggerable instead of bulk projection
 
 ### Removed
 
 - `org-chart.json` from workspace-service allowlisted config paths
+- Legacy bulk endpoint `POST /symlinks/ensure`
 
 ### Fixed
 
