@@ -457,7 +457,7 @@ describe('OpenClaw Routes', () => {
       expect(response.body.data[0]).toHaveProperty('workspace');
     });
 
-    it('should return default COO agent when config file is missing', async () => {
+    it('should return empty array when config file is missing', async () => {
       const token = getToken('user-id', 'user');
 
       global.fetch = jest.fn().mockRejectedValue({
@@ -471,8 +471,7 @@ describe('OpenClaw Routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.data).toBeInstanceOf(Array);
-      expect(response.body.data.length).toBeGreaterThan(0);
-      expect(response.body.data[0].id).toBe('coo');
+      expect(response.body.data.length).toBe(0);
     });
 
     it('should enrich agent names from users table', async () => {
@@ -617,19 +616,66 @@ describe('OpenClaw Routes', () => {
       expect(response.body.data).toBeDefined();
     });
 
-    it('should handle missing org chart file', async () => {
+    it('should auto-generate org chart from agents.list when org-chart.json is missing', async () => {
       const token = getToken('user-id', 'user');
 
-      global.fetch = jest.fn().mockRejectedValue({
-        status: 404,
-        message: 'File not found',
+      let callCount = 0;
+      global.fetch = jest.fn().mockImplementation(async () => {
+        callCount++;
+        // First call: org-chart.json → 404
+        if (callCount === 1) {
+          const err = new Error('File not found');
+          err.status = 404;
+          throw err;
+        }
+        // Second call: openclaw.json → agents.list
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            content: JSON.stringify({
+              agents: {
+                list: [
+                  {
+                    id: 'orchestrator',
+                    identity: { name: 'MosBot', theme: 'Orchestration', emoji: '🤖' },
+                    model: { primary: 'openrouter/anthropic/claude-sonnet-4.5' },
+                  },
+                ],
+              },
+            }),
+          }),
+          text: async () => 'OK',
+        };
       });
 
       const response = await request(app)
         .get('/api/v1/openclaw/org-chart')
         .set('Authorization', `Bearer ${token}`);
 
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(200);
+      expect(response.body.data).toBeDefined();
+      expect(response.body.data.leadership).toHaveLength(1);
+      expect(response.body.data.leadership[0].displayName).toBe('MosBot');
+      expect(response.body.data.departments).toEqual([]);
+    });
+
+    it('should return empty org chart when both files are missing', async () => {
+      const token = getToken('user-id', 'user');
+
+      global.fetch = jest.fn().mockImplementation(async () => {
+        const err = new Error('File not found');
+        err.status = 404;
+        throw err;
+      });
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/org-chart')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.leadership).toEqual([]);
+      expect(response.body.data.departments).toEqual([]);
     });
   });
 
@@ -698,18 +744,31 @@ describe('OpenClaw Routes', () => {
       expect(response.body.data).toBeDefined();
     });
 
-    it('should require title and displayName', async () => {
+    it('should require displayName', async () => {
       const token = getToken('admin-id', 'admin');
 
       const response = await request(app)
         .put('/api/v1/openclaw/org-chart/agents/coo')
         .set('Authorization', `Bearer ${token}`)
         .send({
-          title: 'Updated COO',
+          title: 'Updated Agent',
         });
 
       expect(response.status).toBe(400);
       expect(response.body.error.message).toContain('displayName');
+    });
+
+    it('should allow update without title', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .put('/api/v1/openclaw/org-chart/agents/coo')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          displayName: 'Updated Agent Name',
+        });
+
+      expect(response.status).toBe(200);
     });
 
     it('should deny agent role from updating', async () => {
@@ -776,7 +835,7 @@ describe('OpenClaw Routes', () => {
       expect(response.body.data).toBeDefined();
     });
 
-    it('should require id, title, and displayName', async () => {
+    it('should require id and displayName', async () => {
       const token = getToken('admin-id', 'admin');
 
       const response = await request(app)
@@ -784,11 +843,24 @@ describe('OpenClaw Routes', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({
           id: 'new-agent',
-          title: 'New Agent',
         });
 
       expect(response.status).toBe(400);
       expect(response.body.error.message).toContain('displayName');
+    });
+
+    it('should allow creation without title', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/org-chart/agents')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'new-agent',
+          displayName: 'New Agent Display Name',
+        });
+
+      expect(response.status).toBe(201);
     });
 
     it('should deny agent role from creating', async () => {
