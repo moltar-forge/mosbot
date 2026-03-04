@@ -7,7 +7,7 @@
 
 The **API and backend layer** of [MosBot OS](https://github.com/bymosbot/mosbot-dashboard) — a self-hosted operating system for AI agent work.
 
-MosBot API is a Node.js/Express service backed by PostgreSQL. It transforms and serves data from [OpenClaw](docs/integrations/openclaw.md) (the AI agent runtime) and provides REST endpoints consumed by the MosBot Dashboard.
+MosBot API is a Node.js/Express service backed by PostgreSQL. It transforms and serves data from [OpenClaw](docs/openclaw/README.md) (the AI agent runtime) and provides REST endpoints consumed by the MosBot Dashboard.
 
 > **Disclaimer:** MosBot OS is vibe-coded with minimal actual code reviews. It is currently used for personal usage only.
 
