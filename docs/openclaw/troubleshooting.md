@@ -52,8 +52,8 @@ curl http://localhost:18789/health
 
 ### Workspace status returns root path errors
 
-**Cause**: `CONFIG_ROOT` and/or `MAIN_WORKSPACE_DIR` are misconfigured, or the mounted
-`CONFIG_ROOT` path is missing.
+**Cause**: `CONFIG_ROOT` and/or `MAIN_WORKSPACE_DIR` are misconfigured, or the mounted `CONFIG_ROOT`
+path is missing.
 
 **Fix**:
 
@@ -108,6 +108,7 @@ curl -H "Authorization: Bearer <mosbot-jwt>" \
 1. Check workspace service connectivity (see above)
 2. Verify the workspace path exists in the OpenClaw filesystem
 3. Check MosBot API logs for error details:
+
    ```bash
    docker compose logs api --tail=50
    ```
@@ -116,14 +117,14 @@ curl -H "Authorization: Bearer <mosbot-jwt>" \
 
 ### Workspace loads, but models/agents fail
 
-**Cause**: `CONFIG_ROOT` is not mounted correctly, so
-`/openclaw.json` cannot be read.
+**Cause**: `CONFIG_ROOT` is not mounted correctly, so `/openclaw.json` cannot be read.
 
 **Fix**:
 
 1. Verify workspace service env includes `CONFIG_ROOT`
-2. Verify config mount contains `openclaw.json` and `org-chart.json`
+2. Verify config mount contains `openclaw.json` (and optional `agents.json`)
 3. Test directly:
+
    ```bash
    curl -H "Authorization: Bearer <workspace-token>" \
      "http://localhost:8080/files/content?path=/openclaw.json"
@@ -139,7 +140,7 @@ curl -H "Authorization: Bearer <mosbot-jwt>" \
 
 1. Mount config path read-write
 2. Confirm container user has write permission
-3. Retry editing `openclaw.json` or `org-chart.json` from the dashboard
+3. Retry editing `openclaw.json` (or `agents.json` if used) from the dashboard
 
 ---
 
@@ -151,7 +152,8 @@ OpenClaw agent config.
 **Fix**:
 
 1. Set `OPENCLAW_PATH_REMAP_PREFIXES` in MosBot API (this env var appends custom prefixes)
-2. Built-in prefixes are always active: `/home/node/.openclaw/workspace`, `~/.openclaw/workspace`, `/home/node/.openclaw`, `~/.openclaw`
+2. Built-in prefixes are always active: `/home/node/.openclaw/workspace`, `~/.openclaw/workspace`,
+   `/home/node/.openclaw`, `~/.openclaw`
 3. Most specific prefix wins when multiple prefixes match
 4. Add any extra custom prefixes via `OPENCLAW_PATH_REMAP_PREFIXES`, comma-separated
 5. Restart MosBot API
@@ -168,6 +170,19 @@ OpenClaw agent config.
 2. Use `/workspace/<path>` for files under main workspace (not `/<path>`)
 3. Use `/workspace-<agent>` for sub-agent workspaces
 4. Use `/projects`, `/skills`, `/docs` for shared directories
+5. Do not use `/` as a workspace root (it is denied)
+
+---
+
+### Docs symlink missing in an agent workspace
+
+**Cause**: Docs-link bootstrap is now lifecycle-managed server-side and only created when missing.
+
+**Fix**:
+
+1. Ensure MosBot API can reach workspace service
+2. Trigger agent create/update flow (or restart MosBot API for `main` reconcile)
+3. If state is `conflict`, resolve the conflicting path in the agent workspace and retry
 
 ---
 

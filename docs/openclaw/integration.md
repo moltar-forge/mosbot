@@ -76,8 +76,11 @@ You should see a JSON array of agent objects from your `openclaw.json` configura
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:3000/api/v1/openclaw/workspace/files?path=/&recursive=true"
+  "http://localhost:3000/api/v1/openclaw/workspace/files?path=/workspace&recursive=true"
 ```
+
+Use explicit allowlisted roots (`/workspace`, `/workspace-<agent>`, `/docs`, `/projects`,
+`/skills`). `path=/` is denied by workspace-service policy (`PATH_NOT_ALLOWED`).
 
 ## Connecting to OpenClaw in different environments
 

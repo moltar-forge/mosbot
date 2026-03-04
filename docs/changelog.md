@@ -45,6 +45,10 @@ For application-level changes, see the changelogs in the respective repositories
 - Various route and service refinements to support test coverage (activity, openclaw, admin/users,
   tasks, users)
 - `.gitignore` updated to exclude additional generated files
+- OpenClaw workspace docs updated for strict path allowlist behavior (`/workspace` canonical main
+  root, `path=/` denied)
+- Documented system-managed docs-link reconciliation lifecycle (startup + agent create/update,
+  non-fatal conflict handling)
 
 ### mosbot-dashboard
 
@@ -67,6 +71,8 @@ For application-level changes, see the changelogs in the respective repositories
 - CI workflow updated to include test execution step
 - Vite config updated to support test environment
 - `.gitignore` updated to exclude additional generated files
+- Dashboard docs now consistently refer to the **Agents** page (legacy Org Chart wording removed)
+- Workspace docs clarified that dashboard page loads do not trigger docs-link write operations
 
 ---
 

@@ -25,7 +25,7 @@ For full MosBot functionality (agent discovery + Projects/Skills/Docs file edits
 - `MAIN_WORKSPACE_DIR=workspace`
 - A single read-write mount for OpenClaw root (for example `~/.openclaw:/openclaw-config`)
 
-`openclaw.json`, `org-chart.json`, shared folders (`projects`, `skills`, `docs`), and sub-agent
+`openclaw.json`, `agents.json`, shared folders (`projects`, `skills`, `docs`), and sub-agent
 workspaces (`workspace-<agent>`) are resolved from `CONFIG_ROOT`. Main workspace virtual path
 `/workspace` resolves to `CONFIG_ROOT/MAIN_WORKSPACE_DIR`.
 
@@ -33,8 +33,9 @@ workspaces (`workspace-<agent>`) are resolved from `CONFIG_ROOT`. Main workspace
 
 - **File access**: read, create, update, and delete files in agent workspaces
 - **Directory listing**: list files and directories recursively
-- **Configuration access**: read and write `openclaw.json`
+- **Configuration access**: read and write `openclaw.json` and `agents.json`
 - **Agent discovery**: list agents defined in `openclaw.json`
+- **Typed docs-link management**: inspect/create/delete managed docs links per agent workspace
 
 ## Architecture
 
@@ -48,7 +49,7 @@ OpenClaw Workspace Service (port 8080)
     │ Filesystem access
     ▼
 Workspace PVC / directories
-(`CONFIG_ROOT`: openclaw.json, org-chart.json, projects/, skills/, docs/, workspace-<agent>/...
+(`CONFIG_ROOT`: openclaw.json, agents.json, projects/, skills/, docs/, workspace-<agent>/...
  `CONFIG_ROOT/MAIN_WORKSPACE_DIR`: main workspace for virtual path `/workspace`)
 ```
 
@@ -92,7 +93,7 @@ A typical OpenClaw layout:
 ```text
 /openclaw-config            ← CONFIG_ROOT
 ├── openclaw.json           ← OpenClaw configuration
-├── org-chart.json          ← Org chart configuration
+├── agents.json             ← Optional agent hierarchy metadata
 ├── workspace               ← main workspace (MAIN_WORKSPACE_DIR, virtual path "/workspace")
 │   ├── memory/
 │   └── HEARTBEAT.md
@@ -108,21 +109,58 @@ A typical OpenClaw layout:
 └── docs/                   ← shared docs (virtual path "/docs")
 ```
 
+## Virtual path contract (allowlisted)
+
+Workspace service virtual paths are strict and allowlisted:
+
+- Main workspace: `/workspace`, `/workspace/**`
+- Config-root files: `/openclaw.json`, `/agents.json`
+- Shared dirs: `/projects/**`, `/skills/**`, `/docs/**`
+- Agent workspaces: `/workspace-<agent>/**`
+- Legacy archive path: `/_archived_workspace_main/**`
+
+All other absolute virtual paths are denied with `403` and code `PATH_NOT_ALLOWED`. `/` is
+intentionally denied.
+
+## Typed docs-link endpoints (workspace service direct)
+
+The legacy bulk endpoint `POST /symlinks/ensure` was removed. Docs-link management now uses typed
+per-agent endpoints:
+
+- `GET /links/:type/:agentId`
+- `PUT /links/:type/:agentId`
+- `DELETE /links/:type/:agentId`
+
+Current contract:
+
+- `type` supports `docs` only
+- `agentId=main` maps to `MAIN_WORKSPACE_DIR`
+- Other `agentId` values map to `workspace-<agentId>`
+- Invalid `type` returns `400 LINK_TYPE_UNSUPPORTED`
+- Invalid `agentId` returns `400 INVALID_AGENT_ID`
+- Link conflicts return `409 LINK_CONFLICT`
+
+MosBot API reconciles docs links server-side (startup + agent create/update) and only writes when
+missing. Dashboard page loads do not trigger link writes.
+
 ## API endpoints (via MosBot API)
 
 MosBot API proxies workspace requests through its own authenticated endpoints:
 
-| Endpoint                                 | Description                              |
-| ---------------------------------------- | ---------------------------------------- |
-| `GET /api/v1/openclaw/workspace/status`  | Check workspace service connectivity     |
-| `GET /api/v1/openclaw/workspace/files`   | List files (params: `path`, `recursive`) |
-| `GET /api/v1/openclaw/workspace/files/content` | Read a file (param: `path`)        |
-| `POST /api/v1/openclaw/workspace/files`  | Create a new file                        |
-| `PUT /api/v1/openclaw/workspace/files`   | Update an existing file                  |
-| `DELETE /api/v1/openclaw/workspace/files` | Delete a file                           |
-| `GET /api/v1/openclaw/config`            | Read `openclaw.json`                     |
-| `PUT /api/v1/openclaw/config`            | Update `openclaw.json`                   |
-| `GET /api/v1/openclaw/agents`            | List agents from `openclaw.json`         |
+| Endpoint                                       | Description                              |
+| ---------------------------------------------- | ---------------------------------------- |
+| `GET /api/v1/openclaw/workspace/status`        | Check workspace service connectivity     |
+| `GET /api/v1/openclaw/workspace/files`         | List files (params: `path`, `recursive`) |
+| `GET /api/v1/openclaw/workspace/files/content` | Read a file (param: `path`)              |
+| `POST /api/v1/openclaw/workspace/files`        | Create a new file                        |
+| `PUT /api/v1/openclaw/workspace/files`         | Update an existing file                  |
+| `DELETE /api/v1/openclaw/workspace/files`      | Delete a file                            |
+| `GET /api/v1/openclaw/config`                  | Read `openclaw.json`                     |
+| `PUT /api/v1/openclaw/config`                  | Update `openclaw.json`                   |
+| `GET /api/v1/openclaw/agents`                  | List agents from `openclaw.json`         |
+
+Docs-link reconcile is internal in MosBot API for this phase; there is no public MosBot API endpoint
+for direct link writes.
 
 ## Verifying the workspace service
 
@@ -147,12 +185,11 @@ curl -H "Authorization: Bearer <mosbot-jwt>" \
 **401 Unauthorized** The token doesn't match. Verify `OPENCLAW_WORKSPACE_TOKEN` in MosBot API's
 `.env` matches the token configured in the workspace service.
 
-**Workspace loads but models/agents fail**
-`CONFIG_ROOT` is not mounted correctly. Verify `/files/content?path=/openclaw.json` succeeds on
-the workspace service.
+**Workspace loads but models/agents fail** `CONFIG_ROOT` is not mounted correctly. Verify
+`/files/content?path=/openclaw.json` succeeds on the workspace service.
 
-**Config edits fail but file browsing works**
-`CONFIG_ROOT` is mounted read-only or points to the wrong directory.
+**Config edits fail but file browsing works** `CONFIG_ROOT` is mounted read-only or points to the
+wrong directory.
 
 **Path traversal errors** The path contains `..` or other traversal sequences. Use absolute paths
 from the workspace root (e.g. `/workspace-coo/memory/2026-03-01.md`).
