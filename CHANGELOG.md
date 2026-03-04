@@ -13,14 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/workspace/*` virtual mapping for the main workspace
 - Claude Code configuration and project rules
 - Coverage for strict split-root path routing in files API and symlink remap tests
+- Explicit virtual-path allowlist coverage and policy rejection assertions (`PATH_NOT_ALLOWED`)
 
 ### Changed
 
 - Docker publish workflow hardened for multi-platform builds and SHA prefix handling
 - Documentation clarified for read/write mounts and `MAIN_WORKSPACE_DIR` behavior
-- Path routing is now strict split-root: only `/workspace` and `/workspace/**` resolve under
-  `MAIN_WORKSPACE_FS_ROOT`; all other absolute paths resolve under `CONFIG_ROOT`
-- Legacy archived paths such as `/_archived_workspace_main/**` now resolve under `CONFIG_ROOT`
+- Path routing now combines strict split-root with explicit config-root allowlist:
+  only `/workspace` and `/workspace/**` resolve under the main workspace root, while
+  config-root access is limited to `/openclaw.json`, `/agents.json`, `/projects/**`,
+  `/skills/**`, `/docs/**`, `/workspace-<agent>/**`, and `/_archived_workspace_main/**`
+- Disallowed virtual paths now return `403 PATH_NOT_ALLOWED` across file endpoints, including `/`
+
+### Removed
+
+- `org-chart.json` from workspace-service allowlisted config paths
 
 ### Fixed
 

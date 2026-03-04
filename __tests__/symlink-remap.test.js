@@ -56,10 +56,8 @@ describe("Symlink remapping", () => {
       );
     });
 
-    it("routes unprefixed paths to config root", () => {
-      const ctx = app._resolvePathContext("/real/file.txt");
-      expect(ctx.rootPath).toBe(configRoot);
-      expect(ctx.resolvedPath).toBe(path.join(configRoot, "real", "file.txt"));
+    it("rejects unprefixed paths that are outside the allowlist", () => {
+      expect(() => app._resolvePathContext("/real/file.txt")).toThrow("Path not allowed");
     });
 
     it("routes /workspace/* virtual paths to workspace root without double nesting", () => {
@@ -92,14 +90,12 @@ describe("Symlink remapping", () => {
   });
 
   describe("resolveSafePath", () => {
-    it("resolves a normal relative path", () => {
-      const result = app._resolveSafePath("real/file.txt");
-      expect(result).toBe(path.join(configRoot, "real", "file.txt"));
+    it("rejects disallowed relative paths", () => {
+      expect(() => app._resolveSafePath("real/file.txt")).toThrow("Path not allowed");
     });
 
-    it("resolves an absolute path", () => {
-      const result = app._resolveSafePath("/real/file.txt");
-      expect(result).toBe(path.join(configRoot, "real", "file.txt"));
+    it("rejects disallowed absolute paths", () => {
+      expect(() => app._resolveSafePath("/real/file.txt")).toThrow("Path not allowed");
     });
 
     it("resolves /workspace/* aliases to the main workspace root", () => {
@@ -107,24 +103,25 @@ describe("Symlink remapping", () => {
       expect(result).toBe(path.join(wsRoot, "real", "file.txt"));
     });
 
-    it("resolves root path (empty string)", () => {
-      const result = app._resolveSafePath("");
-      expect(result).toBe(configRoot);
+    it("rejects root path (empty string)", () => {
+      expect(() => app._resolveSafePath("")).toThrow("Path not allowed");
     });
 
-    it("resolves root path (slash)", () => {
-      const result = app._resolveSafePath("/");
-      expect(result).toBe(configRoot);
+    it("rejects root path (slash)", () => {
+      expect(() => app._resolveSafePath("/")).toThrow("Path not allowed");
     });
 
-    it("normalises backslashes", () => {
-      const result = app._resolveSafePath("real\\file.txt");
-      expect(result).toBe(path.join(configRoot, "real", "file.txt"));
+    it("normalises backslashes before allowlist checks", () => {
+      expect(() => app._resolveSafePath("real\\file.txt")).toThrow("Path not allowed");
     });
 
-    it("treats non-string input as root", () => {
-      const result = app._resolveSafePath(null);
-      expect(result).toBe(configRoot);
+    it("treats non-string input as root and rejects it", () => {
+      expect(() => app._resolveSafePath(null)).toThrow("Path not allowed");
+    });
+
+    it("allows openclaw config path in config root", () => {
+      const result = app._resolveSafePath("/openclaw.json");
+      expect(result).toBe(path.join(configRoot, "openclaw.json"));
     });
 
     it("throws on traversal when resolved path escapes explicit root", () => {
@@ -307,7 +304,7 @@ describe("Symlink remapping", () => {
       const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
       const supertest = require("supertest");
-      const res = await supertest(app).get("/files");
+      const res = await supertest(app).get("/files?path=/workspace");
 
       fsModule.lstat = originalLstat;
       errorSpy.mockRestore();
@@ -317,6 +314,20 @@ describe("Symlink remapping", () => {
   });
 
   describe("GET /files with symlinks", () => {
+    it("rejects disallowed paths before filesystem operations", async () => {
+      const fsModule = require("fs").promises;
+      const statSpy = jest.spyOn(fsModule, "stat");
+      const supertest = require("supertest");
+
+      const res = await supertest(app).get("/files?path=/tmp");
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("PATH_NOT_ALLOWED");
+      expect(statSpy).not.toHaveBeenCalled();
+
+      statSpy.mockRestore();
+    });
+
     it("lists workspace root including symlink entries", async () => {
       const supertest = require("supertest");
       const res = await supertest(app).get("/files?path=/workspace");

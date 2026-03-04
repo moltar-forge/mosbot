@@ -4,6 +4,16 @@ const express = require("express");
 const fs = require("fs").promises;
 const path = require("path");
 
+const ALLOWED_CONFIG_FILE_NAMES = new Set(["openclaw.json", "agents.json"]);
+const ALLOWED_CONFIG_PREFIXES = [
+  "projects",
+  "skills",
+  "docs",
+  "_archived_workspace_main",
+];
+const WORKSPACE_AGENT_PATH_PATTERN = /^\/workspace-[^/]+(?:\/.*)?$/;
+const PATH_NOT_ALLOWED_CODE = "PATH_NOT_ALLOWED";
+
 /**
  * Build and return an Express app configured with the given options.
  *
@@ -17,6 +27,7 @@ function createApp(opts) {
   const { configRoot, mainWorkspaceDir, token, symlinkRemapPrefixes } = opts;
 
   const CONFIG_ROOT = path.resolve(configRoot);
+  // Internal absolute root derived from public MAIN_WORKSPACE_DIR contract.
   const MAIN_WORKSPACE_FS_ROOT = path.resolve(CONFIG_ROOT, mainWorkspaceDir);
 
   const app = express();
@@ -50,10 +61,45 @@ function createApp(opts) {
     return path.posix.normalize(asPosix.startsWith("/") ? asPosix : `/${asPosix}`);
   }
 
+  function isMainWorkspacePath(normalizedPath) {
+    return normalizedPath === "/workspace" || normalizedPath.startsWith("/workspace/");
+  }
+
+  function isAllowedConfigRootPath(normalizedPath) {
+    if (ALLOWED_CONFIG_FILE_NAMES.has(normalizedPath.replace(/^\/+/, ""))) {
+      return true;
+    }
+
+    if (WORKSPACE_AGENT_PATH_PATTERN.test(normalizedPath)) {
+      return true;
+    }
+
+    return ALLOWED_CONFIG_PREFIXES.some(
+      (prefix) =>
+        normalizedPath === `/${prefix}` || normalizedPath.startsWith(`/${prefix}/`),
+    );
+  }
+
+  function isAllowedVirtualPath(normalizedPath) {
+    return isMainWorkspacePath(normalizedPath) || isAllowedConfigRootPath(normalizedPath);
+  }
+
+  function createPathNotAllowedError(normalizedPath) {
+    const error = new Error("Path not allowed");
+    error.statusCode = 403;
+    error.code = PATH_NOT_ALLOWED_CODE;
+    error.normalizedPath = normalizedPath;
+    return error;
+  }
+
+  function assertAllowedVirtualPath(normalizedPath) {
+    if (!isAllowedVirtualPath(normalizedPath)) {
+      throw createPathNotAllowedError(normalizedPath);
+    }
+  }
+
   function selectFsRootForPath(normalizedPath) {
-    return normalizedPath === "/workspace" || normalizedPath.startsWith("/workspace/")
-      ? MAIN_WORKSPACE_FS_ROOT
-      : CONFIG_ROOT;
+    return isMainWorkspacePath(normalizedPath) ? MAIN_WORKSPACE_FS_ROOT : CONFIG_ROOT;
   }
 
   function getMainWorkspaceAliasPath(normalizedPath) {
@@ -84,6 +130,8 @@ function createApp(opts) {
 
   function resolvePathContext(relativePath) {
     const normalizedPath = normalizeRelativePath(relativePath);
+    assertAllowedVirtualPath(normalizedPath);
+
     const mainWorkspaceAliasPath = getMainWorkspaceAliasPath(normalizedPath);
     const routedPath = mainWorkspaceAliasPath || normalizedPath;
     const rootPath = selectFsRootForPath(normalizedPath);
@@ -483,6 +531,14 @@ function createApp(opts) {
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
+    if (err.code === PATH_NOT_ALLOWED_CODE) {
+      return res.status(403).json({
+        error: err.message || "Path not allowed",
+        code: PATH_NOT_ALLOWED_CODE,
+        path: err.normalizedPath || null,
+      });
+    }
+
     console.error("Error:", err);
     res.status(500).json({
       error: err.message || "Internal server error",
@@ -493,6 +549,9 @@ function createApp(opts) {
   // Expose helpers for testing
   app._assertWithinRoot = assertWithinRoot;
   app._normalizeRelativePath = normalizeRelativePath;
+  app._isMainWorkspacePath = isMainWorkspacePath;
+  app._isAllowedConfigRootPath = isAllowedConfigRootPath;
+  app._isAllowedVirtualPath = isAllowedVirtualPath;
   app._selectFsRootForPath = selectFsRootForPath;
   app._getMainWorkspaceAliasPath = getMainWorkspaceAliasPath;
   app._resolvePathContext = resolvePathContext;

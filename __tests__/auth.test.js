@@ -87,7 +87,7 @@ describe("Authentication middleware", () => {
     });
 
     it("allows /files without any Authorization header", async () => {
-      const res = await request(app).get("/files");
+      const res = await request(app).get("/files?path=/workspace");
       expect(res.status).toBe(200);
     });
   });

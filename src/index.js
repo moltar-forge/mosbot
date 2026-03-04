@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 8080;
 
 const CONFIG_ROOT = process.env.CONFIG_ROOT || "/openclaw-config";
 const MAIN_WORKSPACE_DIR = (process.env.MAIN_WORKSPACE_DIR || "workspace").trim();
+// Internal absolute root derived from public MAIN_WORKSPACE_DIR.
 const MAIN_WORKSPACE_FS_ROOT = path.resolve(CONFIG_ROOT, MAIN_WORKSPACE_DIR);
 
 const WORKSPACE_SERVICE_TOKEN = process.env.WORKSPACE_SERVICE_TOKEN;
