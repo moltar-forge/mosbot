@@ -13,6 +13,7 @@ permissions:
 jobs:
   build-and-deploy:
     name: Lint, Test, and Deploy to GitHub Pages
+    if: github.repository == 'bymosbot/mosbot-api'
     runs-on: ubuntu-latest
 
     steps:
