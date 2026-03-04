@@ -10,6 +10,11 @@ Workspaces are the shared artifact layer of MosBot OS: files, notes, specs, and 
 - Filter within the current directory
 - Preview file content (when permitted)
 
+## Archived legacy workspace visibility
+
+- The `Archived (Old Main)` agent is shown only when the legacy path `/_archived_workspace_main` exists in the workspace service
+- If the path is missing (404) or cannot be verified, the archived agent is hidden
+
 ## Permissions model (product intent)
 
 MosBot OS separates “see structure” from “read/modify contents”:
@@ -53,4 +58,3 @@ For users without modify permissions:
 ## Quick reference
 
 See `reference/workspaces-quick-reference.md`.
-

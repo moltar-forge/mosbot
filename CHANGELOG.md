@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Message rendering now handles both string and array content formats (blocks-based messages)
 - Tool calls are now displayed alongside message content in session detail view
 - Improved handling of assistant messages with no content or tool calls (skips empty messages)
+- Workspace agent list now shows the legacy `Archived (Old Main)` entry only when
+  `/_archived_workspace_main` exists in the workspace service
+- Dashboard docs updated to reflect `/docs` as the shared docs workspace root
 - CI workflow updated to include test execution step
 - Vite config updated to support test environment
 - `.gitignore` updated to exclude additional generated files

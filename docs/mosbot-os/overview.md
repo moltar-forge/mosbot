@@ -81,5 +81,5 @@ Keep MosBot OS legible for humans:
 - **Task Manager**: runtime/operations view (sessions + metrics + cron jobs)
 - **Org Chart**: system structure and capability map
 - **Workspace**: browsable shared filesystem view, permissioned by role
-- **Docs**: shared documentation workspace at `/workspace/docs`
+- **Docs**: shared documentation workspace at `/docs`
 - **Activity Log**: chronological narrative stream of actions/events
