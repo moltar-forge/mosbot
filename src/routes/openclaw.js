@@ -150,7 +150,11 @@ function isAllowedWorkspacePath(workspacePath) {
   if (workspacePath === '/workspace' || workspacePath.startsWith('/workspace/')) return true;
 
   // Allow system config files
-  if (workspacePath === '/openclaw.json' || workspacePath === '/org-chart.json') return true;
+  if (
+    workspacePath === '/openclaw.json' ||
+    workspacePath === '/agents.json'
+  )
+    return true;
 
   // Allow docs and projects directories (moved from /shared/docs and /shared/projects)
   if (workspacePath.startsWith('/docs/') || workspacePath === '/docs') return true;
@@ -310,7 +314,8 @@ router.post('/workspace/files', requireAuth, requireAdmin, async (req, res, next
 
     // Restrict system config files to admin/owner only (exclude 'agent' role)
     const isSystemConfigFile =
-      workspacePath === '/openclaw.json' || workspacePath === '/org-chart.json';
+      workspacePath === '/openclaw.json' ||
+      workspacePath === '/agents.json';
     if (isSystemConfigFile && req.user.role === 'agent') {
       logger.warn('Agent role blocked from modifying system config', {
         userId: req.user.id,
@@ -426,7 +431,8 @@ router.put('/workspace/files', requireAuth, requireAdmin, async (req, res, next)
 
     // Restrict system config files to admin/owner only (exclude 'agent' role)
     const isSystemConfigFile =
-      workspacePath === '/openclaw.json' || workspacePath === '/org-chart.json';
+      workspacePath === '/openclaw.json' ||
+      workspacePath === '/agents.json';
     if (isSystemConfigFile && req.user.role === 'agent') {
       logger.warn('Agent role blocked from modifying system config', {
         userId: req.user.id,
@@ -501,7 +507,8 @@ router.delete('/workspace/files', requireAuth, requireAdmin, async (req, res, ne
 
     // Restrict system config files to admin/owner only (exclude 'agent' role)
     const isSystemConfigFile =
-      workspacePath === '/openclaw.json' || workspacePath === '/org-chart.json';
+      workspacePath === '/openclaw.json' ||
+      workspacePath === '/agents.json';
     if (isSystemConfigFile && req.user.role === 'agent') {
       logger.warn('Agent role blocked from deleting system config', {
         userId: req.user.id,
@@ -598,32 +605,17 @@ router.get('/agents', requireAuth, async (req, res, next) => {
       const agentsList = config?.agents?.list || [];
       const filteredAgents = agentsList;
 
-      // Transform to include workspace path info and add default COO if empty
-      let agents =
-        filteredAgents.length > 0
-          ? filteredAgents.map((agent) => ({
-              id: agent.id,
-              name: agent.identity?.name || agent.name || agent.id,
-              label: agent.identity?.name || agent.name || agent.id,
-              title: agent.identity?.title || null,
-              description: agent.identity?.theme || `${agent.identity?.name || agent.id} workspace`,
-              icon: agent.identity?.emoji || '🤖',
-              workspace: resolveAgentWorkspacePath(agent),
-              isDefault: agent.default === true,
-            }))
-          : [
-              // Fallback default agent if none configured
-              {
-                id: 'coo',
-                name: 'COO',
-                label: 'Chief Operating Officer',
-                title: null,
-                description: 'Operations and workflow management',
-                icon: '📊',
-                workspace: '/workspace',
-                isDefault: true,
-              },
-            ];
+      // Transform to include workspace path info
+      let agents = filteredAgents.map((agent) => ({
+        id: agent.id,
+        name: agent.identity?.name || agent.name || agent.id,
+        label: agent.identity?.name || agent.name || agent.id,
+        title: agent.identity?.title || null,
+        description: agent.identity?.theme || `${agent.identity?.name || agent.id} workspace`,
+        icon: agent.identity?.emoji || '🤖',
+        workspace: resolveAgentWorkspacePath(agent),
+        isDefault: agent.default === true,
+      }));
 
       // Enrich agent names from users table (users.name is the canonical display name)
       try {
@@ -654,66 +646,43 @@ router.get('/agents', requireAuth, async (req, res, next) => {
 
       res.json({ data: agents });
     } catch (readError) {
-      // If config file can't be read, return default COO agent
-      logger.warn('Could not read OpenClaw config from workspace service, using default agent', {
+      // If config file can't be read, return empty list
+      logger.warn('Could not read OpenClaw config from workspace service', {
         error: readError.message,
         status: readError.status,
       });
 
-      res.json({
-        data: [
-          {
-            id: 'coo',
-            name: 'COO',
-            label: 'Chief Operating Officer',
-            description: 'Operations and workflow management',
-            icon: '📊',
-            workspace: '/workspace',
-            isDefault: true,
-          },
-          {
-            id: 'archived',
-            name: 'Archived',
-            label: 'Archived (Old Main)',
-            description: 'Archived workspace files from previous iteration',
-            icon: '📦',
-            workspace: '/_archived_workspace_main',
-            isDefault: false,
-          },
-        ],
-      });
+      res.json({ data: [] });
     }
   } catch (error) {
     next(error);
   }
 });
 
-// GET /api/v1/openclaw/org-chart
-// Get organization chart configuration
-router.get('/org-chart', requireAuth, async (req, res, next) => {
+// GET /api/v1/openclaw/agents/config
+// Get agents configuration (hierarchy, departments, status)
+router.get('/agents/config', requireAuth, async (req, res, next) => {
   try {
-    logger.info('Fetching org chart configuration', { userId: req.user.id });
+    logger.info('Fetching agents configuration', { userId: req.user.id });
 
     try {
-      // Read org-chart.json from system level (alongside openclaw.json)
-      // Can be updated at runtime via the workspace service file API
-      const data = await makeOpenClawRequest('GET', '/files/content?path=/org-chart.json');
-      const orgChart = JSON.parse(data.content);
+      const data = await makeOpenClawRequest('GET', '/files/content?path=/agents.json');
+      const agentsConfig = JSON.parse(data.content);
 
       // Basic validation
-      if (!orgChart || typeof orgChart !== 'object') {
+      if (!agentsConfig || typeof agentsConfig !== 'object') {
         return res.status(400).json({
           error: {
-            message: 'Invalid org chart config: must be a JSON object',
+            message: 'Invalid agents config: must be a JSON object',
             status: 400,
             code: 'INVALID_CONFIG',
           },
         });
       }
 
-      const leadership = orgChart.leadership || [];
-      const orgChartDepartments = orgChart.departments || [];
-      const orgChartSubagents = orgChart.subagents || [];
+      const leadership = agentsConfig.leadership || [];
+      const configDepartments = agentsConfig.departments || [];
+      const configSubagents = agentsConfig.subagents || [];
 
       // Enrich leadership entries with active status from OpenClaw agents config
       try {
@@ -734,7 +703,7 @@ router.get('/org-chart', requireAuth, async (req, res, next) => {
           }
         });
       } catch (configError) {
-        // If we can't read openclaw.json, still return org chart with original statuses
+        // If we can't read openclaw.json, still return config with original statuses
         logger.warn('Could not read OpenClaw config for agent status enrichment', {
           error: configError.message,
         });
@@ -742,12 +711,12 @@ router.get('/org-chart', requireAuth, async (req, res, next) => {
 
       // Create a lookup map for subagents
       const subagentMap = {};
-      orgChartSubagents.forEach((subagent) => {
+      configSubagents.forEach((subagent) => {
         subagentMap[subagent.id] = subagent;
       });
 
       // Transform departments to include full subagent data
-      const departments = orgChartDepartments.map((dept) => ({
+      const departments = configDepartments.map((dept) => ({
         id: dept.id,
         name: dept.name,
         leadId: dept.leadId,
@@ -768,106 +737,49 @@ router.get('/org-chart', requireAuth, async (req, res, next) => {
 
       // Return in the same format the dashboard expects
       const validatedConfig = {
-        version: orgChart.version || 1,
+        version: agentsConfig.version || 1,
         leadership,
         departments,
       };
 
       res.json({ data: validatedConfig });
     } catch (readError) {
-      // If org-chart.json not found, fall back to extracting from openclaw.json
-      // This supports local dev and older configs that still embed orgChart in the main config
+      // If agents.json not found, auto-generate a flat config from agents.list
       if (readError.status === 404) {
-        logger.info('org-chart.json not found, falling back to openclaw.json extraction');
+        logger.info('agents.json not found, generating agents config from agents.list');
 
-        // Helper to extract org chart from an openclaw.json config object
-        const extractOrgChart = (config) => {
+        try {
+          const configData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
+          const config = parseOpenClawConfig(configData.content);
           const agentsList = config?.agents?.list || [];
-          const agentLeadership = agentsList
-            .filter((agent) => agent.orgChart)
-            .map((agent) => ({
-              id: agent.id,
-              title: agent.orgChart.title,
-              label: agent.orgChart.label || `mosbot-${agent.id}`,
-              displayName: agent.identity?.name || agent.orgChart.title,
-              description: agent.orgChart.description,
-              status: 'active',
-              reportsTo: agent.orgChart.reportsTo,
-              model: agent.model?.primary || null,
-            }));
 
-          const humanLeadership = config?.orgChart?.leadership || [];
-          const leadership = [...humanLeadership, ...agentLeadership];
-
-          const orgChartDepartments = config?.orgChart?.departments || [];
-          const orgChartSubagents = config?.orgChart?.subagents || [];
-
-          const subagentMap = {};
-          orgChartSubagents.forEach((subagent) => {
-            subagentMap[subagent.id] = subagent;
-          });
-
-          const departments = orgChartDepartments.map((dept) => ({
-            id: dept.id,
-            name: dept.name,
-            leadId: dept.leadId,
-            description: dept.description,
-            subagents: (dept.subagents || []).map((subagentId) => {
-              const subagent = subagentMap[subagentId];
-              return (
-                subagent || {
-                  id: subagentId,
-                  displayName: subagentId,
-                  label: `mosbot-${subagentId}`,
-                  description: '',
-                  status: 'unknown',
-                }
-              );
-            }),
+          // Build a flat agents config from agents.list using standard identity fields
+          const leadership = agentsList.map((agent) => ({
+            id: agent.id,
+            title: agent.identity?.name || agent.id,
+            label: `agent:${agent.id}:main`,
+            displayName: agent.identity?.name || agent.id,
+            description: agent.identity?.theme || '',
+            emoji: agent.identity?.emoji || null,
+            status: 'active',
+            reportsTo: null,
+            model: agent.model?.primary || null,
           }));
 
-          return { leadership, departments };
-        };
-
-        // Try openclaw.json at system level as fallback for org chart data
-        const configPaths = ['/openclaw.json'];
-
-        for (const configPath of configPaths) {
-          try {
-            const configData = await makeOpenClawRequest(
-              'GET',
-              `/files/content?path=${configPath}`,
-            );
-            const config = JSON.parse(configData.content);
-            const { leadership, departments } = extractOrgChart(config);
-
-            // Only use this source if it actually has org chart data
-            if (leadership.length > 0 || departments.length > 0) {
-              logger.info('Extracted org chart from fallback config', {
-                source: configPath,
-              });
-              return res.json({
-                data: { version: 1, leadership, departments },
-              });
-            }
-          } catch (_err) {
-            // Try next path
-          }
+          return res.json({
+            data: { version: 1, leadership, departments: [] },
+          });
+        } catch (_err) {
+          // openclaw.json also unreadable — return empty config
+          logger.warn('Could not read openclaw.json for auto-generated agents config');
+          return res.json({
+            data: { version: 1, leadership: [], departments: [] },
+          });
         }
-
-        // All sources exhausted
-        logger.warn('Failed to read org chart from any source');
-        return res.status(404).json({
-          error: {
-            message: 'Org chart configuration not found',
-            status: 404,
-            code: 'CONFIG_NOT_FOUND',
-          },
-        });
       }
 
       // Other errors (invalid JSON, service error, etc.)
-      logger.warn('Failed to read org chart config', {
+      logger.warn('Failed to read agents config', {
         error: readError.message,
         status: readError.status,
       });
@@ -879,10 +791,9 @@ router.get('/org-chart', requireAuth, async (req, res, next) => {
   }
 });
 
-// PUT /api/v1/openclaw/org-chart/agents/:agentId
-// Update an existing agent's org chart + OpenClaw config (admin/owner only)
-// The API handles syncing changes to both org-chart.json and openclaw.json internally.
-router.put('/org-chart/agents/:agentId', requireAuth, requireAdmin, async (req, res, next) => {
+// PUT /api/v1/openclaw/agents/config/:agentId
+// Update an existing agent's config in agents.json + openclaw.json (admin/owner only)
+router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const { agentId } = req.params;
     const agentData = req.body;
@@ -900,20 +811,20 @@ router.put('/org-chart/agents/:agentId', requireAuth, requireAdmin, async (req, 
     logger.info('Updating agent config', { userId: req.user.id, agentId });
 
     // Validate required fields
-    if (!agentData.title || !agentData.displayName) {
+    if (!agentData.displayName) {
       return res.status(400).json({
-        error: { message: 'title and displayName are required', status: 400 },
+        error: { message: 'displayName is required', status: 400 },
       });
     }
 
     // Load current configs
-    let orgChart;
+    let agentsConfig;
     try {
-      const orgChartData = await makeOpenClawRequest('GET', '/files/content?path=/org-chart.json');
-      orgChart = JSON.parse(orgChartData.content);
+      const agentsData = await makeOpenClawRequest('GET', '/files/content?path=/agents.json');
+      agentsConfig = JSON.parse(agentsData.content);
     } catch (err) {
       if (err.status === 404) {
-        orgChart = {
+        agentsConfig = {
           version: 1,
           leadership: [],
           departments: [],
@@ -927,14 +838,14 @@ router.put('/org-chart/agents/:agentId', requireAuth, requireAdmin, async (req, 
     const openclawData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
     const openclawConfig = parseOpenClawConfig(openclawData.content);
 
-    // --- Update org-chart.json leadership ---
-    let leadership = orgChart.leadership || [];
+    // --- Update agents.json leadership ---
+    let leadership = agentsConfig.leadership || [];
     const leadershipIndex = leadership.findIndex((l) => l.id === agentId);
 
     if (leadershipIndex < 0) {
       return res.status(404).json({
         error: {
-          message: `Agent "${agentId}" not found in org chart`,
+          message: `Agent "${agentId}" not found in agents config`,
           status: 404,
           code: 'AGENT_NOT_FOUND',
         },
@@ -951,7 +862,7 @@ router.put('/org-chart/agents/:agentId', requireAuth, requireAdmin, async (req, 
       status: agentData.status || leadership[leadershipIndex].status,
       reportsTo: agentData.reportsTo || null,
     };
-    orgChart.leadership = leadership;
+    agentsConfig.leadership = leadership;
 
     // --- Update openclaw.json agents.list (non-human only) ---
     const isHuman = (agentData.status || leadership[leadershipIndex].status) === 'human';
@@ -991,7 +902,7 @@ router.put('/org-chart/agents/:agentId', requireAuth, requireAdmin, async (req, 
           existing.model.fallbacks = fallbacks.length > 0 ? fallbacks : undefined;
         }
 
-        // Remove orgChart key if present (not recognized by OpenClaw schema)
+        // Remove stale orgChart key if present (not recognized by OpenClaw schema)
         delete existing.orgChart;
 
         // Heartbeat
@@ -1033,13 +944,13 @@ router.put('/org-chart/agents/:agentId', requireAuth, requireAdmin, async (req, 
     }
 
     // --- Write both files ---
-    const orgChartContent = JSON.stringify(orgChart, null, 2) + '\n';
+    const agentsContent = JSON.stringify(agentsConfig, null, 2) + '\n';
     const openclawContent = JSON.stringify(openclawConfig, null, 2) + '\n';
 
     await Promise.all([
       makeOpenClawRequest('PUT', '/files', {
-        path: '/org-chart.json',
-        content: orgChartContent,
+        path: '/agents.json',
+        content: agentsContent,
         encoding: 'utf8',
       }),
       makeOpenClawRequest('PUT', '/files', {
@@ -1052,15 +963,15 @@ router.put('/org-chart/agents/:agentId', requireAuth, requireAdmin, async (req, 
     logger.info('Agent config updated successfully', {
       userId: req.user.id,
       agentId,
-      orgChartSize: orgChartContent.length,
+      agentsConfigSize: agentsContent.length,
       openclawSize: openclawContent.length,
     });
 
     recordActivityLogEventSafe({
-      event_type: 'org_chart_agent_updated',
-      source: 'org',
+      event_type: 'agent_updated',
+      source: 'agents',
       title: `Agent updated: ${agentId}`,
-      description: `Org chart and OpenClaw config updated for agent "${agentId}"`,
+      description: `Agent config updated for "${agentId}"`,
       severity: 'info',
       actor_user_id: req.user.id,
       agent_id: agentId,
@@ -1071,7 +982,7 @@ router.put('/org-chart/agents/:agentId', requireAuth, requireAdmin, async (req, 
       data: {
         agentId,
         message: 'Agent updated successfully',
-        updatedFiles: ['/org-chart.json', '/openclaw.json'],
+        updatedFiles: ['/agents.json', '/openclaw.json'],
       },
     });
   } catch (error) {
@@ -1079,9 +990,9 @@ router.put('/org-chart/agents/:agentId', requireAuth, requireAdmin, async (req, 
   }
 });
 
-// POST /api/v1/openclaw/org-chart/agents
-// Create a new agent in the org chart + OpenClaw config (admin/owner only)
-router.post('/org-chart/agents', requireAuth, requireAdmin, async (req, res, next) => {
+// POST /api/v1/openclaw/agents/config
+// Create a new agent in agents.json + openclaw.json (admin/owner only)
+router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const agentData = req.body;
 
@@ -1096,10 +1007,10 @@ router.post('/org-chart/agents', requireAuth, requireAdmin, async (req, res, nex
     }
 
     // Validate required fields
-    if (!agentData.id || !agentData.title || !agentData.displayName) {
+    if (!agentData.id || !agentData.displayName) {
       return res.status(400).json({
         error: {
-          message: 'id, title, and displayName are required',
+          message: 'id and displayName are required',
           status: 400,
         },
       });
@@ -1111,13 +1022,13 @@ router.post('/org-chart/agents', requireAuth, requireAdmin, async (req, res, nex
     });
 
     // Load current configs
-    let orgChart;
+    let agentsConfig;
     try {
-      const orgChartData = await makeOpenClawRequest('GET', '/files/content?path=/org-chart.json');
-      orgChart = JSON.parse(orgChartData.content);
+      const agentsData = await makeOpenClawRequest('GET', '/files/content?path=/agents.json');
+      agentsConfig = JSON.parse(agentsData.content);
     } catch (err) {
       if (err.status === 404) {
-        orgChart = {
+        agentsConfig = {
           version: 1,
           leadership: [],
           departments: [],
@@ -1132,18 +1043,18 @@ router.post('/org-chart/agents', requireAuth, requireAdmin, async (req, res, nex
     const openclawConfig = JSON.parse(openclawData.content);
 
     // Check for duplicates
-    const leadership = orgChart.leadership || [];
+    const leadership = agentsConfig.leadership || [];
     if (leadership.some((l) => l.id === agentData.id)) {
       return res.status(409).json({
         error: {
-          message: `Agent "${agentData.id}" already exists in org chart`,
+          message: `Agent "${agentData.id}" already exists in agents config`,
           status: 409,
           code: 'AGENT_EXISTS',
         },
       });
     }
 
-    // --- Add to org-chart.json leadership ---
+    // --- Add to agents.json leadership ---
     leadership.push({
       id: agentData.id,
       title: agentData.title,
@@ -1153,7 +1064,7 @@ router.post('/org-chart/agents', requireAuth, requireAdmin, async (req, res, nex
       status: agentData.status || 'scaffolded',
       reportsTo: agentData.reportsTo || null,
     });
-    orgChart.leadership = leadership;
+    agentsConfig.leadership = leadership;
 
     // --- Add to openclaw.json agents.list (non-human only) ---
     const isHuman = agentData.status === 'human';
@@ -1195,13 +1106,13 @@ router.post('/org-chart/agents', requireAuth, requireAdmin, async (req, res, nex
     }
 
     // --- Write both files ---
-    const orgChartContent = JSON.stringify(orgChart, null, 2) + '\n';
+    const agentsContent = JSON.stringify(agentsConfig, null, 2) + '\n';
     const openclawContent = JSON.stringify(openclawConfig, null, 2) + '\n';
 
     await Promise.all([
       makeOpenClawRequest('PUT', '/files', {
-        path: '/org-chart.json',
-        content: orgChartContent,
+        path: '/agents.json',
+        content: agentsContent,
         encoding: 'utf8',
       }),
       makeOpenClawRequest('PUT', '/files', {
@@ -1214,15 +1125,15 @@ router.post('/org-chart/agents', requireAuth, requireAdmin, async (req, res, nex
     logger.info('Agent created successfully', {
       userId: req.user.id,
       agentId: agentData.id,
-      orgChartSize: orgChartContent.length,
+      agentsConfigSize: agentsContent.length,
       openclawSize: openclawContent.length,
     });
 
     recordActivityLogEventSafe({
-      event_type: 'org_chart_agent_created',
-      source: 'org',
+      event_type: 'agent_created',
+      source: 'agents',
       title: `Agent created: ${agentData.id}`,
-      description: `New agent "${agentData.displayName}" (${agentData.id}) added to org chart`,
+      description: `New agent "${agentData.displayName}" (${agentData.id}) added`,
       severity: 'info',
       actor_user_id: req.user.id,
       agent_id: agentData.id,
@@ -1237,7 +1148,7 @@ router.post('/org-chart/agents', requireAuth, requireAdmin, async (req, res, nex
       data: {
         agentId: agentData.id,
         message: 'Agent created successfully',
-        updatedFiles: ['/org-chart.json', '/openclaw.json'],
+        updatedFiles: ['/agents.json', '/openclaw.json'],
       },
     });
   } catch (error) {
