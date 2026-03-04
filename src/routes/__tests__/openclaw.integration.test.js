@@ -847,7 +847,7 @@ describe('OpenClaw Workspace Access Control', () => {
   });
 
   describe('GET /api/v1/openclaw/agents fallback', () => {
-    it('returns COO + archived fallback when config is unreadable', async () => {
+    it('returns 500 config is unreadable', async () => {
       const token = getToken('admin-id', 'admin');
 
       global.fetch = jest.fn().mockResolvedValue({
@@ -862,11 +862,7 @@ describe('OpenClaw Workspace Access Control', () => {
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body.data)).toBe(true);
-      expect(response.body.data).toHaveLength(2);
-      expect(response.body.data[0].id).toBe('coo');
-      expect(response.body.data[0].workspace).toBe('/workspace');
-      expect(response.body.data[1].id).toBe('archived');
-      expect(response.body.data[1].workspace).toBe('/_archived_workspace_main');
+      expect(response.body.data).toHaveLength(0);
     });
   });
 });

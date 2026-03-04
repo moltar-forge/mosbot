@@ -178,7 +178,7 @@ describe('OpenClaw Routes', () => {
       expect(response.body.error.code).toBe('PATH_NOT_ALLOWED');
     });
 
-    it('should allow root path', async () => {
+    it('should not allow root path', async () => {
       const token = getToken('user-id', 'user');
 
       const response = await request(app)
@@ -186,7 +186,7 @@ describe('OpenClaw Routes', () => {
         .set('Authorization', `Bearer ${token}`)
         .query({ path: '/' });
 
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(403);
     });
 
     it('should default to root path when not provided', async () => {
