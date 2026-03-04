@@ -4,7 +4,7 @@
  * Tests cover:
  * - Workspace file operations (GET/POST/PUT/DELETE)
  * - Agents endpoint
- * - Org-chart endpoints
+ * - Agents config endpoints
  * - Sessions endpoints
  * - Cron-jobs endpoints
  * - Usage endpoints
@@ -353,7 +353,7 @@ describe('OpenClaw Routes', () => {
       const response = await request(app)
         .post('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .send({ path: '/org-chart.json', content: '{}', encoding: 'utf8' });
+        .send({ path: '/agents.json', content: '{}', encoding: 'utf8' });
 
       expect(response.status).toBe(201);
     });
@@ -588,41 +588,39 @@ describe('OpenClaw Routes', () => {
     });
   });
 
-  describe('GET /api/v1/openclaw/org-chart', () => {
+  describe('GET /api/v1/openclaw/agents/config', () => {
     beforeEach(() => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         status: 200,
         json: async () => ({
           content: JSON.stringify({
-            orgChart: {
-              nodes: [{ id: 'coo', name: 'COO' }],
-              edges: [],
-            },
+            leadership: [{ id: 'orchestrator', displayName: 'MosBot' }],
+            departments: [],
           }),
         }),
         text: async () => 'OK',
       });
     });
 
-    it('should return org chart configuration', async () => {
+    it('should return agents configuration', async () => {
       const token = getToken('user-id', 'user');
 
       const response = await request(app)
-        .get('/api/v1/openclaw/org-chart')
+        .get('/api/v1/openclaw/agents/config')
         .set('Authorization', `Bearer ${token}`);
 
       expect(response.status).toBe(200);
       expect(response.body.data).toBeDefined();
     });
 
-    it('should auto-generate org chart from agents.list when org-chart.json is missing', async () => {
+    it('should auto-generate agents config from agents.list when agents.json is missing', async () => {
       const token = getToken('user-id', 'user');
 
       let callCount = 0;
       global.fetch = jest.fn().mockImplementation(async () => {
         callCount++;
-        // First call: org-chart.json → 404
+        // First call: agents.json → 404
         if (callCount === 1) {
           const err = new Error('File not found');
           err.status = 404;
@@ -650,7 +648,7 @@ describe('OpenClaw Routes', () => {
       });
 
       const response = await request(app)
-        .get('/api/v1/openclaw/org-chart')
+        .get('/api/v1/openclaw/agents/config')
         .set('Authorization', `Bearer ${token}`);
 
       expect(response.status).toBe(200);
@@ -660,7 +658,7 @@ describe('OpenClaw Routes', () => {
       expect(response.body.data.departments).toEqual([]);
     });
 
-    it('should return empty org chart when both files are missing', async () => {
+    it('should return empty agents config when both files are missing', async () => {
       const token = getToken('user-id', 'user');
 
       global.fetch = jest.fn().mockImplementation(async () => {
@@ -670,7 +668,7 @@ describe('OpenClaw Routes', () => {
       });
 
       const response = await request(app)
-        .get('/api/v1/openclaw/org-chart')
+        .get('/api/v1/openclaw/agents/config')
         .set('Authorization', `Bearer ${token}`);
 
       expect(response.status).toBe(200);
@@ -679,7 +677,7 @@ describe('OpenClaw Routes', () => {
     });
   });
 
-  describe('PUT /api/v1/openclaw/org-chart/agents/:agentId', () => {
+  describe('PUT /api/v1/openclaw/agents/config/:agentId', () => {
     beforeEach(() => {
       global.fetch = jest.fn().mockImplementation(async (url, options) => {
         if (options?.method === 'GET') {
@@ -733,7 +731,7 @@ describe('OpenClaw Routes', () => {
       const token = getToken('admin-id', 'admin');
 
       const response = await request(app)
-        .put('/api/v1/openclaw/org-chart/agents/coo')
+        .put('/api/v1/openclaw/agents/config/coo')
         .set('Authorization', `Bearer ${token}`)
         .send({
           title: 'Updated COO',
@@ -748,7 +746,7 @@ describe('OpenClaw Routes', () => {
       const token = getToken('admin-id', 'admin');
 
       const response = await request(app)
-        .put('/api/v1/openclaw/org-chart/agents/coo')
+        .put('/api/v1/openclaw/agents/config/coo')
         .set('Authorization', `Bearer ${token}`)
         .send({
           title: 'Updated Agent',
@@ -762,7 +760,7 @@ describe('OpenClaw Routes', () => {
       const token = getToken('admin-id', 'admin');
 
       const response = await request(app)
-        .put('/api/v1/openclaw/org-chart/agents/coo')
+        .put('/api/v1/openclaw/agents/config/coo')
         .set('Authorization', `Bearer ${token}`)
         .send({
           displayName: 'Updated Agent Name',
@@ -775,7 +773,7 @@ describe('OpenClaw Routes', () => {
       const token = getToken('agent-id', 'agent');
 
       const response = await request(app)
-        .put('/api/v1/openclaw/org-chart/agents/coo')
+        .put('/api/v1/openclaw/agents/config/coo')
         .set('Authorization', `Bearer ${token}`)
         .send({
           title: 'Updated COO',
@@ -786,7 +784,7 @@ describe('OpenClaw Routes', () => {
     });
   });
 
-  describe('POST /api/v1/openclaw/org-chart/agents', () => {
+  describe('POST /api/v1/openclaw/agents/config', () => {
     beforeEach(() => {
       global.fetch = jest.fn().mockImplementation(async (url, options) => {
         if (options?.method === 'GET') {
@@ -823,7 +821,7 @@ describe('OpenClaw Routes', () => {
       const token = getToken('admin-id', 'admin');
 
       const response = await request(app)
-        .post('/api/v1/openclaw/org-chart/agents')
+        .post('/api/v1/openclaw/agents/config')
         .set('Authorization', `Bearer ${token}`)
         .send({
           id: 'new-agent',
@@ -839,7 +837,7 @@ describe('OpenClaw Routes', () => {
       const token = getToken('admin-id', 'admin');
 
       const response = await request(app)
-        .post('/api/v1/openclaw/org-chart/agents')
+        .post('/api/v1/openclaw/agents/config')
         .set('Authorization', `Bearer ${token}`)
         .send({
           id: 'new-agent',
@@ -853,7 +851,7 @@ describe('OpenClaw Routes', () => {
       const token = getToken('admin-id', 'admin');
 
       const response = await request(app)
-        .post('/api/v1/openclaw/org-chart/agents')
+        .post('/api/v1/openclaw/agents/config')
         .set('Authorization', `Bearer ${token}`)
         .send({
           id: 'new-agent',
@@ -867,7 +865,7 @@ describe('OpenClaw Routes', () => {
       const token = getToken('agent-id', 'agent');
 
       const response = await request(app)
-        .post('/api/v1/openclaw/org-chart/agents')
+        .post('/api/v1/openclaw/agents/config')
         .set('Authorization', `Bearer ${token}`)
         .send({
           id: 'new-agent',
