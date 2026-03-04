@@ -1,22 +1,22 @@
 /**
- * Validation utilities for org chart and OpenClaw agent configurations
+ * Validation utilities for agents config and OpenClaw agent configurations
  */
 
 /**
- * Validate org-chart.json structure
- * @param {object} orgChart - The org chart config object
+ * Validate agents.json structure
+ * @param {object} config - The agents config object
  * @returns {{ isValid: boolean, errors: string[] }}
  */
-export function validateOrgChart(orgChart) {
+export function validateAgentsConfig(config) {
   const errors = [];
 
-  // Check if orgChart is an object
-  if (!orgChart || typeof orgChart !== 'object') {
-    return { isValid: false, errors: ['Org chart must be a valid JSON object'] };
+  // Check if config is an object
+  if (!config || typeof config !== 'object') {
+    return { isValid: false, errors: ['Agents config must be a valid JSON object'] };
   }
 
   // Validate leadership array
-  const leadership = orgChart.leadership || [];
+  const leadership = config.leadership || [];
   if (!Array.isArray(leadership)) {
     errors.push('leadership must be an array');
   } else {
@@ -73,12 +73,12 @@ export function validateOrgChart(orgChart) {
   }
 
   // Validate departments array
-  const departments = orgChart.departments || [];
+  const departments = config.departments || [];
   if (!Array.isArray(departments)) {
     errors.push('departments must be an array');
   } else {
     const departmentIds = new Set();
-    const leadershipIds = new Set((orgChart.leadership || []).map((l) => l.id));
+    const leadershipIds = new Set((config.leadership || []).map((l) => l.id));
 
     departments.forEach((dept, idx) => {
       if (!dept.id || typeof dept.id !== 'string') {
@@ -113,7 +113,7 @@ export function validateOrgChart(orgChart) {
   }
 
   // Validate subagents array
-  const subagents = orgChart.subagents || [];
+  const subagents = config.subagents || [];
   if (!Array.isArray(subagents)) {
     errors.push('subagents must be an array');
   } else {
@@ -142,7 +142,7 @@ export function validateOrgChart(orgChart) {
     });
 
     // Cross-check: ensure all department subagent references exist
-    const departmentsArray = orgChart.departments || [];
+    const departmentsArray = config.departments || [];
     departmentsArray.forEach((dept, deptIdx) => {
       if (Array.isArray(dept.subagents)) {
         dept.subagents.forEach((subagentId, subIdx) => {
@@ -204,14 +204,13 @@ export function validateOpenClawConfig(config) {
 }
 
 /**
- * Sync org chart leadership to OpenClaw agents config
+ * Sync agents config leadership to OpenClaw agents config
  * For each non-human leadership entry, ensure a matching agent exists in agents.list
- * and update the agent's orgChart field
- * @param {object} orgChart - The org chart config
+ * @param {object} agentsConfig - The agents config
  * @param {object} openclawConfig - The OpenClaw config
  * @returns {object} Updated OpenClaw config
  */
-export function syncOrgChartToOpenClaw(orgChart, openclawConfig) {
+export function syncAgentsConfigToOpenClaw(agentsConfig, openclawConfig) {
   const updatedConfig = JSON.parse(JSON.stringify(openclawConfig)); // Deep clone
 
   if (!updatedConfig.agents) {
@@ -221,7 +220,7 @@ export function syncOrgChartToOpenClaw(orgChart, openclawConfig) {
     updatedConfig.agents.list = [];
   }
 
-  const leadership = orgChart.leadership || [];
+  const leadership = agentsConfig.leadership || [];
   const agentsList = updatedConfig.agents.list;
 
   leadership.forEach((leader) => {
@@ -252,7 +251,7 @@ export function syncOrgChartToOpenClaw(orgChart, openclawConfig) {
     }
 
     // Do NOT add orgChart to agent entries -- OpenClaw schema does not recognize it.
-    // Org chart data lives exclusively in /org-chart.json.
+    // Agents config data lives exclusively in /agents.json.
     delete agent.orgChart;
 
     // Ensure identity matches

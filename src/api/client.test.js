@@ -58,7 +58,7 @@ import {
   getInstanceConfig,
   getModels,
   getAgents,
-  getOrgChartConfig,
+  getAgentsConfig,
   getSubagents,
   getActiveSubagentSessions,
   getCronJobs,
@@ -410,8 +410,8 @@ describe('api client', () => {
       expect(api.get).toHaveBeenLastCalledWith('/openclaw/agents');
 
       api.get.mockResolvedValueOnce({ data: { data: { root: 'ceo' } } });
-      await expect(getOrgChartConfig()).resolves.toEqual({ root: 'ceo' });
-      expect(api.get).toHaveBeenLastCalledWith('/openclaw/org-chart');
+      await expect(getAgentsConfig()).resolves.toEqual({ root: 'ceo' });
+      expect(api.get).toHaveBeenLastCalledWith('/openclaw/agents/config');
 
       api.get.mockResolvedValueOnce({ data: { data: { running: [] } } });
       await expect(getSubagents()).resolves.toEqual({ running: [] });

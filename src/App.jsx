@@ -84,8 +84,6 @@ function App() {
             <Route path="/kanban" element={<Navigate to="/tasks" replace />} />
             <Route path="/tasks/overview" element={<Navigate to="/monitor" replace />} />
             <Route path="/tasks/kanban" element={<Navigate to="/tasks" replace />} />
-            <Route path="/org-chart" element={<Navigate to="/agents" replace />} />
-            <Route path="/tasks/org-chart" element={<Navigate to="/agents" replace />} />
             <Route
               path="/docs/*"
               element={

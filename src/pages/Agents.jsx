@@ -10,7 +10,7 @@ import {
   PlusIcon,
 } from '@heroicons/react/24/outline';
 import Header from '../components/Header';
-import { getActiveSubagentSessions, getOrgChartConfig } from '../api/client';
+import { getActiveSubagentSessions, getAgentsConfig } from '../api/client';
 import { useAuthStore } from '../stores/authStore';
 import AgentEditModal from '../components/AgentEditModal';
 import logger from '../utils/logger';
@@ -38,7 +38,7 @@ function getAgentColor(agentId) {
 
 export default function Agents() {
   const [subagents, setSubagents] = useState([]);
-  const [orgChartConfig, setOrgChartConfig] = useState(null);
+  const [agentsConfig, setAgentsConfig] = useState(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [, setIsLoadingSessions] = useState(true);
   const [configError, setConfigError] = useState(null);
@@ -49,16 +49,16 @@ export default function Agents() {
   const pollingRef = useRef(null);
   const { isAdmin } = useAuthStore();
 
-  // Fetch org chart config
+  // Fetch agents config
   const loadConfig = async () => {
     try {
-      const config = await getOrgChartConfig();
-      setOrgChartConfig(config);
+      const config = await getAgentsConfig();
+      setAgentsConfig(config);
       setConfigError(null);
     } catch (err) {
-      logger.warn('Failed to fetch org chart config', err);
+      logger.warn('Failed to fetch agents config', err);
       setConfigError(err.message);
-      setOrgChartConfig(null);
+      setAgentsConfig(null);
     } finally {
       setIsLoadingConfig(false);
     }
@@ -157,14 +157,14 @@ export default function Agents() {
 
     // Otherwise, try to find the node in the config and return its status
     // First check leadership
-    if (orgChartConfig?.leadership) {
-      const leader = orgChartConfig.leadership.find((l) => l.label === nodeLabel);
+    if (agentsConfig?.leadership) {
+      const leader = agentsConfig.leadership.find((l) => l.label === nodeLabel);
       if (leader?.status) return leader.status;
     }
 
     // Then check departments/subagents
-    if (orgChartConfig?.departments) {
-      for (const dept of orgChartConfig.departments) {
+    if (agentsConfig?.departments) {
+      for (const dept of agentsConfig.departments) {
         const agent = dept.subagents?.find((a) => a.label === nodeLabel);
         if (agent?.status) return agent.status;
       }
@@ -346,9 +346,9 @@ export default function Agents() {
     );
   }
 
-  // Compute KPIs from the org chart config
-  const leadership = orgChartConfig?.leadership || [];
-  const departments = orgChartConfig?.departments || [];
+  // Compute KPIs from the agents config
+  const leadership = agentsConfig?.leadership || [];
+  const departments = agentsConfig?.departments || [];
 
   // Count all subagents across all departments
   const allSubagents = departments.flatMap((dept) => dept.subagents || []);
@@ -450,7 +450,7 @@ export default function Agents() {
                 Add agents to the <code className="text-dark-300">agents.list</code> in your{' '}
                 <code className="text-dark-300">openclaw.json</code> and they will appear here
                 automatically. For custom hierarchy, create an{' '}
-                <code className="text-dark-300">org-chart.json</code> file.
+                <code className="text-dark-300">agents.json</code> file.
               </p>
               {isAdmin() && (
                 <button

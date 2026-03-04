@@ -139,9 +139,9 @@ export const getAgents = async () => {
   return response.data.data;
 };
 
-// OpenClaw Org Chart Config API - get organization chart structure
-export const getOrgChartConfig = async () => {
-  const response = await api.get('/openclaw/org-chart');
+// OpenClaw Agents Config API - get agent hierarchy and configuration
+export const getAgentsConfig = async () => {
+  const response = await api.get('/openclaw/agents/config');
   return response.data.data;
 };
 
@@ -152,7 +152,7 @@ export const getSubagents = async () => {
 };
 
 // Get active subagent sessions as a flat array - combines running and queued sessions
-// This is useful for components that need to iterate over sessions (e.g., OrgChart, TaskManagerOverview)
+// This is useful for components that need to iterate over sessions (e.g., Agents, TaskManagerOverview)
 // Normalizes field names: sessionLabel → label, status values to lowercase
 export const getActiveSubagentSessions = async () => {
   const response = await api.get('/openclaw/subagents');
