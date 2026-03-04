@@ -12,6 +12,7 @@ const { estimateCostFromTokens } = require('../services/modelPricingService');
 const { recordActivityLogEventSafe } = require('../services/activityLogService');
 const { parseOpenClawConfig } = require('../utils/configParser');
 const { getJwtSecret } = require('../utils/jwt');
+const { ensureDocsLinkIfMissing } = require('../services/docsLinkReconciliationService');
 
 const BUILTIN_OPENCLAW_REMAP_PREFIXES = [
   '/home/node/.openclaw/workspace',
@@ -150,11 +151,7 @@ function isAllowedWorkspacePath(workspacePath) {
   if (workspacePath === '/workspace' || workspacePath.startsWith('/workspace/')) return true;
 
   // Allow system config files
-  if (
-    workspacePath === '/openclaw.json' ||
-    workspacePath === '/agents.json'
-  )
-    return true;
+  if (workspacePath === '/openclaw.json' || workspacePath === '/agents.json') return true;
 
   // Allow docs and projects directories (moved from /shared/docs and /shared/projects)
   if (workspacePath.startsWith('/docs/') || workspacePath === '/docs') return true;
@@ -314,8 +311,7 @@ router.post('/workspace/files', requireAuth, requireAdmin, async (req, res, next
 
     // Restrict system config files to admin/owner only (exclude 'agent' role)
     const isSystemConfigFile =
-      workspacePath === '/openclaw.json' ||
-      workspacePath === '/agents.json';
+      workspacePath === '/openclaw.json' || workspacePath === '/agents.json';
     if (isSystemConfigFile && req.user.role === 'agent') {
       logger.warn('Agent role blocked from modifying system config', {
         userId: req.user.id,
@@ -431,8 +427,7 @@ router.put('/workspace/files', requireAuth, requireAdmin, async (req, res, next)
 
     // Restrict system config files to admin/owner only (exclude 'agent' role)
     const isSystemConfigFile =
-      workspacePath === '/openclaw.json' ||
-      workspacePath === '/agents.json';
+      workspacePath === '/openclaw.json' || workspacePath === '/agents.json';
     if (isSystemConfigFile && req.user.role === 'agent') {
       logger.warn('Agent role blocked from modifying system config', {
         userId: req.user.id,
@@ -507,8 +502,7 @@ router.delete('/workspace/files', requireAuth, requireAdmin, async (req, res, ne
 
     // Restrict system config files to admin/owner only (exclude 'agent' role)
     const isSystemConfigFile =
-      workspacePath === '/openclaw.json' ||
-      workspacePath === '/agents.json';
+      workspacePath === '/openclaw.json' || workspacePath === '/agents.json';
     if (isSystemConfigFile && req.user.role === 'agent') {
       logger.warn('Agent role blocked from deleting system config', {
         userId: req.user.id,
@@ -960,6 +954,10 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
       }),
     ]);
 
+    if (!isHuman) {
+      await ensureDocsLinkIfMissing(agentId);
+    }
+
     logger.info('Agent config updated successfully', {
       userId: req.user.id,
       agentId,
@@ -1121,6 +1119,10 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
         encoding: 'utf8',
       }),
     ]);
+
+    if (!isHuman) {
+      await ensureDocsLinkIfMissing(agentData.id);
+    }
 
     logger.info('Agent created successfully', {
       userId: req.user.id,

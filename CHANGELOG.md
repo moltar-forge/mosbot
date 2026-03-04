@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenClaw split-root support, including native `~/.openclaw` remaps and config-root/workspace separation
 - Comprehensive test suite covering config, app entry point, database migrations, jobs (archiveDoneTasks, runDailyStandup), routes (activity, auth, models, openclaw, standups, tasks, users, admin/users agent-config), services (activityLogService, modelPricingService, openclawGatewayClient, openclawWorkspaceClient, sessionUsageService, standupService, subagentsRuntimeService), and utilities (configParser, jwt, logger)
 - `.claude/` project rules and configuration (CLAUDE.md + rules for architecture, contributing, openclaw, security, testing)
+- Internal docs-link reconciliation service for OpenClaw workspaces (`docs` links), plus workspace client helpers for `/links/:type/:agentId`
+- Startup + agent create/update lifecycle hooks that reconcile docs links only when missing (`GET` state first, `PUT` only on `missing`)
 
 ### Changed
 
@@ -29,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Various route and service refinements to support test coverage (activity, openclaw, admin/users, tasks, users)
 - `.gitignore` updated to exclude additional generated files
 - Documentation references updated for OpenClaw path changes
+- API startup now performs non-fatal docs-link reconciliation for `main`
+- Agent configuration create/update flows now trigger non-fatal docs-link reconciliation for affected agents
+- Docs-link reconciliation remains internal-only in this phase (no public Mosbot API link-management endpoint; dashboard does not trigger writes)
 
 ### Fixed
 

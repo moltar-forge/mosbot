@@ -9,6 +9,7 @@ const { startSessionUsagePoller } = require('./services/sessionUsageService');
 const { startPricingRefreshJob } = require('./services/modelPricingService');
 const { startActivityIngestionPollers } = require('./services/activityIngestionService');
 const { warnIfDeviceAuthNotConfigured } = require('./services/openclawGatewayClient');
+const { ensureDocsLinkIfMissing } = require('./services/docsLinkReconciliationService');
 
 config.validate();
 
@@ -105,6 +106,9 @@ async function start() {
     });
     warnIfDeviceAuthNotConfigured();
   });
+
+  // System-triggered docs link reconciliation for main workspace (non-fatal).
+  ensureDocsLinkIfMissing('main');
 
   startSessionUsagePoller(config.polling.sessionUsageIntervalMs);
   startPricingRefreshJob(config.polling.modelPricingRefreshIntervalMs);

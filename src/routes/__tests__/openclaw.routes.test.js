@@ -43,6 +43,10 @@ jest.mock('../../services/cronJobsService', () => ({
   repairCronJobs: jest.fn(),
 }));
 
+jest.mock('../../services/docsLinkReconciliationService', () => ({
+  ensureDocsLinkIfMissing: jest.fn().mockResolvedValue({ action: 'unchanged' }),
+}));
+
 const request = require('supertest');
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -57,6 +61,7 @@ const {
 } = require('../../services/openclawGatewayClient');
 const { createCronJob } = require('../../services/cronJobsService');
 const { upsertSessionUsageBatch } = require('../../services/sessionUsageService');
+const { ensureDocsLinkIfMissing } = require('../../services/docsLinkReconciliationService');
 const bcrypt = require('bcrypt');
 
 // Helper to get JWT token for a user
@@ -108,6 +113,8 @@ describe('OpenClaw Routes', () => {
     sessionsListAllViaWs.mockResolvedValue([]);
     sessionsHistory.mockResolvedValue({ messages: [] });
     upsertSessionUsageBatch.mockResolvedValue(undefined);
+    ensureDocsLinkIfMissing.mockReset();
+    ensureDocsLinkIfMissing.mockResolvedValue({ action: 'unchanged' });
     pool.query.mockResolvedValue({ rows: [] });
   });
 
@@ -740,6 +747,7 @@ describe('OpenClaw Routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.data).toBeDefined();
+      expect(ensureDocsLinkIfMissing).toHaveBeenCalledWith('coo');
     });
 
     it('should require displayName', async () => {
@@ -831,6 +839,7 @@ describe('OpenClaw Routes', () => {
 
       expect(response.status).toBe(201);
       expect(response.body.data).toBeDefined();
+      expect(ensureDocsLinkIfMissing).toHaveBeenCalledWith('new-agent');
     });
 
     it('should require id and displayName', async () => {

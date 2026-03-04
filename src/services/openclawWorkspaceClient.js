@@ -233,10 +233,52 @@ async function putFileContent(path, content, encoding = 'utf8') {
   });
 }
 
+/**
+ * Get workspace link state for a type/agent target
+ * @param {string} type - Link type (currently "docs")
+ * @param {string} agentId - Agent ID or "main"
+ * @returns {Promise<Object>} Link state payload
+ */
+async function getWorkspaceLink(type, agentId) {
+  return makeOpenClawRequest(
+    'GET',
+    `/links/${encodeURIComponent(type)}/${encodeURIComponent(agentId)}`,
+  );
+}
+
+/**
+ * Ensure workspace link exists for a type/agent target
+ * @param {string} type - Link type (currently "docs")
+ * @param {string} agentId - Agent ID or "main"
+ * @returns {Promise<Object>} Link ensure payload
+ */
+async function ensureWorkspaceLink(type, agentId) {
+  return makeOpenClawRequest(
+    'PUT',
+    `/links/${encodeURIComponent(type)}/${encodeURIComponent(agentId)}`,
+  );
+}
+
+/**
+ * Delete managed workspace link for a type/agent target
+ * @param {string} type - Link type (currently "docs")
+ * @param {string} agentId - Agent ID or "main"
+ * @returns {Promise<Object>} Link delete payload
+ */
+async function deleteWorkspaceLink(type, agentId) {
+  return makeOpenClawRequest(
+    'DELETE',
+    `/links/${encodeURIComponent(type)}/${encodeURIComponent(agentId)}`,
+  );
+}
+
 module.exports = {
   makeOpenClawRequest,
   getFileContent,
   putFileContent,
+  getWorkspaceLink,
+  ensureWorkspaceLink,
+  deleteWorkspaceLink,
   sleep,
   isRetryableError,
 };

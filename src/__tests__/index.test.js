@@ -18,6 +18,9 @@ jest.mock('../services/activityIngestionService', () => ({
 jest.mock('../services/openclawGatewayClient', () => ({
   warnIfDeviceAuthNotConfigured: jest.fn(),
 }));
+jest.mock('../services/docsLinkReconciliationService', () => ({
+  ensureDocsLinkIfMissing: jest.fn().mockResolvedValue({ action: 'unchanged' }),
+}));
 jest.mock('../utils/logger', () => ({
   info: jest.fn(),
   error: jest.fn(),

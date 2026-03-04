@@ -20,6 +20,9 @@ const {
   makeOpenClawRequest,
   getFileContent,
   putFileContent,
+  getWorkspaceLink,
+  ensureWorkspaceLink,
+  deleteWorkspaceLink,
   isRetryableError,
   sleep,
 } = require('../openclawWorkspaceClient');
@@ -270,6 +273,50 @@ describe('openclawWorkspaceClient', () => {
             encoding: 'base64',
           }),
         }),
+      );
+    });
+  });
+
+  describe('workspace link helpers', () => {
+    it('getWorkspaceLink calls the links endpoint', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ state: 'missing' }),
+      });
+
+      await expect(getWorkspaceLink('docs', 'main')).resolves.toEqual({ state: 'missing' });
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://workspace-service:8080/links/docs/main',
+        expect.objectContaining({ method: 'GET' }),
+      );
+    });
+
+    it('ensureWorkspaceLink calls PUT on the links endpoint', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ action: 'created' }),
+      });
+
+      await ensureWorkspaceLink('docs', 'cto');
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://workspace-service:8080/links/docs/cto',
+        expect.objectContaining({ method: 'PUT' }),
+      );
+    });
+
+    it('deleteWorkspaceLink calls DELETE on the links endpoint', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ action: 'deleted' }),
+      });
+
+      await deleteWorkspaceLink('docs', 'cto');
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://workspace-service:8080/links/docs/cto',
+        expect.objectContaining({ method: 'DELETE' }),
       );
     });
   });
