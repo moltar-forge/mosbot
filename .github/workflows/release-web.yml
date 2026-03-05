@@ -20,6 +20,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -48,9 +51,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
-          build-args: |
-            VITE_API_URL=${{ secrets.VITE_API_URL || 'http://localhost:3000/api/v1' }}
-            VITE_APP_NAME=MosBot
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
