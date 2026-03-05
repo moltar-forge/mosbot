@@ -1,22 +1,48 @@
 # MosBot Workspace Service - Multi-stage Docker build
 # Use Debian slim for better multi-platform (arm64) build compatibility under QEMU
-FROM node:18-bookworm-slim AS base
+FROM node:25-alpine3.22 AS base
 
 # Install security updates and dumb-init for proper signal handling
-RUN apt-get update && \
-  apt-get upgrade -y && \
-  apt-get install -y --no-install-recommends dumb-init && \
-  apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN apk update && \
+  apk upgrade && \
+  apk add --no-cache dumb-init && \
+  rm -rf /var/cache/apk/*
 
 # App directory (node user already exists in official image)
 WORKDIR /app
 
 # Production dependencies stage
-FROM base AS dependencies
+FROM base AS dev-dependencies
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && \
   npm cache clean --force
+
+# Development stage (for local development with hot reload)
+FROM base AS development
+
+# Set development environment
+ENV NODE_ENV=development
+
+WORKDIR /app
+
+# Copy all dependencies (including dev dependencies)
+COPY --from=dev-dependencies /app/node_modules ./node_modules
+
+# Copy application source
+COPY --chown=node:node . .
+
+# Switch to non-root user
+USER node
+
+# Expose port
+EXPOSE 8080
+
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["dumb-init", "--"]
+
+# Start with nodemon for hot reload
+CMD ["npm", "run", "start"]
 
 # Final production stage
 FROM base AS production
