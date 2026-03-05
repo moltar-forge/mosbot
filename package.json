@@ -1,0 +1,28 @@
+{
+  "name": "mosbot",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MosBot monorepo",
+  "workspaces": [
+    "api",
+    "web",
+    "docs",
+    "workspace-server"
+  ],
+  "scripts": {
+    "dev": "docker compose up",
+    "dev:api": "npm run -w ./api dev",
+    "dev:web": "npm run -w ./web dev",
+    "dev:docs": "npm run -w ./docs start",
+    "dev:workspace-server": "npm run -w ./workspace-server start",
+    "lint": "npm run -w ./api lint && npm run -w ./web lint && npm run -w ./docs lint:check",
+    "test": "npm run -w ./api test:run && npm run -w ./web test:run && npm run -w ./docs test:ci && npm run -w ./workspace-server test:run",
+    "build": "npm run -w ./web build && npm run -w ./docs build",
+    "format": "npm run -w ./docs format && npm run -w ./workspace-server format",
+    "compose:up": "docker compose up -d",
+    "compose:down": "docker compose down"
+  },
+  "engines": {
+    "node": ">=25.0.0"
+  }
+}

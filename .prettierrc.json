@@ -1,0 +1,27 @@
+{
+  "singleQuote": true,
+  "semi": true,
+  "trailingComma": "all",
+  "printWidth": 100,
+  "tabWidth": 2,
+  "overrides": [
+    {
+      "files": [
+        "workspace-server/**/*.js",
+        "workspace-server/**/*.md"
+      ],
+      "options": {
+        "singleQuote": false,
+        "printWidth": 90
+      }
+    },
+    {
+      "files": [
+        "docs/**/*.md"
+      ],
+      "options": {
+        "proseWrap": "always"
+      }
+    }
+  ]
+}

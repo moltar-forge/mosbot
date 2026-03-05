@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+
+# Workspace node_modules (safety)
+api/node_modules/
+web/node_modules/
+docs/node_modules/
+workspace-server/node_modules/
+
+# Environment and local secrets
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.jks
+*id_rsa*
+*id_ed25519*
+*service-account*.json
+*credentials*.json
+
+# Local tooling
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs and test artifacts
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+.nyc_output/
+
+# Build artifacts
+dist/
+build/
+.docusaurus/
+
+# Docker and local runtime
+postgres_data/
+docker/.env
+docker/docker-compose.extra.yml
+docker/docker-compose.sandbox.yml
+docker/openclaw-config/*
+!docker/openclaw-config/.gitkeep
+
+# Claude/Cursor local overrides
+.claude/settings.local.json
+.claude/projects/
