@@ -3,3 +3,6 @@ docs/features/agents.md
 docs/getting-started/configuration.md
 docs/getting-started/quickstart.md
 docs/troubleshooting/faq.md
+reference-archive/**
+.docusaurus/**
+build/**

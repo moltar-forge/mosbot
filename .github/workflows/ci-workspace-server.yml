@@ -47,3 +47,4 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: workspace-server/coverage/lcov.info
           format: lcov
+          fail-on-error: false
