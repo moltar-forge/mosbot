@@ -1,0 +1,216 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - 'api/**'
+      - 'web/**'
+      - 'docs/**'
+      - 'workspace-server/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - 'web/**'
+      - 'docs/**'
+      - 'workspace-server/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      shared: ${{ steps.filter.outputs.shared }}
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+      docs: ${{ steps.filter.outputs.docs }}
+      workspace: ${{ steps.filter.outputs.workspace }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed components
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            shared:
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+            api:
+              - 'api/**'
+            web:
+              - 'web/**'
+            docs:
+              - 'docs/**'
+            workspace:
+              - 'workspace-server/**'
+
+  ci:
+    name: ${{ matrix.check_name }}
+    needs: changes
+    if: >-
+      ${{
+        needs.changes.outputs.shared == 'true' ||
+        (matrix.component == 'api' && needs.changes.outputs.api == 'true') ||
+        (matrix.component == 'web' && needs.changes.outputs.web == 'true') ||
+        (matrix.component == 'docs' && needs.changes.outputs.docs == 'true') ||
+        (matrix.component == 'workspace' && needs.changes.outputs.workspace == 'true')
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: api
+            check_name: lint-and-test
+          - component: web
+            check_name: lint-test-build
+          - component: docs
+            check_name: lint-build-test
+          - component: workspace
+            check_name: test-and-coverage
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: mosbot_test
+          POSTGRES_USER: mosbot
+          POSTGRES_PASSWORD: test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mosbot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '25'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: API lint
+        if: matrix.component == 'api'
+        run: npm run -w ./api lint
+
+      - name: API migrate
+        if: matrix.component == 'api'
+        env:
+          NODE_ENV: test
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: mosbot_test
+          DB_USER: mosbot
+          DB_PASSWORD: test-password
+          JWT_SECRET: ci-test-secret-not-used-in-production
+          CORS_ORIGIN: http://localhost:5173
+        run: npm run -w ./api migrate
+
+      - name: API test coverage
+        if: matrix.component == 'api'
+        env:
+          NODE_ENV: test
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: mosbot_test
+          DB_USER: mosbot
+          DB_PASSWORD: test-password
+          JWT_SECRET: ci-test-secret-not-used-in-production
+          CORS_ORIGIN: http://localhost:5173
+        run: npm run -w ./api test:coverage
+
+      - name: API coveralls
+        if: matrix.component == 'api'
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: api/coverage/lcov.info
+          format: lcov
+          fail-on-error: false
+
+      - name: Web lint
+        if: matrix.component == 'web'
+        run: npm run -w ./web lint
+
+      - name: Web test coverage
+        if: matrix.component == 'web'
+        env:
+          VITE_API_URL: http://localhost:3000/api/v1
+          VITE_APP_NAME: MosBot
+        run: npm run -w ./web test:coverage
+
+      - name: Web coveralls
+        if: matrix.component == 'web'
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: web/coverage/lcov.info
+          format: lcov
+
+      - name: Web build
+        if: matrix.component == 'web'
+        env:
+          VITE_API_URL: http://localhost:3000/api/v1
+          VITE_APP_NAME: MosBot
+        run: npm run -w ./web build
+
+      - name: Docs lint JavaScript
+        if: matrix.component == 'docs'
+        run: npm run -w ./docs lint:check
+
+      - name: Docs lint Markdown
+        if: matrix.component == 'docs'
+        run: npm run -w ./docs lint:md
+
+      - name: Docs check links
+        if: matrix.component == 'docs'
+        run: npm run -w ./docs test:links
+
+      - name: Docs format check
+        if: matrix.component == 'docs'
+        run: npm run -w ./docs format:check
+
+      - name: Docs build
+        if: matrix.component == 'docs'
+        run: npm run -w ./docs build
+
+      - name: Workspace format check
+        if: matrix.component == 'workspace'
+        run: npm run -w ./workspace-server format:check
+
+      - name: Workspace test coverage
+        if: matrix.component == 'workspace'
+        run: npm run -w ./workspace-server test:coverage
+
+      - name: Workspace coveralls
+        if: matrix.component == 'workspace'
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: workspace-server/coverage/lcov.info
+          format: lcov
+          fail-on-error: false
