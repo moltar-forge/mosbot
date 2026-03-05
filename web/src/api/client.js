@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { config } from '../config';
+import { config } from '../runtimeConfig';
 import logger from '../utils/logger';
 
 const API_URL = config.apiUrl;
