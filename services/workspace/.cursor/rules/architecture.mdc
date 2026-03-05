@@ -1,0 +1,47 @@
+---
+description: Architectural boundaries, route conventions, and compatibility rules for mosbot-workspace-service
+alwaysApply: false
+---
+
+# Architecture — Workspace Service
+
+## Purpose
+
+Keep the service easy to test, hard to misuse, and stable for downstream consumers (MosBot OS / MosBot API).
+
+## Module boundaries (keep these intact)
+
+| File/Folder | Owns |
+| ----------- | ---- |
+| `src/app.js` | Express app factory: middleware, routes, helper functions |
+| `src/index.js` | Process entrypoint: env parsing/validation + server startup only |
+| `server.js` | Backwards-compatible entrypoint delegating to `src/index.js` |
+| `__tests__/` | API and helper behavior tests (coverage enforced) |
+
+## Express conventions
+
+- Keep `createApp(opts)` pure and testable:
+  - No `app.listen()` in `src/app.js`.
+  - Accept configuration via `opts` (from `src/index.js`).
+- Use consistent HTTP semantics:
+  - `400` for validation errors (missing/invalid params).
+  - `401` for auth failures when token auth is enabled.
+  - `404` for missing files/paths.
+  - `500` for unexpected server errors.
+- Forward unexpected errors to the centralized error handler; don’t swallow errors silently.
+
+## File access conventions
+
+- All filesystem operations must use the existing safe resolution flow:
+  - normalize user paths
+  - resolve within exposed root
+  - guard against escape (defence-in-depth)
+  - apply symlink remap resolution where appropriate
+- When adding new endpoints that touch paths, reuse the existing helpers rather than introducing new path logic.
+
+## Backwards compatibility
+
+- Keep deprecated env var aliases working unless there’s an explicit migration plan:
+  - `WORKSPACE_PATH` → `WORKSPACE_ROOT`
+  - `AUTH_TOKEN` → `WORKSPACE_SERVICE_TOKEN`
+- Avoid breaking response shapes for existing endpoints without a versioning/deprecation plan.
