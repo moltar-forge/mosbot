@@ -46,6 +46,7 @@ coverage/
 dist/
 build/
 .docusaurus/
+.vite/
 
 # Docker and local runtime
 postgres_data/
@@ -58,3 +59,4 @@ docker/openclaw-config/*
 # Claude/Cursor local overrides
 .claude/settings.local.json
 .claude/projects/
+.claude/worktrees/

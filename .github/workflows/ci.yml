@@ -2,73 +2,13 @@ name: CI
 
 on:
   pull_request:
-    paths:
-      - 'api/**'
-      - 'web/**'
-      - 'docs/**'
-      - 'workspace-server/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/ci.yml'
   push:
     branches: [main]
-    paths:
-      - 'api/**'
-      - 'web/**'
-      - 'docs/**'
-      - 'workspace-server/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      shared: ${{ steps.filter.outputs.shared }}
-      api: ${{ steps.filter.outputs.api }}
-      web: ${{ steps.filter.outputs.web }}
-      docs: ${{ steps.filter.outputs.docs }}
-      workspace: ${{ steps.filter.outputs.workspace }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Detect changed components
-        id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            shared:
-              - 'package.json'
-              - 'package-lock.json'
-              - '.github/workflows/ci.yml'
-            api:
-              - 'api/**'
-            web:
-              - 'web/**'
-            docs:
-              - 'docs/**'
-            workspace:
-              - 'workspace-server/**'
-
   ci:
     name: ${{ matrix.check_name }}
-    needs: changes
-    if: >-
-      ${{
-        needs.changes.outputs.shared == 'true' ||
-        (matrix.component == 'api' && needs.changes.outputs.api == 'true') ||
-        (matrix.component == 'web' && needs.changes.outputs.web == 'true') ||
-        (matrix.component == 'docs' && needs.changes.outputs.docs == 'true') ||
-        (matrix.component == 'workspace' && needs.changes.outputs.workspace == 'true')
-      }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
