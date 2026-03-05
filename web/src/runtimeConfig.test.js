@@ -14,6 +14,7 @@ describe('runtimeConfig', () => {
     } else {
       window.__RUNTIME_CONFIG__ = originalRuntimeConfig;
     }
+    vi.unstubAllEnvs();
   });
 
   it('exports config with default values when no runtime config is set', async () => {
@@ -34,6 +35,8 @@ describe('runtimeConfig', () => {
 
   it('isApiUrlConfigured is false when no explicit URL is set', async () => {
     window.__RUNTIME_CONFIG__ = {};
+    // Ensure Vite env doesn't have it either (CI may set it)
+    vi.stubEnv('VITE_API_URL', '');
     const { config } = await import('./runtimeConfig');
     expect(config.isApiUrlConfigured).toBe(false);
   });
