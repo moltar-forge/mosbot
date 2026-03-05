@@ -92,11 +92,11 @@ docker run -d \
   -e CONFIG_ROOT=/openclaw-config \
   -e MAIN_WORKSPACE_DIR=workspace \
   -v /tmp/test-config:/openclaw-config \
-  -p 8080:8080 \
+  -p 18780:18780 \
   mosbot-workspace-service:test
 
 # Test health endpoint
-curl http://localhost:8080/health
+curl http://localhost:18780/health
 
 # Cleanup
 docker stop mosbot-workspace-test

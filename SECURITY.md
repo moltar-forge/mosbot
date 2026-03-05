@@ -38,6 +38,6 @@ We aim to acknowledge reports within **48 hours** and provide a resolution timel
 
 - Always set `WORKSPACE_SERVICE_TOKEN` to a strong random value (e.g. `openssl rand -hex 32`)
 - Mount workspace volumes as read-only (`:ro`) when write access is not required
-- Never expose port 8080 directly to the public internet — use a VPN, internal network, or Kubernetes `ClusterIP` service
+- Never expose port 18780 directly to the public internet — use a VPN, internal network, or Kubernetes `ClusterIP` service
 - Run the container as a non-root user (the default `node` user is used in the official Docker image)
 - Keep the image up to date to receive security patches

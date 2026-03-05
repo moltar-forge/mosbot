@@ -36,7 +36,7 @@ COPY --chown=node:node . .
 USER node
 
 # Expose port
-EXPOSE 8080
+EXPOSE 18780
 
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]
@@ -63,11 +63,11 @@ COPY --chown=node:node src/ ./src/
 USER node
 
 # Expose port
-EXPOSE 8080
+EXPOSE 18780
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:8080/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+  CMD node -e "require('http').get('http://localhost:18780/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]

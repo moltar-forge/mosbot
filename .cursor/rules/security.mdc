@@ -30,7 +30,7 @@ This service can read/write/delete files on the mounted workspace volume. These 
 - Don’t widen filesystem access by default:
   - Avoid changing defaults that expand browsing outside `WORKSPACE_ROOT` + `WORKSPACE_SUBDIR`.
 - Don’t follow/resolve symlinks without the existing remap and safety checks.
-- Don’t expose port `8080` to the public internet in documentation or examples.
+- Don’t expose port `18780` to the public internet in documentation or examples.
 - Don’t add environment variables intended to be secrets to committed files with real values.
 
 ## If a secret is accidentally committed

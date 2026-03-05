@@ -5,7 +5,7 @@ const path = require("path");
 
 const { createApp } = require("./app");
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 18780;
 
 const CONFIG_ROOT = process.env.CONFIG_ROOT || "/openclaw-config";
 const MAIN_WORKSPACE_DIR = (process.env.MAIN_WORKSPACE_DIR || "workspace").trim();

@@ -20,7 +20,7 @@ Lightweight HTTP service that exposes OpenClaw workspace files over REST API. Th
 > **This service can read, write, and delete files under the mounted OpenClaw root. Treat it as a privileged internal API.**
 
 - **Authentication is required** — `WORKSPACE_SERVICE_TOKEN` must be set. The service will refuse to start without it.
-- **Never expose port 8080 to the public internet** — use a VPN, private network, or Kubernetes `ClusterIP` service.
+- **Never expose port 18780 to the public internet** — use a VPN, private network, or Kubernetes `ClusterIP` service.
 - Always use a strong, randomly generated bearer token (`openssl rand -hex 32`).
 - The service runs as a non-root user inside the container.
 - Path traversal protection is built-in and cannot be bypassed via the API.
@@ -43,7 +43,7 @@ services:
     volumes:
       - /path/to/.openclaw:/openclaw-config
     ports:
-      - "8080:8080"
+      - "18780:18780"
 ```
 
 ### Docker Run
@@ -55,7 +55,7 @@ docker run -d \
   -e CONFIG_ROOT=/openclaw-config \
   -e MAIN_WORKSPACE_DIR=workspace \
   -v /path/to/.openclaw:/openclaw-config \
-  -p 8080:8080 \
+  -p 18780:18780 \
   ghcr.io/bymosbot/mosbot-workspace-service:latest
 ```
 
@@ -66,7 +66,7 @@ a read-write mount for `CONFIG_ROOT`.
 
 | Variable                            | Default                | Description                                                                                         |
 | ----------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------- |
-| `PORT`                              | `8080`                 | HTTP server port                                                                                    |
+| `PORT`                              | `18780`                | HTTP server port                                                                                    |
 | `CONFIG_ROOT`                       | `/openclaw-config`     | Absolute OpenClaw root mount containing config, shared dirs, and agent workspaces                   |
 | `MAIN_WORKSPACE_DIR`                | `workspace`            | Main workspace directory name under `CONFIG_ROOT` (single folder name only; no `/`, `\`, `.`, `..`) |
 | `WORKSPACE_SERVICE_TOKEN`           | —                      | **Required.** Bearer token for authentication. The service will not start without this.             |
