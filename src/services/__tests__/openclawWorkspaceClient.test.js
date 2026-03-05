@@ -3,7 +3,7 @@ global.fetch = jest.fn();
 const mockConfig = {
   nodeEnv: 'test',
   openclaw: {
-    workspaceUrl: 'http://workspace-service:8080',
+    workspaceUrl: 'http://workspace-service:18780',
     workspaceToken: null,
   },
 };
@@ -32,7 +32,7 @@ describe('openclawWorkspaceClient', () => {
     jest.clearAllMocks();
     jest.useRealTimers();
     mockConfig.nodeEnv = 'test';
-    mockConfig.openclaw.workspaceUrl = 'http://workspace-service:8080';
+    mockConfig.openclaw.workspaceUrl = 'http://workspace-service:18780';
     mockConfig.openclaw.workspaceToken = null;
     global.fetch.mockReset();
   });
@@ -86,7 +86,7 @@ describe('openclawWorkspaceClient', () => {
       await makeOpenClawRequest('PUT', '/files', { path: '/a.txt', content: 'x' });
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://workspace-service:8080/files',
+        'http://workspace-service:18780/files',
         expect.objectContaining({
           method: 'PUT',
           body: JSON.stringify({ path: '/a.txt', content: 'x' }),
@@ -196,7 +196,7 @@ describe('openclawWorkspaceClient', () => {
 
       await expect(getFileContent('/runtime/file.txt')).resolves.toBe('abc');
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://workspace-service:8080/files/content?path=%2Fruntime%2Ffile.txt',
+        'http://workspace-service:18780/files/content?path=%2Fruntime%2Ffile.txt',
         expect.objectContaining({ method: 'GET' }),
       );
     });
@@ -243,7 +243,7 @@ describe('openclawWorkspaceClient', () => {
       await putFileContent('/a.txt', 'hello');
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://workspace-service:8080/files',
+        'http://workspace-service:18780/files',
         expect.objectContaining({
           method: 'PUT',
           body: JSON.stringify({
@@ -265,7 +265,7 @@ describe('openclawWorkspaceClient', () => {
       await putFileContent('/a.bin', 'AA==', 'base64');
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://workspace-service:8080/files',
+        'http://workspace-service:18780/files',
         expect.objectContaining({
           body: JSON.stringify({
             path: '/a.bin',
@@ -287,7 +287,7 @@ describe('openclawWorkspaceClient', () => {
 
       await expect(getWorkspaceLink('docs', 'main')).resolves.toEqual({ state: 'missing' });
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://workspace-service:8080/links/docs/main',
+        'http://workspace-service:18780/links/docs/main',
         expect.objectContaining({ method: 'GET' }),
       );
     });
@@ -301,7 +301,7 @@ describe('openclawWorkspaceClient', () => {
 
       await ensureWorkspaceLink('docs', 'cto');
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://workspace-service:8080/links/docs/cto',
+        'http://workspace-service:18780/links/docs/cto',
         expect.objectContaining({ method: 'PUT' }),
       );
     });
@@ -315,7 +315,7 @@ describe('openclawWorkspaceClient', () => {
 
       await deleteWorkspaceLink('docs', 'cto');
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://workspace-service:8080/links/docs/cto',
+        'http://workspace-service:18780/links/docs/cto',
         expect.objectContaining({ method: 'DELETE' }),
       );
     });

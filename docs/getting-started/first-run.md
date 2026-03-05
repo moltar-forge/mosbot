@@ -73,7 +73,7 @@ After the first successful login:
 If you have an OpenClaw instance, add the integration variables to `.env`:
 
 ```bash
-OPENCLAW_WORKSPACE_URL=http://localhost:8080
+OPENCLAW_WORKSPACE_URL=http://localhost:18780
 OPENCLAW_WORKSPACE_TOKEN=your-workspace-token
 # Optional extra remap prefixes. Built-ins are always active:
 # /home/node/.openclaw/workspace, ~/.openclaw/workspace, /home/node/.openclaw, ~/.openclaw

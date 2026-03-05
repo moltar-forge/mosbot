@@ -26,7 +26,7 @@ describe('openclawWorkspaceClient', () => {
   });
 
   it('uses OPENCLAW_WORKSPACE_URL when configured', async () => {
-    process.env.OPENCLAW_WORKSPACE_URL = 'http://workspace.example:8080';
+    process.env.OPENCLAW_WORKSPACE_URL = 'http://workspace.example:18780';
     global.fetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -37,7 +37,7 @@ describe('openclawWorkspaceClient', () => {
 
     expect(data).toEqual({ status: 'ok' });
     expect(global.fetch).toHaveBeenCalledWith(
-      'http://workspace.example:8080/status',
+      'http://workspace.example:18780/status',
       expect.objectContaining({ method: 'GET' }),
     );
   });

@@ -7,7 +7,7 @@
 If running locally with port-forward, start with:
 
 ```bash
-curl -v http://localhost:8080/health
+curl -v http://localhost:18780/health
 ```
 
 ### Mosbot workspace status

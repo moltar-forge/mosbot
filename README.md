@@ -113,23 +113,23 @@ To use agent management, workspace browsing, and org chart features, MosBot API 
 
 | Service | Default port | Purpose |
 | ------- | ------------ | ------- |
-| **Workspace** | `8080` | File access, config, org chart |
+| **Workspace** | `18780` | File access, config, org chart |
 | **Gateway** | `18789` | Runtime control, tool invocation |
 
 **Ensure endpoints are accessible** from wherever the API runs:
 
-- **OpenClaw runs locally** — Use `http://localhost:8080` and `http://localhost:18789` in `.env`.
+- **OpenClaw runs locally** — Use `http://localhost:18780` and `http://localhost:18789` in `.env`.
 - **OpenClaw runs in Kubernetes** — Port-forward both services, then point the API at localhost (or `host.docker.internal` if the API runs in Docker):
 
   ```bash
   # Terminal 1: Workspace
-  kubectl port-forward -n <namespace> svc/openclaw-workspace 8080:8080
+  kubectl port-forward -n <namespace> svc/openclaw-workspace 18780:18780
 
   # Terminal 2: Gateway
   kubectl port-forward -n <namespace> svc/openclaw 18789:18789
   ```
 
-- **OpenClaw runs on a VPS or remote host** — Expose ports 8080 and 18789 on the VPS (firewall/security group). If MosBot API runs on the **same** VPS, use `http://localhost:8080` and `http://localhost:18789`. If the API runs elsewhere, use the VPS hostname or IP (e.g. `http://openclaw.example.com:8080`). Prefer a VPN or private network when exposing these services across the internet.
+- **OpenClaw runs on a VPS or remote host** — Expose ports 18780 and 18789 on the VPS (firewall/security group). If MosBot API runs on the **same** VPS, use `http://localhost:18780` and `http://localhost:18789`. If the API runs elsewhere, use the VPS hostname or IP (e.g. `http://openclaw.example.com:18780`). Prefer a VPN or private network when exposing these services across the internet.
 
 Add to `.env`: `OPENCLAW_WORKSPACE_URL`, `OPENCLAW_WORKSPACE_TOKEN`, `OPENCLAW_GATEWAY_URL`,
 `OPENCLAW_GATEWAY_TOKEN`, and optionally `OPENCLAW_PATH_REMAP_PREFIXES` for extra host-path

@@ -95,7 +95,7 @@ describe('OpenClaw Routes', () => {
 
     // Mock fetch globally
     originalFetch = global.fetch;
-    mockOpenClawUrl = 'http://mock-openclaw:8080';
+    mockOpenClawUrl = 'http://mock-openclaw:18780';
     process.env.OPENCLAW_WORKSPACE_URL = mockOpenClawUrl;
   });
 
