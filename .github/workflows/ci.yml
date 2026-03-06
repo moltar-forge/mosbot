@@ -6,25 +6,16 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  ci:
-    name: ${{ matrix.check_name }}
+  api:
+    name: API - lint, test, coverage
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - component: api
-            check_name: lint-and-test
-          - component: web
-            check_name: lint-test-build
-          - component: docs
-            check_name: lint-build-test
-          - component: workspace
-            check_name: test-and-coverage
-
     services:
       postgres:
         image: postgres:15-alpine
@@ -39,7 +30,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
+    env:
+      NODE_ENV: test
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: mosbot_test
+      DB_USER: mosbot
+      DB_PASSWORD: test-password
+      JWT_SECRET: ci-test-secret-not-used-in-production
+      CORS_ORIGIN: http://localhost:5173
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,45 +52,54 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: API lint
-        if: matrix.component == 'api'
+      - name: Lint
         run: npm run -w ./api lint
 
-      - name: API migrate
-        if: matrix.component == 'api'
-        env:
-          NODE_ENV: test
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: mosbot_test
-          DB_USER: mosbot
-          DB_PASSWORD: test-password
-          JWT_SECRET: ci-test-secret-not-used-in-production
-          CORS_ORIGIN: http://localhost:5173
+      - name: Migrate
         run: npm run -w ./api migrate
 
-      - name: API test coverage
-        if: matrix.component == 'api'
-        env:
-          NODE_ENV: test
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: mosbot_test
-          DB_USER: mosbot
-          DB_PASSWORD: test-password
-          JWT_SECRET: ci-test-secret-not-used-in-production
-          CORS_ORIGIN: http://localhost:5173
+      - name: Test with coverage
         run: npm run -w ./api test:coverage
 
-      - name: API coveralls
-        if: matrix.component == 'api'
+      - name: Upload coverage
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: api/coverage/lcov.info
           format: lcov
+          flag-name: api
+          parallel: true
           fail-on-error: false
 
+  checks:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Web - lint, test, build
+            component: web
+          - name: Docs - lint, build, validate
+            component: docs
+          - name: Workspace - format, test
+            component: workspace
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '25'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # --- Web ---
       - name: Web lint
         if: matrix.component == 'web'
         run: npm run -w ./web lint
@@ -110,6 +118,9 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: web/coverage/lcov.info
           format: lcov
+          flag-name: web
+          parallel: true
+          fail-on-error: false
 
       - name: Web build
         if: matrix.component == 'web'
@@ -118,6 +129,7 @@ jobs:
           VITE_APP_NAME: MosBot
         run: npm run -w ./web build
 
+      # --- Docs ---
       - name: Docs lint JavaScript
         if: matrix.component == 'docs'
         run: npm run -w ./docs lint:check
@@ -138,6 +150,7 @@ jobs:
         if: matrix.component == 'docs'
         run: npm run -w ./docs build
 
+      # --- Workspace ---
       - name: Workspace format check
         if: matrix.component == 'workspace'
         run: npm run -w ./workspace-server format:check
@@ -153,4 +166,20 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: workspace-server/coverage/lcov.info
           format: lcov
+          flag-name: workspace
+          parallel: true
           fail-on-error: false
+
+  coverage-finalize:
+    name: Finalize coverage
+    needs: [api, checks]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Finalize Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel-finished: true
