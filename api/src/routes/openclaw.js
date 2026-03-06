@@ -858,11 +858,13 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
 
     // Load current configs
     let agentsConfig;
+    let agentsConfigMissing = false;
     try {
       const agentsData = await makeOpenClawRequest('GET', '/files/content?path=/agents.json');
       agentsConfig = JSON.parse(agentsData.content);
     } catch (err) {
       if (err.status === 404) {
+        agentsConfigMissing = true;
         agentsConfig = {
           version: 1,
           leadership: [],
@@ -1004,12 +1006,30 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
     const agentsContent = JSON.stringify(agentsConfig, null, 2) + '\n';
     const openclawContent = JSON.stringify(openclawConfig, null, 2) + '\n';
 
+    const writeAgentsConfig = async () => {
+      // If agents.json was missing, create it; otherwise update it.
+      const method = agentsConfigMissing ? 'POST' : 'PUT';
+      try {
+        return await makeOpenClawRequest(method, '/files', {
+          path: '/agents.json',
+          content: agentsContent,
+          encoding: 'utf8',
+        });
+      } catch (err) {
+        // Defensive fallback: if update races with missing file, retry as create.
+        if (method === 'PUT' && err.status === 404) {
+          return makeOpenClawRequest('POST', '/files', {
+            path: '/agents.json',
+            content: agentsContent,
+            encoding: 'utf8',
+          });
+        }
+        throw err;
+      }
+    };
+
     await Promise.all([
-      makeOpenClawRequest('PUT', '/files', {
-        path: '/agents.json',
-        content: agentsContent,
-        encoding: 'utf8',
-      }),
+      writeAgentsConfig(),
       makeOpenClawRequest('PUT', '/files', {
         path: '/openclaw.json',
         content: openclawContent,
@@ -1084,11 +1104,13 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
 
     // Load current configs
     let agentsConfig;
+    let agentsConfigMissing = false;
     try {
       const agentsData = await makeOpenClawRequest('GET', '/files/content?path=/agents.json');
       agentsConfig = JSON.parse(agentsData.content);
     } catch (err) {
       if (err.status === 404) {
+        agentsConfigMissing = true;
         agentsConfig = {
           version: 1,
           leadership: [],
@@ -1170,12 +1192,28 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
     const agentsContent = JSON.stringify(agentsConfig, null, 2) + '\n';
     const openclawContent = JSON.stringify(openclawConfig, null, 2) + '\n';
 
+    const writeAgentsConfig = async () => {
+      const method = agentsConfigMissing ? 'POST' : 'PUT';
+      try {
+        return await makeOpenClawRequest(method, '/files', {
+          path: '/agents.json',
+          content: agentsContent,
+          encoding: 'utf8',
+        });
+      } catch (err) {
+        if (method === 'PUT' && err.status === 404) {
+          return makeOpenClawRequest('POST', '/files', {
+            path: '/agents.json',
+            content: agentsContent,
+            encoding: 'utf8',
+          });
+        }
+        throw err;
+      }
+    };
+
     await Promise.all([
-      makeOpenClawRequest('PUT', '/files', {
-        path: '/agents.json',
-        content: agentsContent,
-        encoding: 'utf8',
-      }),
+      writeAgentsConfig(),
       makeOpenClawRequest('PUT', '/files', {
         path: '/openclaw.json',
         content: openclawContent,

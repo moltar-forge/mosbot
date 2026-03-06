@@ -918,6 +918,19 @@ describe('OpenClaw Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body.data).toBeDefined();
       expect(response.body.data.agentId).toBe('main');
+
+      const calls = global.fetch.mock.calls || [];
+      const agentsWriteCall = calls.find((c) => {
+        const options = c[1] || {};
+        if (options.method !== 'POST') return false;
+        try {
+          const body = JSON.parse(options.body || '{}');
+          return body.path === '/agents.json';
+        } catch {
+          return false;
+        }
+      });
+      expect(agentsWriteCall).toBeDefined();
     });
 
     it('should require displayName', async () => {
@@ -1010,6 +1023,70 @@ describe('OpenClaw Routes', () => {
       expect(response.status).toBe(201);
       expect(response.body.data).toBeDefined();
       expect(ensureDocsLinkIfMissing).toHaveBeenCalledWith('new-agent');
+    });
+
+    it('should create agents.json on first write when missing', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      let callCount = 0;
+      global.fetch = jest.fn().mockImplementation(async (_url, options) => {
+        if (options?.method === 'GET') {
+          callCount++;
+          // First GET: agents.json missing
+          if (callCount === 1) {
+            const err = new Error('File not found');
+            err.status = 404;
+            throw err;
+          }
+          // Second GET: openclaw.json
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ content: JSON.stringify({ agents: { list: [] } }) }),
+            text: async () => 'OK',
+          };
+        }
+
+        if (options?.method === 'POST' || options?.method === 'PUT') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ created: true }),
+            text: async () => 'OK',
+          };
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'new-agent',
+          title: 'New Agent',
+          displayName: 'New Agent Display Name',
+        });
+
+      expect(response.status).toBe(201);
+
+      const calls = global.fetch.mock.calls || [];
+      const agentsWriteCall = calls.find((c) => {
+        const options = c[1] || {};
+        if (options.method !== 'POST') return false;
+        try {
+          const body = JSON.parse(options.body || '{}');
+          return body.path === '/agents.json';
+        } catch {
+          return false;
+        }
+      });
+      expect(agentsWriteCall).toBeDefined();
     });
 
     it('should require id and displayName', async () => {
