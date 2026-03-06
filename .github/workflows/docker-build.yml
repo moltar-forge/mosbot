@@ -1,0 +1,50 @@
+name: Docker Build (PR)
+
+on:
+  pull_request:
+    paths:
+      - 'api/**'
+      - 'web/**'
+      - 'workspace-server/**'
+      - '.github/workflows/docker-build.yml'
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: mosbot-api
+            context: ./api
+            target: production
+          - image: mosbot-dashboard
+            context: ./web
+            target: production
+          - image: mosbot-workspace-service
+            context: ./workspace-server
+            target: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          push: false
+          load: true
+          tags: ${{ matrix.image }}:pr-test
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max

@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'api-v*.*.*'
+      - 'web-v*.*.*'
+      - 'workspace-server-v*.*.*'
+
+jobs:
+  release-api:
+    if: startsWith(github.ref_name, 'api-v')
+    uses: ./.github/workflows/release-docker.yml
+    with:
+      image_name: mosbot-api
+      context: ./api
+      target: production
+      tag_prefix: 'api-v'
+    permissions:
+      contents: write
+      packages: write
+
+  release-web:
+    if: startsWith(github.ref_name, 'web-v')
+    uses: ./.github/workflows/release-docker.yml
+    with:
+      image_name: mosbot-dashboard
+      context: ./web
+      target: production
+      tag_prefix: 'web-v'
+    permissions:
+      contents: write
+      packages: write
+
+  release-workspace-server:
+    if: startsWith(github.ref_name, 'workspace-server-v')
+    uses: ./.github/workflows/release-docker.yml
+    with:
+      image_name: mosbot-workspace-service
+      context: ./workspace-server
+      target: production
+      tag_prefix: 'workspace-server-v'
+    permissions:
+      contents: write
+      packages: write
