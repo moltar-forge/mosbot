@@ -279,9 +279,16 @@ export default function WorkspaceExplorer({
 
     // Tree mode is rooted at "/". On deep-link refresh, ensure root listing is fetched
     // so the left pane does not render an empty state while breadcrumbs point deeper.
-    fetchListing({ path: '/', recursive: false, force: true, agentId }).catch(() => {
-      // Ignore root prefetch errors here; path-specific handling below will surface actionable errors.
-    });
+    // Only fetch if not already cached — avoid force:true to prevent unnecessary churn.
+    const state = useWorkspaceStore.getState();
+    const rootCacheKey = `${agentId}:/:false`;
+    const hasRootListing = !!state.listings[rootCacheKey];
+
+    if (!hasRootListing) {
+      fetchListing({ path: '/', recursive: false, agentId }).catch(() => {
+        // Ignore root prefetch errors here; path-specific handling below will surface actionable errors.
+      });
+    }
 
     if (isDirectory) {
       setCurrentPath(path);
@@ -386,8 +393,13 @@ export default function WorkspaceExplorer({
       setSelectedFile(null);
       // Do NOT navigate away — keep the current URL so the path is preserved on refresh
 
-      // Always fetch root (tree view needs it)
-      await fetchListing({ path: '/', recursive: false, force: true, agentId });
+      // Fetch root only when needed:
+      // - Tree view requires the root listing to render the tree
+      // - Flat view at the root still needs '/' for the visible listing
+      const shouldFetchRoot = viewMode === 'tree' || savedCurrentPath === '/';
+      if (shouldFetchRoot) {
+        await fetchListing({ path: '/', recursive: false, force: true, agentId });
+      }
 
       // Fetch the current directory listing if not at root
       if (savedCurrentPath !== '/') {
