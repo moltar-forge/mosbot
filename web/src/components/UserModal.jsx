@@ -108,51 +108,6 @@ export default function UserModal({ isOpen, onClose, user = null, onSave }) {
         userData.password = formData.password;
       }
 
-      // If user is an agent or admin (admin can also have agent config), add agent-specific fields
-      const isAgentOrAdminWithConfig = formData.role === 'agent' || formData.role === 'admin';
-      if (isAgentOrAdminWithConfig) {
-        userData.agentId = formData.agentId;
-
-        // Build agentConfigPatch
-        const agentConfigPatch = {};
-
-        // Identity fields
-        if (formData.emoji || formData.theme) {
-          agentConfigPatch.identity = {};
-          if (formData.emoji) agentConfigPatch.identity.emoji = formData.emoji;
-          if (formData.theme) agentConfigPatch.identity.theme = formData.theme;
-        }
-
-        // Model fields
-        if (formData.primaryModel || formData.fallbackModels) {
-          agentConfigPatch.model = {};
-          if (formData.primaryModel) {
-            agentConfigPatch.model.primary = formData.primaryModel;
-          }
-          if (formData.fallbackModels) {
-            // Split comma-separated list and trim whitespace
-            agentConfigPatch.model.fallbacks = formData.fallbackModels
-              .split(',')
-              .map((m) => m.trim())
-              .filter((m) => m.length > 0);
-          }
-        }
-
-        // Advanced JSON config (if provided)
-        if (formData.agentConfigJson && formData.agentConfigJson.trim()) {
-          try {
-            const advancedConfig = JSON.parse(formData.agentConfigJson);
-            // Merge advanced config with basic fields
-            Object.assign(agentConfigPatch, advancedConfig);
-          } catch (jsonError) {
-            setError('Invalid JSON in advanced configuration');
-            setIsSubmitting(false);
-            return;
-          }
-        }
-
-        userData.agentConfigPatch = agentConfigPatch;
-      }
 
       await onSave(userData, user?.id);
       onClose();
@@ -215,11 +170,7 @@ export default function UserModal({ isOpen, onClose, user = null, onSave }) {
 
                     {/* Two-column layout when showing agent config (agent or admin) */}
                     <div
-                      className={
-                        formData.role === 'agent' || formData.role === 'admin'
-                          ? 'grid grid-cols-1 lg:grid-cols-2 gap-6'
-                          : ''
-                      }
+                      className=""
                     >
                       {/* Left column: Basic user fields */}
                       <div className="space-y-4">
@@ -305,7 +256,6 @@ export default function UserModal({ isOpen, onClose, user = null, onSave }) {
                             disabled={isSubmitting || (user && user.role === 'owner')}
                           >
                             <option value="user">User</option>
-                            <option value="agent">Agent</option>
                             <option value="admin">Admin</option>
                             {user && user.role === 'owner' && <option value="owner">Owner</option>}
                           </select>
@@ -341,7 +291,7 @@ export default function UserModal({ isOpen, onClose, user = null, onSave }) {
                       {/* End left column */}
 
                       {/* Agent-specific fields - Right column (agent or admin; admin can also be an agent) */}
-                      {(formData.role === 'agent' || formData.role === 'admin') && (
+                      {false && (
                         <div className="space-y-4 lg:border-l lg:border-dark-700 lg:pl-6">
                           <div>
                             <h3 className="text-base font-semibold text-primary-400 mb-4 flex items-center gap-2">

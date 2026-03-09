@@ -35,7 +35,6 @@ describe('authenticateToken API key flow', () => {
         rows: [
           {
             agent_db_id: '11111111-1111-1111-1111-111111111111',
-            user_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
             agent_id: 'main',
             name: 'Main Agent',
             status: 'active',
@@ -51,7 +50,7 @@ describe('authenticateToken API key flow', () => {
 
     expect(next).toHaveBeenCalled();
     expect(req.user).toMatchObject({
-      id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      id: null,
       agent_db_id: '11111111-1111-1111-1111-111111111111',
       role: 'agent',
       agent_id: 'main',
@@ -82,7 +81,6 @@ describe('authenticateToken API key flow', () => {
       rows: [
         {
           agent_db_id: '11111111-1111-1111-1111-111111111111',
-          user_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
           agent_id: 'main',
           name: 'Main Agent',
           status: 'active',
@@ -108,7 +106,6 @@ describe('authenticateToken API key flow', () => {
       rows: [
         {
           agent_db_id: '11111111-1111-1111-1111-111111111111',
-          user_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
           agent_id: 'main',
           name: 'Main Agent',
           status: 'deprecated',

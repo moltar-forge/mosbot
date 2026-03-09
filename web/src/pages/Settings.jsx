@@ -106,32 +106,10 @@ export default function Settings() {
   };
 
   const handleSaveUser = async (userData, userId) => {
-    // Extract agent-specific fields
-    const { agentId, agentConfigPatch, ...userBasics } = userData;
-
     if (userId) {
-      // Update existing user
-      await api.put(`/admin/users/${userId}`, userBasics);
-
-      // If user is an agent or admin with agent config, update agent config
-      if ((userBasics.role === 'agent' || userBasics.role === 'admin') && agentId) {
-        await api.put(`/admin/users/${userId}/agent`, {
-          agentId,
-          agentConfigPatch,
-        });
-      }
+      await api.put(`/admin/users/${userId}`, userData);
     } else {
-      // Create new user
-      const createResponse = await api.post('/admin/users', userBasics);
-      const newUserId = createResponse.data.data.id;
-
-      // If new user is an agent or admin with agent config, configure agent settings
-      if ((userBasics.role === 'agent' || userBasics.role === 'admin') && agentId) {
-        await api.put(`/admin/users/${newUserId}/agent`, {
-          agentId,
-          agentConfigPatch,
-        });
-      }
+      await api.post('/admin/users', userData);
     }
 
     await fetchUsers();

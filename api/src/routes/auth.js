@@ -261,11 +261,9 @@ const authenticateToken = async (req, res, next) => {
       const keyHash = crypto.createHash('sha256').update(token).digest('hex');
       const result = await pool.query(
         `SELECT a.id AS agent_db_id, a.agent_id, a.name, a.status, a.active,
-                k.id AS key_id, k.revoked_at,
-                u.id AS user_id
+                k.id AS key_id, k.revoked_at
          FROM agent_api_keys k
          JOIN agents a ON a.agent_id = k.agent_id
-         LEFT JOIN users u ON u.agent_id = a.agent_id
          WHERE k.key_hash = $1
          LIMIT 1`,
         [keyHash],
@@ -298,8 +296,8 @@ const authenticateToken = async (req, res, next) => {
       }
 
       req.user = {
-        // Keep compatibility: use users.id when available for existing FK-based writes/logs
-        id: row.user_id || null,
+        // Compatibility shape retained (id + agent_db_id), but agents are no longer tied to users rows.
+        id: null,
         agent_db_id: row.agent_db_id,
         role: 'agent',
         name: row.name,

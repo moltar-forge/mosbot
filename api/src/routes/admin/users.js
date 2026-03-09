@@ -4,9 +4,6 @@ const pool = require('../../db/pool');
 const bcrypt = require('bcrypt');
 const { authenticateToken, requireManageUsers } = require('../auth');
 const logger = require('../../utils/logger');
-const { ensureDocsLinkIfMissing } = require('../../services/docsLinkReconciliationService');
-const { parseOpenClawConfig } = require('../../utils/configParser');
-const { gatewayWsRpc } = require('../../services/openclawGatewayClient');
 
 // Apply auth middleware to all routes
 router.use(authenticateToken);
@@ -66,9 +63,9 @@ router.get('/', async (req, res, next) => {
           }
         });
 
-        // Merge agent config into user objects (agent or admin; admin can also have agent config)
+        // Merge agent config into user objects (admin users can still have linked agent config)
         users = users.map((user) => {
-          if ((user.role === 'agent' || user.role === 'admin') && user.agent_id) {
+          if (user.role === 'admin' && user.agent_id) {
             const agentConfig = agentConfigMap.get(user.agent_id);
             if (agentConfig) {
               return {
@@ -126,12 +123,8 @@ router.get('/:id', validateUUID('id'), async (req, res, next) => {
 
     let user = result.rows[0];
 
-    // If includeAgentConfig is requested and user is an agent or admin with agent_id, merge OpenClaw config
-    if (
-      includeAgentConfig === 'true' &&
-      (user.role === 'agent' || user.role === 'admin') &&
-      user.agent_id
-    ) {
+    // If includeAgentConfig is requested and user is an admin with agent_id, merge OpenClaw config
+    if (includeAgentConfig === 'true' && user.role === 'admin' && user.agent_id) {
       try {
         const { makeOpenClawRequest } = require('../../services/openclawWorkspaceClient');
 
@@ -197,30 +190,33 @@ router.post('/', requireManageUsers, async (req, res, next) => {
       });
     }
 
-    // Only agent, admin and user roles can be assigned via admin endpoints (not owner)
-    const validRoles = ['agent', 'admin', 'user'];
+    if (role === 'agent') {
+      return res.status(400).json({
+        error: {
+          message: 'Legacy user role "agent" is deprecated. Create machine agents via /api/v1/admin/agents.',
+          status: 400,
+          code: 'AGENT_USER_DEPRECATED',
+        },
+      });
+    }
+
+    // Only admin and user roles can be assigned via admin endpoints (not owner, not agent)
+    const validRoles = ['admin', 'user'];
     if (role && !validRoles.includes(role)) {
       return res.status(400).json({
         error: {
-          message: 'Invalid role. Only agent, admin and user roles can be assigned.',
+          message: 'Invalid role. Only admin and user roles can be assigned.',
           status: 400,
         },
       });
     }
 
-    // agent_id is required when role is 'agent'
-    if (role === 'agent' && !agent_id) {
-      return res.status(400).json({
-        error: { message: 'agent_id is required when role is agent', status: 400 },
-      });
-    }
-
-    const slugRegex = /^[a-z0-9_-]+$/;
-    if (agent_id !== undefined && !slugRegex.test(agent_id)) {
+    if (agent_id !== undefined) {
       return res.status(400).json({
         error: {
-          message: 'agent_id must be a valid slug (lowercase, alphanumeric, hyphens, underscores)',
+          message: 'agent_id is deprecated on users. Manage agents via /api/v1/admin/agents.',
           status: 400,
+          code: 'AGENT_USER_DEPRECATED',
         },
       });
     }
@@ -233,17 +229,6 @@ router.post('/', requireManageUsers, async (req, res, next) => {
       });
     }
 
-    // Check if agent_id is already taken
-    if (agent_id) {
-      const existingAgent = await pool.query('SELECT id FROM users WHERE agent_id = $1', [
-        agent_id,
-      ]);
-      if (existingAgent.rows.length > 0) {
-        return res.status(409).json({
-          error: { message: 'agent_id is already in use by another user', status: 409 },
-        });
-      }
-    }
 
     // Hash password
     const saltRounds = 10;
@@ -252,11 +237,11 @@ router.post('/', requireManageUsers, async (req, res, next) => {
     // Create user (default active = true)
     const result = await pool.query(
       `
-      INSERT INTO users (name, email, password_hash, role, avatar_url, agent_id, active)
-      VALUES ($1, $2, $3, $4, $5, $6, true)
+      INSERT INTO users (name, email, password_hash, role, avatar_url, active)
+      VALUES ($1, $2, $3, $4, $5, true)
       RETURNING id, name, email, avatar_url, role, agent_id, active, created_at
     `,
-      [name, email, password_hash, role, avatar_url, agent_id ?? null],
+      [name, email, password_hash, role, avatar_url],
     );
 
     res.status(201).json({ data: result.rows[0] });
@@ -279,12 +264,9 @@ router.put('/:id', requireManageUsers, validateUUID('id'), async (req, res, next
 
     const targetUser = existing.rows[0];
 
-    // Detect if user is being demoted from agent role
-    const wasDemotedFromAgent = targetUser.role === 'agent' && role && role !== 'agent';
-
-    // Admin/Agent cannot edit owner
-    if ((req.user.role === 'admin' || req.user.role === 'agent') && targetUser.role === 'owner') {
-      logger.warn('Owner protection violation: Admin/Agent attempted to edit owner account', {
+    // Admin cannot edit owner
+    if (req.user.role === 'admin' && targetUser.role === 'owner') {
+      logger.warn('Owner protection violation: Admin attempted to edit owner account', {
         action: 'update_user',
         actor_id: req.user.id,
         actor_role: req.user.role,
@@ -347,19 +329,39 @@ router.put('/:id', requireManageUsers, validateUUID('id'), async (req, res, next
       });
     }
 
-    // Only agent, admin and user roles can be assigned via admin endpoints (not owner)
+    if (role === 'agent') {
+      return res.status(400).json({
+        error: {
+          message: 'Legacy user role "agent" is deprecated. Create machine agents via /api/v1/admin/agents.',
+          status: 400,
+          code: 'AGENT_USER_DEPRECATED',
+        },
+      });
+    }
+
+    // Only admin and user roles can be assigned via admin endpoints (not owner, not agent)
     // Exception: owner can keep their own role when updating themselves
-    const validRoles = ['agent', 'admin', 'user'];
+    const validRoles = ['admin', 'user'];
     if (role !== undefined && !validRoles.includes(role)) {
       // Allow 'owner' role only if target user is already owner
       if (role !== 'owner' || targetUser.role !== 'owner') {
         return res.status(400).json({
           error: {
-            message: 'Invalid role. Only agent, admin and user roles can be assigned.',
+            message: 'Invalid role. Only admin and user roles can be assigned.',
             status: 400,
           },
         });
       }
+    }
+
+    if (agent_id !== undefined) {
+      return res.status(400).json({
+        error: {
+          message: 'agent_id is deprecated on users. Manage agents via /api/v1/admin/agents.',
+          status: 400,
+          code: 'AGENT_USER_DEPRECATED',
+        },
+      });
     }
 
     // Prevent deactivating yourself
@@ -367,38 +369,6 @@ router.put('/:id', requireManageUsers, validateUUID('id'), async (req, res, next
       return res.status(400).json({
         error: { message: 'Cannot deactivate your own account', status: 400 },
       });
-    }
-
-    // agent_id is required when the effective role is 'agent'
-    const effectiveRole = role !== undefined ? role : targetUser.role;
-    const effectiveAgentId = agent_id !== undefined ? agent_id : targetUser.agent_id;
-    if (effectiveRole === 'agent' && !effectiveAgentId) {
-      return res.status(400).json({
-        error: { message: 'agent_id is required when role is agent', status: 400 },
-      });
-    }
-
-    const slugRegex = /^[a-z0-9_-]+$/;
-    if (agent_id !== undefined && !slugRegex.test(agent_id)) {
-      return res.status(400).json({
-        error: {
-          message: 'agent_id must be a valid slug (lowercase, alphanumeric, hyphens, underscores)',
-          status: 400,
-        },
-      });
-    }
-
-    // Check if agent_id is taken by another user
-    if (agent_id !== undefined && agent_id !== targetUser.agent_id) {
-      const agentIdCheck = await pool.query(
-        'SELECT id FROM users WHERE agent_id = $1 AND id != $2',
-        [agent_id, id],
-      );
-      if (agentIdCheck.rows.length > 0) {
-        return res.status(409).json({
-          error: { message: 'agent_id is already in use by another user', status: 409 },
-        });
-      }
     }
 
     // Check if email is taken by another user
@@ -457,12 +427,6 @@ router.put('/:id', requireManageUsers, validateUUID('id'), async (req, res, next
       paramCount++;
     }
 
-    if (agent_id !== undefined) {
-      updates.push(`agent_id = $${paramCount}`);
-      params.push(agent_id);
-      paramCount++;
-    }
-
     if (updates.length === 0) {
       return res.status(400).json({
         error: { message: 'No fields to update', status: 400 },
@@ -481,430 +445,22 @@ router.put('/:id', requireManageUsers, validateUUID('id'), async (req, res, next
       params,
     );
 
-    // If user was demoted from agent role, remove from OpenClaw config
-    if (wasDemotedFromAgent && targetUser.agent_id) {
-      try {
-        await removeAgentFromConfig(targetUser.agent_id);
-        logger.info('Removed agent from OpenClaw config after demotion', {
-          userId: id,
-          agentId: targetUser.agent_id,
-          oldRole: 'agent',
-          newRole: role,
-        });
-      } catch (removeError) {
-        // Log error but don't fail the user update
-        logger.warn('Failed to remove agent from OpenClaw config', {
-          error: removeError.message,
-          userId: id,
-          agentId: targetUser.agent_id,
-        });
-      }
-    }
-
     res.json({ data: result.rows[0] });
   } catch (error) {
     next(error);
   }
 });
 
-// PUT /api/v1/admin/users/:id/agent - Upsert agent configuration (owner/admin only)
-router.put('/:id/agent', requireManageUsers, validateUUID('id'), async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const { agentId, agentConfigPatch } = req.body;
-
-    // Check if user exists and get their role
-    const userResult = await pool.query(
-      'SELECT id, role, agent_id, name, email FROM users WHERE id = $1',
-      [id],
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({
-        error: { message: 'User not found', status: 404 },
-      });
-    }
-
-    const user = userResult.rows[0];
-
-    // User must have role 'agent' or 'admin' to have agent config (an agent can also be an admin)
-    if (user.role !== 'agent' && user.role !== 'admin') {
-      return res.status(400).json({
-        error: {
-          message: 'User must have role "agent" or "admin" to configure agent settings',
-          status: 400,
-        },
-      });
-    }
-
-    // Validate agentId format (slug: lowercase, alphanumeric, hyphens, underscores)
-    const agentIdSlug = agentId || user.agent_id;
-    if (!agentIdSlug) {
-      return res.status(400).json({
-        error: {
-          message: 'agentId is required when configuring agent',
-          status: 400,
-        },
-      });
-    }
-
-    const slugRegex = /^[a-z0-9_-]+$/;
-    if (!slugRegex.test(agentIdSlug)) {
-      return res.status(400).json({
-        error: {
-          message: 'agentId must be a valid slug (lowercase, alphanumeric, hyphens, underscores)',
-          status: 400,
-        },
-      });
-    }
-
-    // If agentId is being changed, check if it's already taken by another user
-    if (agentId && agentId !== user.agent_id) {
-      const existingAgent = await pool.query(
-        'SELECT id FROM users WHERE agent_id = $1 AND id != $2',
-        [agentId, id],
-      );
-      if (existingAgent.rows.length > 0) {
-        return res.status(409).json({
-          error: {
-            message: 'agentId is already in use by another user',
-            status: 409,
-          },
-        });
-      }
-    }
-
-    const { makeOpenClawRequest } = require('../../services/openclawWorkspaceClient');
-
-    // Read openclaw.json
-    let openclawConfig;
-    try {
-      const configData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
-      openclawConfig = parseOpenClawConfig(configData.content);
-    } catch (readError) {
-      logger.error('Failed to read OpenClaw config', {
-        error: readError.message,
-        userId: id,
-      });
-      return res.status(500).json({
-        error: {
-          message: 'Failed to read OpenClaw configuration',
-          status: 500,
-        },
-      });
-    }
-
-    // Ensure agents.list exists
-    if (!openclawConfig.agents) {
-      openclawConfig.agents = {};
-    }
-    if (!openclawConfig.agents.list) {
-      openclawConfig.agents.list = [];
-    }
-
-    // Find or create agent entry
-    let agentEntry = openclawConfig.agents.list.find((a) => a.id === agentIdSlug);
-    const isNewAgent = !agentEntry;
-
-    if (isNewAgent) {
-      // Create new agent entry with defaults
-      agentEntry = {
-        id: agentIdSlug,
-        workspace: `/home/node/.openclaw/workspace-${agentIdSlug}`,
-        identity: {
-          name: user.name,
-          theme: `${user.name} workspace`,
-          emoji: '🤖',
-        },
-        model: {
-          primary: 'openrouter/moonshotai/kimi-k2.5',
-          fallbacks: [],
-        },
-        default: false,
-      };
-      openclawConfig.agents.list.push(agentEntry);
-    }
-
-    // Apply agentConfigPatch if provided
-    if (agentConfigPatch && typeof agentConfigPatch === 'object') {
-      // Merge identity fields
-      if (agentConfigPatch.identity) {
-        agentEntry.identity = {
-          ...agentEntry.identity,
-          ...agentConfigPatch.identity,
-        };
-      }
-
-      // Merge model fields
-      if (agentConfigPatch.model) {
-        agentEntry.model = {
-          ...agentEntry.model,
-          ...agentConfigPatch.model,
-        };
-      }
-
-      // Merge other allowed fields
-      const allowedFields = ['default', 'subagents', 'heartbeat', 'workspace'];
-      allowedFields.forEach((field) => {
-        if (agentConfigPatch[field] !== undefined) {
-          agentEntry[field] = agentConfigPatch[field];
-        }
-      });
-    }
-
-    // Update meta timestamp
-    if (!openclawConfig.meta) {
-      openclawConfig.meta = {};
-    }
-    openclawConfig.meta.lastTouchedAt = new Date().toISOString();
-
-    // Apply openclaw.json via Gateway RPC (config.apply)
-    try {
-      const currentConfig = await gatewayWsRpc('config.get', {});
-      await gatewayWsRpc('config.apply', {
-        raw: JSON.stringify(openclawConfig, null, 2),
-        baseHash: currentConfig?.hash || null,
-        note: `Admin user agent config update (${agentIdSlug}) by ${req.user.id}`,
-        restartDelayMs: 2000,
-      });
-    } catch (writeError) {
-      logger.error('Failed to apply OpenClaw config via gateway', {
-        error: writeError.message,
-        userId: id,
-      });
-      return res.status(500).json({
-        error: {
-          message: 'Failed to update OpenClaw configuration',
-          status: 500,
-        },
-      });
-    }
-
-    // Update user's agent_id in database if changed
-    if (agentId && agentId !== user.agent_id) {
-      await pool.query('UPDATE users SET agent_id = $1 WHERE id = $2', [agentId, id]);
-    }
-
-    // Scaffold workspace files if this is a new agent
-    if (isNewAgent) {
-      try {
-        const workspacePath = agentEntry.workspace.replace('/home/node/.openclaw/', '/');
-        await scaffoldAgentWorkspace(agentIdSlug, workspacePath, user.name);
-
-        logger.info('Scaffolded workspace for new agent', {
-          agentId: agentIdSlug,
-          workspacePath,
-          userId: id,
-        });
-      } catch (scaffoldError) {
-        // Log error but don't fail the request - workspace can be scaffolded later
-        logger.warn('Failed to scaffold agent workspace', {
-          error: scaffoldError.message,
-          agentId: agentIdSlug,
-          userId: id,
-        });
-      }
-    }
-
-    await ensureDocsLinkIfMissing(agentIdSlug);
-
-    res.json({
-      data: {
-        userId: id,
-        agentId: agentIdSlug,
-        agentConfig: agentEntry,
-        created: isNewAgent,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
+// PUT /api/v1/admin/users/:id/agent - Deprecated (agents are no longer users)
+router.put('/:id/agent', requireManageUsers, validateUUID('id'), async (_req, res) => {
+  return res.status(410).json({
+    error: {
+      message: 'This endpoint is deprecated. Manage machine agents via /api/v1/admin/agents.',
+      status: 410,
+      code: 'ENDPOINT_DEPRECATED',
+    },
+  });
 });
-
-// Helper function to scaffold agent workspace files
-async function scaffoldAgentWorkspace(agentId, workspacePath, agentName) {
-  const { makeOpenClawRequest } = require('../../services/openclawWorkspaceClient');
-
-  // Template files to create
-  const templates = [
-    {
-      name: 'AGENTS.md',
-      content: `# ${agentName} - Agent Workspace
-
-This workspace belongs to ${agentName}, agent ID: ${agentId}.
-
-## Purpose
-
-[Describe the agent's purpose and responsibilities here]
-
-## Capabilities
-
-- [List key capabilities]
-- [Add more as needed]
-
-## Context
-
-This agent operates within the MosBot ecosystem and has access to shared tools and resources.
-`,
-    },
-    {
-      name: 'SOUL.md',
-      content: `# ${agentName} - Core Identity
-
-## Personality
-
-[Define the agent's personality and communication style]
-
-## Values
-
-- [List core values]
-- [Add more as needed]
-
-## Approach
-
-[Describe how this agent approaches tasks and decision-making]
-`,
-    },
-    {
-      name: 'IDENTITY.md',
-      content: `# ${agentName} Identity
-
-**Agent ID:** ${agentId}
-**Name:** ${agentName}
-
-## Role
-
-[Define the agent's role in the organization]
-
-## Responsibilities
-
-- [List key responsibilities]
-- [Add more as needed]
-`,
-    },
-    {
-      name: 'USER.md',
-      content: `# User Context for ${agentName}
-
-This file contains information about the users this agent interacts with.
-
-## Primary Users
-
-[List primary users and their needs]
-
-## Interaction Guidelines
-
-[Define how the agent should interact with different user types]
-`,
-    },
-    {
-      name: 'MEMORY.md',
-      content: `# ${agentName} Memory
-
-This file stores persistent memory and learned context.
-
-## Key Facts
-
-[Record important facts and learnings]
-
-## History
-
-[Track significant events and decisions]
-`,
-    },
-    {
-      name: 'TOOLS.md',
-      content: `# ${agentName} Tools
-
-## Available Tools
-
-This agent has access to the standard MosBot toolkit:
-
-- File system operations
-- Database queries
-- API integrations
-- Communication channels
-
-## Custom Tools
-
-[Document any agent-specific tools or capabilities]
-`,
-    },
-  ];
-
-  // Try to create each template file (create-only, skip if exists)
-  for (const template of templates) {
-    const filePath = `${workspacePath}/${template.name}`;
-
-    try {
-      // Check if file exists
-      try {
-        await makeOpenClawRequest('GET', `/files/content?path=${encodeURIComponent(filePath)}`);
-        // File exists, skip
-        logger.info('Workspace file already exists, skipping', { filePath });
-        continue;
-      } catch (checkError) {
-        // File doesn't exist (404), proceed to create
-        if (checkError.status !== 404) {
-          throw checkError;
-        }
-      }
-
-      // Create file
-      await makeOpenClawRequest('POST', '/files', {
-        path: filePath,
-        content: template.content,
-        encoding: 'utf8',
-      });
-
-      logger.info('Created workspace file', { filePath });
-    } catch (fileError) {
-      logger.warn('Failed to create workspace file', {
-        filePath,
-        error: fileError.message,
-      });
-      // Continue with other files
-    }
-  }
-}
-
-// Helper function to remove agent from OpenClaw config (keeps workspace folder)
-async function removeAgentFromConfig(agentId) {
-  const { makeOpenClawRequest } = require('../../services/openclawWorkspaceClient');
-
-  // Read openclaw.json
-  const configData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
-  const openclawConfig = parseOpenClawConfig(configData.content);
-
-  // Remove agent from list
-  if (openclawConfig.agents && openclawConfig.agents.list) {
-    const originalLength = openclawConfig.agents.list.length;
-    openclawConfig.agents.list = openclawConfig.agents.list.filter((agent) => agent.id !== agentId);
-
-    if (openclawConfig.agents.list.length === originalLength) {
-      // Agent not found in config, nothing to do
-      logger.info('Agent not found in OpenClaw config', { agentId });
-      return;
-    }
-
-    // Update meta timestamp
-    if (!openclawConfig.meta) {
-      openclawConfig.meta = {};
-    }
-    openclawConfig.meta.lastTouchedAt = new Date().toISOString();
-
-    // Apply updated config via Gateway RPC (config.apply)
-    const currentConfig = await gatewayWsRpc('config.get', {});
-    await gatewayWsRpc('config.apply', {
-      raw: JSON.stringify(openclawConfig, null, 2),
-      baseHash: currentConfig?.hash || null,
-      note: `Admin user delete removed agent (${agentId})`,
-      restartDelayMs: 2000,
-    });
-
-    logger.info('Removed agent from OpenClaw config via gateway apply', { agentId });
-  }
-}
 
 // DELETE /api/v1/admin/users/:id - Delete a user (admin/owner only)
 router.delete('/:id', requireManageUsers, validateUUID('id'), async (req, res, next) => {
@@ -941,43 +497,10 @@ router.delete('/:id', requireManageUsers, validateUUID('id'), async (req, res, n
       });
     }
 
-    // Admin/Agent cannot delete owner
-    if ((req.user.role === 'admin' || req.user.role === 'agent') && user.role === 'owner') {
-      logger.warn('Owner protection violation: Admin/Agent attempted to delete owner account', {
-        action: 'delete_user',
-        actor_id: req.user.id,
-        actor_role: req.user.role,
-        target_user_id: id,
-        target_role: user.role,
-        violation_type: 'admin_delete_owner',
-      });
-      return res.status(403).json({
-        error: { message: 'Admins cannot delete the owner account', status: 403 },
-      });
-    }
-
     const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: { message: 'User not found', status: 404 } });
-    }
-
-    // If deleted user was an agent, remove from OpenClaw config
-    if (user.role === 'agent' && user.agent_id) {
-      try {
-        await removeAgentFromConfig(user.agent_id);
-        logger.info('Removed agent from OpenClaw config after deletion', {
-          userId: id,
-          agentId: user.agent_id,
-        });
-      } catch (removeError) {
-        // Log error but don't fail the delete
-        logger.warn('Failed to remove agent from OpenClaw config', {
-          error: removeError.message,
-          userId: id,
-          agentId: user.agent_id,
-        });
-      }
     }
 
     res.status(204).send();
