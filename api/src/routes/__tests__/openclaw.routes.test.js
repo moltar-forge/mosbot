@@ -1569,6 +1569,110 @@ describe('OpenClaw Routes', () => {
     });
   });
 
+  describe('GET /api/v1/openclaw/config/backups', () => {
+    it('should list DB-backed backups in frontend-compatible shape', async () => {
+      const token = getToken('owner-id', 'owner');
+      const createdAt = new Date('2026-03-09T15:00:00Z');
+
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: '11111111-1111-1111-1111-111111111111',
+            created_at: createdAt,
+            note: 'test note',
+            actor_user_id: 'owner-id',
+            base_hash: 'abc',
+            new_hash: 'def',
+            size_bytes: '1234',
+          },
+        ],
+      });
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/config/backups')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0]).toMatchObject({
+        id: '11111111-1111-1111-1111-111111111111',
+        path: 'db:11111111-1111-1111-1111-111111111111',
+        size: 1234,
+        note: 'test note',
+        actorUserId: 'owner-id',
+        baseHash: 'abc',
+        newHash: 'def',
+      });
+    });
+
+    it('should return empty list when history table is missing (42P01)', async () => {
+      const token = getToken('owner-id', 'owner');
+      const err = new Error('relation does not exist');
+      err.code = '42P01';
+      pool.query.mockRejectedValueOnce(err);
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/config/backups')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual([]);
+    });
+  });
+
+  describe('GET /api/v1/openclaw/config/backups/content', () => {
+    it('should accept db:<uuid> and plain uuid path values', async () => {
+      const token = getToken('owner-id', 'owner');
+      const id = '22222222-2222-2222-2222-222222222222';
+
+      pool.query.mockResolvedValue({
+        rows: [
+          {
+            id,
+            raw_config: '{"agents":{"list":[]}}',
+            created_at: new Date('2026-03-09T15:00:00Z'),
+            note: null,
+            actor_user_id: 'owner-id',
+            base_hash: 'abc',
+            new_hash: 'def',
+          },
+        ],
+      });
+
+      const response1 = await request(app)
+        .get('/api/v1/openclaw/config/backups/content')
+        .query({ path: `db:${id}` })
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response1.status).toBe(200);
+      expect(response1.body.data.path).toBe(`db:${id}`);
+      expect(response1.body.data.content).toContain('agents');
+
+      const response2 = await request(app)
+        .get('/api/v1/openclaw/config/backups/content')
+        .query({ path: id })
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response2.status).toBe(200);
+      expect(response2.body.data.path).toBe(`db:${id}`);
+    });
+
+    it('should return 503 HISTORY_TABLE_UNAVAILABLE when table is missing (42P01)', async () => {
+      const token = getToken('owner-id', 'owner');
+      const err = new Error('relation does not exist');
+      err.code = '42P01';
+      pool.query.mockRejectedValueOnce(err);
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/config/backups/content')
+        .query({ path: 'db:33333333-3333-3333-3333-333333333333' })
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(503);
+      expect(response.body.error.code).toBe('HISTORY_TABLE_UNAVAILABLE');
+    });
+  });
+
   describe('Error handling', () => {
     it('should handle OpenClaw service errors gracefully', async () => {
       const token = getToken('user-id', 'user');
