@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db/pool');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { getJwtSecret, signToken } = require('../utils/jwt');
 
 // POST /api/v1/auth/login - Authenticate user and return JWT token
@@ -253,6 +254,61 @@ const authenticateToken = async (req, res, next) => {
   }
 
   const token = authHeader.substring(7);
+
+  // API key auth for machine agents (mba_* keys)
+  if (token.startsWith('mba_')) {
+    try {
+      const keyHash = crypto.createHash('sha256').update(token).digest('hex');
+      const result = await pool.query(
+        `SELECT a.id, a.agent_id, a.name, a.status, a.active,
+                k.id AS key_id, k.revoked_at
+         FROM agent_api_keys k
+         JOIN agents a ON a.agent_id = k.agent_id
+         WHERE k.key_hash = $1
+         LIMIT 1`,
+        [keyHash],
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(401).json({
+          error: { message: 'Invalid API key', status: 401 },
+        });
+      }
+
+      const row = result.rows[0];
+      if (row.revoked_at) {
+        return res.status(401).json({
+          error: { message: 'API key has been revoked', status: 401 },
+        });
+      }
+
+      if (!row.active || row.status === 'deprecated') {
+        return res.status(403).json({
+          error: { message: 'Agent is inactive', status: 403 },
+        });
+      }
+
+      // Best effort usage tracking
+      await pool.query('UPDATE agent_api_keys SET last_used = NOW() WHERE id = $1', [row.key_id]);
+
+      req.user = {
+        id: row.id,
+        role: 'agent',
+        name: row.name,
+        agent_id: row.agent_id,
+        auth_type: 'api_key',
+      };
+      return next();
+    } catch (error) {
+      // Graceful fallback if migration not yet present
+      if (error.code === '42P01') {
+        return res.status(401).json({
+          error: { message: 'Invalid API key', status: 401 },
+        });
+      }
+      return next(error);
+    }
+  }
 
   let jwtSecret;
   try {

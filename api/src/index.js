@@ -64,6 +64,7 @@ app.use('/api/v1/users', require('./routes/users'));
 app.use('/api/v1/activity', require('./routes/activity'));
 app.use('/api/v1/auth', require('./routes/auth'));
 app.use('/api/v1/admin/users', require('./routes/admin/users'));
+app.use('/api/v1/admin/agents', require('./routes/admin/agents'));
 app.use('/api/v1/admin/models', require('./routes/admin/models'));
 app.use('/api/v1/openclaw', require('./routes/openclaw'));
 app.use('/api/v1/models', require('./routes/models'));
