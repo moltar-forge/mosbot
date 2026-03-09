@@ -3987,7 +3987,7 @@ router.post('/usage/reset', requireAuth, requireAdmin, async (req, res, next) =>
 // ============================================================================
 // OpenClaw Config Editor endpoints (admin/owner only)
 // Uses Gateway WebSocket RPC (config.get / config.apply) for validated writes.
-// Backups are stored as workspace files under /workspace/backups/openclaw-config/.
+// Backups are stored in the database (openclaw_config_history).
 // ============================================================================
 
 const { gatewayWsRpc } = require('../services/openclawGatewayClient');
@@ -4185,26 +4185,30 @@ router.put('/config', requireAuth, requireOwnerOrAdmin, async (req, res, next) =
       }
     }
 
-    // Step 3: write backup of current config before applying new one
-    const backupDir = '/workspace/backups/openclaw-config';
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupPath = `${backupDir}/openclaw-${timestamp}.json5`;
-
+    // Step 3: write backup of current config before applying new one (DB-backed history)
+    let backupId = null;
     try {
-      // Try to create the backup file (POST fails if exists, which is fine — timestamps are unique)
-      await makeOpenClawRequest('POST', '/files', {
-        path: backupPath,
-        content: currentRaw,
-        encoding: 'utf8',
-      });
-      logger.info('OpenClaw config backup created', {
-        path: backupPath,
+      const insertResult = await pool.query(
+        `INSERT INTO openclaw_config_history (actor_user_id, base_hash, note, raw_config, source)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [
+          req.user.id,
+          currentHash || baseHash || null,
+          note || null,
+          currentRaw,
+          'config_editor',
+        ],
+      );
+
+      backupId = insertResult.rows?.[0]?.id || null;
+      logger.info('OpenClaw config backup snapshot created (DB)', {
+        backupId,
         userId: req.user.id,
       });
     } catch (backupErr) {
       // Backup failure is non-fatal: log a warning but continue with the apply
-      logger.warn('Failed to write OpenClaw config backup (non-fatal)', {
-        path: backupPath,
+      logger.warn('Failed to write OpenClaw config backup snapshot (non-fatal)', {
         error: backupErr.message,
         userId: req.user.id,
       });
@@ -4262,18 +4266,35 @@ router.put('/config', requireAuth, requireOwnerOrAdmin, async (req, res, next) =
       actor_user_id: req.user.id,
       workspace_path: '/openclaw.json',
       meta: {
-        backupPath,
+        backupId,
         baseHash,
         newHash: applyResult?.hash || null,
         note: note || null,
       },
     });
 
+    // Backfill new_hash after successful apply (best effort)
+    if (backupId && applyResult?.hash) {
+      try {
+        await pool.query('UPDATE openclaw_config_history SET new_hash = $1 WHERE id = $2', [
+          applyResult.hash,
+          backupId,
+        ]);
+      } catch (updateErr) {
+        logger.warn('Failed to update config history snapshot with new hash', {
+          backupId,
+          error: updateErr.message,
+        });
+      }
+    }
+
     res.json({
       data: {
         applied: true,
         hash: applyResult?.hash || null,
-        backupPath,
+        backupId,
+        // Backward-compatible field used by some UI code/tests
+        backupPath: backupId ? `db:${backupId}` : null,
       },
     });
   } catch (error) {
@@ -4282,47 +4303,48 @@ router.put('/config', requireAuth, requireOwnerOrAdmin, async (req, res, next) =
 });
 
 // GET /api/v1/openclaw/config/backups
-// List backup files from /workspace/backups/openclaw-config/ (admin/owner only)
+// List DB-backed config history snapshots (admin/owner only)
 router.get('/config/backups', requireAuth, requireOwnerOrAdmin, async (req, res, next) => {
   try {
-    logger.info('Listing OpenClaw config backups', { userId: req.user.id });
+    logger.info('Listing OpenClaw config backups (DB)', { userId: req.user.id });
 
-    const backupDir = '/workspace/backups/openclaw-config';
-    let files = [];
+    const result = await pool.query(
+      `SELECT id, created_at, note, actor_user_id, base_hash, new_hash, raw_config
+       FROM openclaw_config_history
+       ORDER BY created_at DESC
+       LIMIT 200`,
+    );
 
-    try {
-      const data = await makeOpenClawRequest(
-        'GET',
-        `/files?path=${encodeURIComponent(backupDir)}&recursive=false`,
-      );
-      files = (data?.files || []).filter((f) => f.type === 'file');
-    } catch (listErr) {
-      // If directory doesn't exist yet (404) return empty list gracefully
-      if (listErr.status === 404 || listErr.code === 'OPENCLAW_SERVICE_ERROR') {
-        return res.json({ data: [] });
-      }
-      throw listErr;
-    }
-
-    // Sort newest first by name (ISO timestamp in filename)
-    files.sort((a, b) => b.name.localeCompare(a.name));
-
-    res.json({
-      data: files.map((f) => ({
-        path: f.path,
-        name: f.name,
-        size: f.size,
-        modified: f.modified,
-        created: f.created,
-      })),
+    const data = result.rows.map((row) => {
+      const createdIso = row.created_at ? new Date(row.created_at).toISOString() : null;
+      const safeTimestamp = createdIso ? createdIso.replace(/[:.]/g, '-') : String(row.id);
+      return {
+        id: row.id,
+        path: `db:${row.id}`,
+        name: `openclaw-${safeTimestamp}.json5`,
+        size: Buffer.byteLength(row.raw_config || '', 'utf8'),
+        modified: createdIso,
+        created: createdIso,
+        note: row.note || null,
+        actorUserId: row.actor_user_id || null,
+        baseHash: row.base_hash || null,
+        newHash: row.new_hash || null,
+      };
     });
+
+    res.json({ data });
   } catch (error) {
+    // Graceful fallback for instances where migration has not run yet
+    if (error.code === '42P01') {
+      logger.warn('openclaw_config_history table missing; returning empty backup list');
+      return res.json({ data: [] });
+    }
     next(error);
   }
 });
 
-// GET /api/v1/openclaw/config/backups/content?path=...
-// Read a specific backup file content (admin/owner only)
+// GET /api/v1/openclaw/config/backups/content?path=db:<uuid>
+// Read a specific DB-backed backup snapshot content (admin/owner only)
 router.get('/config/backups/content', requireAuth, requireOwnerOrAdmin, async (req, res, next) => {
   try {
     const { path: inputPath } = req.query;
@@ -4333,31 +4355,64 @@ router.get('/config/backups/content', requireAuth, requireOwnerOrAdmin, async (r
       });
     }
 
-    const workspacePath = normalizeRemapAndValidateWorkspacePath(inputPath);
+    // Backward-compatible parser: accept db:<uuid> or plain uuid
+    const idCandidate = String(inputPath).startsWith('db:')
+      ? String(inputPath).slice(3)
+      : String(inputPath);
 
-    // Restrict to backup directory only
-    if (!workspacePath.startsWith('/workspace/backups/openclaw-config/')) {
-      return res.status(403).json({
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(idCandidate)) {
+      return res.status(400).json({
         error: {
-          message: 'Access restricted to OpenClaw config backup files only',
-          status: 403,
-          code: 'INSUFFICIENT_PERMISSIONS',
+          message: 'Invalid backup id. Expected db:<uuid>.',
+          status: 400,
+          code: 'INVALID_BACKUP_ID',
         },
       });
     }
 
-    logger.info('Reading OpenClaw config backup', {
-      path: workspacePath,
+    logger.info('Reading OpenClaw config backup (DB)', {
+      backupId: idCandidate,
       userId: req.user.id,
     });
 
-    const data = await makeOpenClawRequest(
-      'GET',
-      `/files/content?path=${encodeURIComponent(workspacePath)}`,
+    const result = await pool.query(
+      `SELECT id, raw_config, created_at, note, actor_user_id, base_hash, new_hash
+       FROM openclaw_config_history
+       WHERE id = $1
+       LIMIT 1`,
+      [idCandidate],
     );
 
-    res.json({ data });
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: { message: 'Backup not found', status: 404, code: 'BACKUP_NOT_FOUND' },
+      });
+    }
+
+    const row = result.rows[0];
+    res.json({
+      data: {
+        path: `db:${row.id}`,
+        content: row.raw_config || '',
+        encoding: 'utf8',
+        created: row.created_at,
+        note: row.note || null,
+        actorUserId: row.actor_user_id || null,
+        baseHash: row.base_hash || null,
+        newHash: row.new_hash || null,
+      },
+    });
   } catch (error) {
+    if (error.code === '42P01') {
+      return res.status(503).json({
+        error: {
+          message: 'Config history table is not available yet. Run DB migrations first.',
+          status: 503,
+          code: 'HISTORY_TABLE_UNAVAILABLE',
+        },
+      });
+    }
     next(error);
   }
 });
