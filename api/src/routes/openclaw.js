@@ -3987,7 +3987,7 @@ router.post('/usage/reset', requireAuth, requireAdmin, async (req, res, next) =>
 // ============================================================================
 // OpenClaw Config Editor endpoints (admin/owner only)
 // Uses Gateway WebSocket RPC (config.get / config.apply) for validated writes.
-// Backups are stored as workspace files under /shared/backups/openclaw-config/.
+// Backups are stored as workspace files under /workspace/backups/openclaw-config/.
 // ============================================================================
 
 const { gatewayWsRpc } = require('../services/openclawGatewayClient');
@@ -4186,7 +4186,7 @@ router.put('/config', requireAuth, requireOwnerOrAdmin, async (req, res, next) =
     }
 
     // Step 3: write backup of current config before applying new one
-    const backupDir = '/shared/backups/openclaw-config';
+    const backupDir = '/workspace/backups/openclaw-config';
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupPath = `${backupDir}/openclaw-${timestamp}.json5`;
 
@@ -4282,12 +4282,12 @@ router.put('/config', requireAuth, requireOwnerOrAdmin, async (req, res, next) =
 });
 
 // GET /api/v1/openclaw/config/backups
-// List backup files from /shared/backups/openclaw-config/ (admin/owner only)
+// List backup files from /workspace/backups/openclaw-config/ (admin/owner only)
 router.get('/config/backups', requireAuth, requireOwnerOrAdmin, async (req, res, next) => {
   try {
     logger.info('Listing OpenClaw config backups', { userId: req.user.id });
 
-    const backupDir = '/shared/backups/openclaw-config';
+    const backupDir = '/workspace/backups/openclaw-config';
     let files = [];
 
     try {
@@ -4336,7 +4336,7 @@ router.get('/config/backups/content', requireAuth, requireOwnerOrAdmin, async (r
     const workspacePath = normalizeRemapAndValidateWorkspacePath(inputPath);
 
     // Restrict to backup directory only
-    if (!workspacePath.startsWith('/shared/backups/openclaw-config/')) {
+    if (!workspacePath.startsWith('/workspace/backups/openclaw-config/')) {
       return res.status(403).json({
         error: {
           message: 'Access restricted to OpenClaw config backup files only',
