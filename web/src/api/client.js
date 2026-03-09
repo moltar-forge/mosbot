@@ -165,6 +165,12 @@ export const getAgentsConfig = async () => {
   return response.data.data;
 };
 
+// Admin Agents API - manually reconcile DB agents from OpenClaw config
+export const syncAgentsFromOpenClaw = async () => {
+  const response = await api.post('/admin/agents/sync');
+  return response.data.data;
+};
+
 // OpenClaw Subagents API - returns object with { running, queued, completed, retention }
 export const getSubagents = async () => {
   const response = await api.get('/openclaw/subagents');
