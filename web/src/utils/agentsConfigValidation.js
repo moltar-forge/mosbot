@@ -3,7 +3,7 @@
  */
 
 /**
- * Validate agents.json structure
+ * Validate agents config structure
  * @param {object} config - The agents config object
  * @returns {{ isValid: boolean, errors: string[] }}
  */
@@ -251,7 +251,7 @@ export function syncAgentsConfigToOpenClaw(agentsConfig, openclawConfig) {
     }
 
     // Do NOT add orgChart to agent entries -- OpenClaw schema does not recognize it.
-    // Agents config data lives exclusively in /agents.json.
+    // Hierarchy metadata is managed separately from openclaw.json runtime agent entries.
     delete agent.orgChart;
 
     // Ensure identity matches

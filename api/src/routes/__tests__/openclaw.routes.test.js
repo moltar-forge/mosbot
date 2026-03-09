@@ -360,7 +360,7 @@ describe('OpenClaw Routes', () => {
       const response = await request(app)
         .post('/api/v1/openclaw/workspace/files')
         .set('Authorization', `Bearer ${token}`)
-        .send({ path: '/agents.json', content: '{}', encoding: 'utf8' });
+        .send({ path: '/openclaw.json', content: '{}', encoding: 'utf8' });
 
       expect(response.status).toBe(201);
     });

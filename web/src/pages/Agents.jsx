@@ -479,10 +479,9 @@ export default function Agents() {
               <UserGroupIcon className="w-12 h-12 text-dark-500 mx-auto mb-4" />
               <h2 className="text-lg font-semibold text-dark-200 mb-2">No agents configured</h2>
               <p className="text-sm text-dark-400 max-w-md mx-auto mb-6">
-                Add agents to the <code className="text-dark-300">agents.list</code> in your{' '}
+                Add agents to the <code className="text-dark-300">agents.list</code> in{' '}
                 <code className="text-dark-300">openclaw.json</code> and they will appear here
-                automatically. For custom hierarchy, create an{' '}
-                <code className="text-dark-300">agents.json</code> file.
+                automatically. Custom hierarchy metadata is stored in the database.
               </p>
               {isAdmin() && (
                 <button

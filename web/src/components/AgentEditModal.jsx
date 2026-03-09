@@ -16,9 +16,9 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Form state - merged view of agents.json and openclaw.json data
+  // Form state - merged view of agents config and openclaw.json data
   const [formData, setFormData] = useState({
-    // From agents.json leadership
+    // From agents DB metadata
     id: '',
     title: '',
     label: '',
@@ -127,7 +127,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
   const loadAgentData = async () => {
     setIsLoading(true);
     try {
-      // Fetch agents.json (leadership/org data) and the enriched /openclaw/agents list
+      // Fetch agents config (leadership/org data) and the enriched /openclaw/agents list
       // (which now includes model, identity, heartbeat resolved from agents.list + agents.defaults).
       // The backend handles JSON5 parsing and default resolution — we never read raw files here.
       const [agentsConfigResult, agentsListResult] = await Promise.allSettled([
@@ -189,7 +189,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
       }
 
       setFormData({
-        // Org/display fields from agents.json leadership
+        // Org/display fields from agents DB metadata
         id: leadershipEntry?.id || agentId,
         title: leadershipEntry?.title || '',
         label: leadershipEntry?.label || `mosbot-${agentId}`,
@@ -251,7 +251,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
     setIsSaving(true);
 
     try {
-      // Build payload for the API - the server handles both agents.json and openclaw.json
+      // Build payload for the API - the server handles both agents config and openclaw.json
       const payload = {
         id: formData.id,
         title: formData.title,

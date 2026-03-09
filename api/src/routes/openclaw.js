@@ -201,7 +201,7 @@ function isAllowedWorkspacePath(workspacePath) {
   if (workspacePath === '/workspace' || workspacePath.startsWith('/workspace/')) return true;
 
   // Allow system config files
-  if (workspacePath === '/openclaw.json' || workspacePath === '/agents.json') return true;
+  if (workspacePath === '/openclaw.json') return true;
 
   // Allow docs and projects directories (moved from /shared/docs and /shared/projects)
   if (workspacePath.startsWith('/docs/') || workspacePath === '/docs') return true;
@@ -361,7 +361,7 @@ router.post('/workspace/files', requireAuth, requireAdmin, async (req, res, next
 
     // Restrict system config files to admin/owner only (exclude 'agent' role)
     const isSystemConfigFile =
-      workspacePath === '/openclaw.json' || workspacePath === '/agents.json';
+      workspacePath === '/openclaw.json';
     if (isSystemConfigFile && req.user.role === 'agent') {
       logger.warn('Agent role blocked from modifying system config', {
         userId: req.user.id,
@@ -477,7 +477,7 @@ router.put('/workspace/files', requireAuth, requireAdmin, async (req, res, next)
 
     // Restrict system config files to admin/owner only (exclude 'agent' role)
     const isSystemConfigFile =
-      workspacePath === '/openclaw.json' || workspacePath === '/agents.json';
+      workspacePath === '/openclaw.json';
     if (isSystemConfigFile && req.user.role === 'agent') {
       logger.warn('Agent role blocked from modifying system config', {
         userId: req.user.id,
@@ -552,7 +552,7 @@ router.delete('/workspace/files', requireAuth, requireAdmin, async (req, res, ne
 
     // Restrict system config files to admin/owner only (exclude 'agent' role)
     const isSystemConfigFile =
-      workspacePath === '/openclaw.json' || workspacePath === '/agents.json';
+      workspacePath === '/openclaw.json';
     if (isSystemConfigFile && req.user.role === 'agent') {
       logger.warn('Agent role blocked from deleting system config', {
         userId: req.user.id,
@@ -895,7 +895,7 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
     const dbStatus = 'active';
     const dbActive = true;
 
-    // Upsert DB metadata (replaces agents.json leadership writes)
+    // Upsert DB metadata (replaces agents DB metadata writes)
     await pool.query(
       `INSERT INTO agents (agent_id, name, title, status, reports_to, meta, active)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
@@ -1052,7 +1052,7 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
       });
     }
 
-    // Upsert DB metadata (no agents.json writes)
+    // Upsert DB metadata (no agents config writes)
     await pool.query(
       `INSERT INTO agents (agent_id, name, title, status, reports_to, meta, active)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
