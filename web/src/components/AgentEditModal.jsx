@@ -143,8 +143,23 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
         try {
           const raw = rawConfigResult.value.data?.data?.content || '{}';
           const openclawConfig = JSON.parse(raw);
+          const agentsDefaults = openclawConfig?.agents?.defaults || {};
           const agentsList = openclawConfig?.agents?.list || [];
-          rawAgentEntry = agentsList.find((a) => a.id === agentId) || null;
+          const agentSpecific = agentsList.find((a) => a.id === agentId) || {};
+
+          // Merge: defaults first, then agent-specific config on top.
+          // Main agent is often absent from agents.list and inherits entirely from defaults.
+          // Priority: agent-specific > agents.defaults > nothing
+          const resolvedModel = agentSpecific.model?.primary
+            ? agentSpecific.model
+            : agentsDefaults.model || null;
+
+          rawAgentEntry = {
+            workspace: agentSpecific.workspace || agentsDefaults.workspace || null,
+            identity: agentSpecific.identity || null,
+            heartbeat: agentSpecific.heartbeat || null,
+            model: resolvedModel,
+          };
         } catch (parseErr) {
           logger.warn('Failed to parse openclaw.json', { error: parseErr.message });
         }
