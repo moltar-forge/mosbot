@@ -13,6 +13,7 @@ const { recordActivityLogEventSafe } = require('../services/activityLogService')
 const { parseOpenClawConfig } = require('../utils/configParser');
 const { getJwtSecret } = require('../utils/jwt');
 const { ensureDocsLinkIfMissing } = require('../services/docsLinkReconciliationService');
+const { gatewayWsRpc } = require('../services/openclawGatewayClient');
 
 const BUILTIN_OPENCLAW_REMAP_PREFIXES = [
   '/home/node/.openclaw/workspace',
@@ -1066,12 +1067,15 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
       }
     };
 
+    // Persist agents.json + apply openclaw.json via Gateway RPC (config.apply)
+    const openclawBase = await gatewayWsRpc('config.get', {});
     await Promise.all([
       writeAgentsConfig(),
-      makeOpenClawRequest('PUT', '/files', {
-        path: '/openclaw.json',
-        content: openclawContent,
-        encoding: 'utf8',
+      gatewayWsRpc('config.apply', {
+        raw: openclawContent,
+        baseHash: openclawBase?.hash || null,
+        note: `Agent updated via MosBot (${agentId}) by ${req.user.id}`,
+        restartDelayMs: 2000,
       }),
     ]);
 
@@ -1161,7 +1165,7 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
     }
 
     const openclawData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
-    const openclawConfig = JSON.parse(openclawData.content);
+    const openclawConfig = parseOpenClawConfig(openclawData.content);
 
     // Check for duplicates
     const leadership = agentsConfig.leadership || [];
@@ -1250,12 +1254,15 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
       }
     };
 
+    // Persist agents.json + apply openclaw.json via Gateway RPC (config.apply)
+    const openclawBase = await gatewayWsRpc('config.get', {});
     await Promise.all([
       writeAgentsConfig(),
-      makeOpenClawRequest('PUT', '/files', {
-        path: '/openclaw.json',
-        content: openclawContent,
-        encoding: 'utf8',
+      gatewayWsRpc('config.apply', {
+        raw: openclawContent,
+        baseHash: openclawBase?.hash || null,
+        note: `Agent created via MosBot (${agentData.id}) by ${req.user.id}`,
+        restartDelayMs: 2000,
       }),
     ]);
 
@@ -4027,8 +4034,6 @@ router.post('/usage/reset', requireAuth, requireAdmin, async (req, res, next) =>
 // Uses Gateway WebSocket RPC (config.get / config.apply) for validated writes.
 // Backups are stored in the database (openclaw_config_history).
 // ============================================================================
-
-const { gatewayWsRpc } = require('../services/openclawGatewayClient');
 
 // Middleware: allow only admin or owner roles (explicitly block agent)
 function requireOwnerOrAdmin(req, res, next) {

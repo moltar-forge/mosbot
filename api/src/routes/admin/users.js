@@ -5,6 +5,8 @@ const bcrypt = require('bcrypt');
 const { authenticateToken, requireManageUsers } = require('../auth');
 const logger = require('../../utils/logger');
 const { ensureDocsLinkIfMissing } = require('../../services/docsLinkReconciliationService');
+const { parseOpenClawConfig } = require('../../utils/configParser');
+const { gatewayWsRpc } = require('../../services/openclawGatewayClient');
 
 // Apply auth middleware to all routes
 router.use(authenticateToken);
@@ -578,7 +580,7 @@ router.put('/:id/agent', requireManageUsers, validateUUID('id'), async (req, res
     let openclawConfig;
     try {
       const configData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
-      openclawConfig = JSON.parse(configData.content);
+      openclawConfig = parseOpenClawConfig(configData.content);
     } catch (readError) {
       logger.error('Failed to read OpenClaw config', {
         error: readError.message,
@@ -656,15 +658,17 @@ router.put('/:id/agent', requireManageUsers, validateUUID('id'), async (req, res
     }
     openclawConfig.meta.lastTouchedAt = new Date().toISOString();
 
-    // Write openclaw.json back
+    // Apply openclaw.json via Gateway RPC (config.apply)
     try {
-      await makeOpenClawRequest('PUT', '/files', {
-        path: '/openclaw.json',
-        content: JSON.stringify(openclawConfig, null, 2),
-        encoding: 'utf8',
+      const currentConfig = await gatewayWsRpc('config.get', {});
+      await gatewayWsRpc('config.apply', {
+        raw: JSON.stringify(openclawConfig, null, 2),
+        baseHash: currentConfig?.hash || null,
+        note: `Admin user agent config update (${agentIdSlug}) by ${req.user.id}`,
+        restartDelayMs: 2000,
       });
     } catch (writeError) {
-      logger.error('Failed to write OpenClaw config', {
+      logger.error('Failed to apply OpenClaw config via gateway', {
         error: writeError.message,
         userId: id,
       });
@@ -870,7 +874,7 @@ async function removeAgentFromConfig(agentId) {
 
   // Read openclaw.json
   const configData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
-  const openclawConfig = JSON.parse(configData.content);
+  const openclawConfig = parseOpenClawConfig(configData.content);
 
   // Remove agent from list
   if (openclawConfig.agents && openclawConfig.agents.list) {
@@ -889,14 +893,16 @@ async function removeAgentFromConfig(agentId) {
     }
     openclawConfig.meta.lastTouchedAt = new Date().toISOString();
 
-    // Write updated config back
-    await makeOpenClawRequest('PUT', '/files', {
-      path: '/openclaw.json',
-      content: JSON.stringify(openclawConfig, null, 2),
-      encoding: 'utf8',
+    // Apply updated config via Gateway RPC (config.apply)
+    const currentConfig = await gatewayWsRpc('config.get', {});
+    await gatewayWsRpc('config.apply', {
+      raw: JSON.stringify(openclawConfig, null, 2),
+      baseHash: currentConfig?.hash || null,
+      note: `Admin user delete removed agent (${agentId})`,
+      restartDelayMs: 2000,
     });
 
-    logger.info('Removed agent from OpenClaw config', { agentId });
+    logger.info('Removed agent from OpenClaw config via gateway apply', { agentId });
   }
 }
 

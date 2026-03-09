@@ -23,6 +23,10 @@ jest.mock('../../../services/docsLinkReconciliationService', () => ({
   ensureDocsLinkIfMissing: jest.fn().mockResolvedValue({ action: 'unchanged' }),
 }));
 
+jest.mock('../../../services/openclawGatewayClient', () => ({
+  gatewayWsRpc: jest.fn(),
+}));
+
 jest.mock('../../auth', () => ({
   authenticateToken: (req, _res, next) => {
     req.user = {
@@ -45,6 +49,7 @@ const pool = require('../../../db/pool');
 const logger = require('../../../utils/logger');
 const { makeOpenClawRequest } = require('../../../services/openclawWorkspaceClient');
 const { ensureDocsLinkIfMissing } = require('../../../services/docsLinkReconciliationService');
+const { gatewayWsRpc } = require('../../../services/openclawGatewayClient');
 const usersRouter = require('../users');
 
 function makeApp() {
@@ -66,6 +71,12 @@ describe('admin users agent config branches', () => {
     jest.clearAllMocks();
     pool.query.mockReset();
     makeOpenClawRequest.mockReset();
+    gatewayWsRpc.mockReset();
+    gatewayWsRpc.mockImplementation((method) => {
+      if (method === 'config.get') return Promise.resolve({ hash: 'abc123' });
+      if (method === 'config.apply') return Promise.resolve({ hash: 'def456' });
+      return Promise.resolve({});
+    });
     ensureDocsLinkIfMissing.mockReset();
     ensureDocsLinkIfMissing.mockResolvedValue({ action: 'unchanged' });
     app = makeApp();
@@ -148,19 +159,17 @@ describe('admin users agent config branches', () => {
       .mockResolvedValueOnce({ rows: [{ id, role: 'agent', agent_id: 'coo' }] }) // existing
       .mockResolvedValueOnce({ rows: [{ id, role: 'user', agent_id: 'coo' }] }); // update
 
-    makeOpenClawRequest
-      .mockResolvedValueOnce({
-        content: JSON.stringify({ agents: { list: [{ id: 'coo' }, { id: 'cto' }] } }),
-      }) // remove read
-      .mockResolvedValueOnce({ ok: true }); // remove write
+    makeOpenClawRequest.mockResolvedValueOnce({
+      content: JSON.stringify({ agents: { list: [{ id: 'coo' }, { id: 'cto' }] } }),
+    }); // remove read
 
     const res = await request(app).put(`/api/v1/admin/users/${id}`).send({ role: 'user' });
     expect(res.status).toBe(200);
     expect(makeOpenClawRequest).toHaveBeenCalledWith('GET', '/files/content?path=/openclaw.json');
-    expect(makeOpenClawRequest).toHaveBeenCalledWith(
-      'PUT',
-      '/files',
-      expect.objectContaining({ path: '/openclaw.json' }),
+    expect(gatewayWsRpc).toHaveBeenCalledWith('config.get', {});
+    expect(gatewayWsRpc).toHaveBeenCalledWith(
+      'config.apply',
+      expect.objectContaining({ raw: expect.any(String), baseHash: 'abc123' }),
     );
   });
 
