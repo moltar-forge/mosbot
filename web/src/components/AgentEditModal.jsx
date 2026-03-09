@@ -24,7 +24,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
     label: '',
     displayName: '',
     description: '',
-    status: 'scaffolded', // human, scaffolded, active, deprecated
+    status: 'active',
     reportsTo: '',
 
     // From openclaw.json agents.list
@@ -68,7 +68,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
       label: '',
       displayName: '',
       description: '',
-      status: 'scaffolded',
+      status: 'active',
       reportsTo: '',
       workspace: '',
       identityName: '',
@@ -195,7 +195,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
         label: leadershipEntry?.label || `mosbot-${agentId}`,
         displayName: leadershipEntry?.displayName || agentEntry?.identity?.name || '',
         description: leadershipEntry?.description || agentEntry?.identity?.theme || '',
-        status: leadershipEntry?.status || 'active',
+        status: 'active',
         reportsTo: leadershipEntry?.reportsTo || '',
 
         // OpenClaw config fields — sourced from enriched /openclaw/agents response
@@ -243,7 +243,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
       return;
     }
 
-    if (formData.status !== 'human' && !formData.modelPrimary) {
+    if (!formData.modelPrimary) {
       showToast('Primary model is required for non-human agents', 'error');
       return;
     }
@@ -429,17 +429,16 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-dark-300 mb-2">Status</label>
+                      <label className="block text-sm font-medium text-dark-300 mb-2">
+                        Status <span className="text-xs text-dark-500">(lifecycle modes temporarily disabled)</span>
+                      </label>
                       <select
                         value={formData.status}
                         onChange={(e) => handleChange('status', e.target.value)}
-                        disabled={isSaving}
+                        disabled
                         className="input-field w-full disabled:opacity-50"
                       >
-                        <option value="scaffolded">Scaffolded</option>
                         <option value="active">Active</option>
-                        <option value="deprecated">Deprecated</option>
-                        <option value="human">Human</option>
                       </select>
                     </div>
 
@@ -466,8 +465,8 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
                   </div>
                 </div>
 
-                {/* Skip OpenClaw config for human agents */}
-                {formData.status !== 'human' && (
+                {/* OpenClaw config */}
+                {(
                   <>
                     {/* OpenClaw Config Section */}
                     <div>

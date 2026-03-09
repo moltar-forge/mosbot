@@ -846,6 +846,16 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
       });
     }
 
+    if (agentData.status && agentData.status !== 'active') {
+      return res.status(400).json({
+        error: {
+          message: 'Only status="active" is currently supported (lifecycle statuses are temporarily disabled)',
+          status: 400,
+          code: 'STATUS_TEMPORARILY_UNSUPPORTED',
+        },
+      });
+    }
+
     const openclawData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
     const openclawConfig = parseOpenClawConfig(openclawData.content);
 
@@ -861,9 +871,8 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
       });
     }
 
-    const isHuman = agentData.status === 'human';
-    const dbStatus = isHuman ? 'active' : (agentData.status || 'active');
-    const dbActive = dbStatus !== 'deprecated' && dbStatus !== 'scaffolded';
+    const dbStatus = 'active';
+    const dbActive = true;
 
     // Upsert DB metadata (replaces agents.json leadership writes)
     await pool.query(
@@ -893,8 +902,8 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
       ],
     );
 
-    // Update openclaw runtime config for non-human agents only
-    if (!isHuman) {
+    // Update openclaw runtime config
+    {
       const agentIndex = openclawAgentsList.findIndex((a) => a.id === agentId);
       if (agentIndex >= 0) {
         const existing = openclawAgentsList[agentIndex];
@@ -990,16 +999,25 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
       });
     }
 
+    if (agentData.status && agentData.status !== 'active') {
+      return res.status(400).json({
+        error: {
+          message: 'Only status="active" is currently supported (lifecycle statuses are temporarily disabled)',
+          status: 400,
+          code: 'STATUS_TEMPORARILY_UNSUPPORTED',
+        },
+      });
+    }
+
     const openclawData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
     const openclawConfig = parseOpenClawConfig(openclawData.content);
     if (!openclawConfig.agents) openclawConfig.agents = {};
     if (!Array.isArray(openclawConfig.agents.list)) openclawConfig.agents.list = [];
 
-    const isHuman = agentData.status === 'human';
-    const dbStatus = isHuman ? 'active' : (agentData.status || 'scaffolded');
-    const dbActive = dbStatus !== 'deprecated' && dbStatus !== 'scaffolded';
+    const dbStatus = 'active';
+    const dbActive = true;
 
-    if (!isHuman && openclawConfig.agents.list.some((a) => a.id === agentData.id)) {
+    if (openclawConfig.agents.list.some((a) => a.id === agentData.id)) {
       return res.status(409).json({
         error: {
           message: `Agent "${agentData.id}" already exists in OpenClaw config`,
@@ -1037,7 +1055,7 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
       ],
     );
 
-    if (!isHuman) {
+    {
       const fallbacks = [agentData.modelFallback1, agentData.modelFallback2].filter(Boolean);
       const newAgent = {
         id: agentData.id,
