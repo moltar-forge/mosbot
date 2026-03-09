@@ -16,6 +16,7 @@ describe('index startup lifecycle', () => {
     const startSessionUsagePoller = jest.fn();
     const startPricingRefreshJob = jest.fn();
     const startActivityIngestionPollers = jest.fn();
+    const startAgentReconcileJob = jest.fn();
     const warnIfDeviceAuthNotConfigured = jest.fn();
 
     jest.doMock('../db/runMigrations', () => runMigrations);
@@ -27,6 +28,9 @@ describe('index startup lifecycle', () => {
     }));
     jest.doMock('../services/activityIngestionService', () => ({
       startActivityIngestionPollers,
+    }));
+    jest.doMock('../services/agentReconciliationService', () => ({
+      startAgentReconcileJob,
     }));
     jest.doMock('../services/openclawGatewayClient', () => ({
       warnIfDeviceAuthNotConfigured,
@@ -47,6 +51,7 @@ describe('index startup lifecycle', () => {
       polling: {
         sessionUsageIntervalMs: 60000,
         modelPricingRefreshIntervalMs: 3600000,
+        agentReconcileIntervalMs: 300000,
       },
     }));
     jest.doMock('express', () => {
@@ -66,6 +71,7 @@ describe('index startup lifecycle', () => {
     expect(reconcileDocsLinksOnStartup).toHaveBeenCalledTimes(1);
     expect(startSessionUsagePoller).toHaveBeenCalled();
     expect(startPricingRefreshJob).toHaveBeenCalled();
+    expect(startAgentReconcileJob).toHaveBeenCalledWith(300000);
     expect(startActivityIngestionPollers).toHaveBeenCalled();
     expect(warnIfDeviceAuthNotConfigured).toHaveBeenCalled();
   });

@@ -94,6 +94,10 @@ const config = {
       process.env.ACTIVITY_SUBAGENT_POLL_INTERVAL_MS || '180000',
       10,
     ),
+    agentReconcileIntervalMs: parseInt(
+      process.env.AGENT_RECONCILE_INTERVAL_MS || String(5 * 60 * 1000),
+      10,
+    ),
   },
 
   bootstrap: {

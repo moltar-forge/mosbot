@@ -18,7 +18,12 @@ jest.mock('../../auth', () => ({
   },
 }));
 
+jest.mock('../../../services/agentReconciliationService', () => ({
+  reconcileAgentsFromOpenClaw: jest.fn(),
+}));
+
 const pool = require('../../../db/pool');
+const { reconcileAgentsFromOpenClaw } = require('../../../services/agentReconciliationService');
 const router = require('../agents');
 
 function makeApp() {
@@ -36,7 +41,23 @@ describe('admin agents API key routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    reconcileAgentsFromOpenClaw.mockResolvedValue({
+      discoveredCount: 1,
+      upserted: 1,
+      deactivated: 0,
+      discoveredIds: ['main'],
+    });
     app = makeApp();
+  });
+
+  it('runs manual reconcile sync endpoint', async () => {
+    const res = await request(app).post('/api/v1/admin/agents/sync').send({});
+
+    expect(res.status).toBe(200);
+    expect(reconcileAgentsFromOpenClaw).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'manual' }),
+    );
+    expect(res.body.data.discoveredIds).toEqual(['main']);
   });
 
   it('rejects invalid agentId slug on create', async () => {

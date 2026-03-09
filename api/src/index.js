@@ -10,6 +10,7 @@ const { startPricingRefreshJob } = require('./services/modelPricingService');
 const { startActivityIngestionPollers } = require('./services/activityIngestionService');
 const { warnIfDeviceAuthNotConfigured } = require('./services/openclawGatewayClient');
 const { reconcileDocsLinksOnStartup } = require('./services/docsLinkReconciliationService');
+const { startAgentReconcileJob } = require('./services/agentReconciliationService');
 
 config.validate();
 
@@ -114,6 +115,7 @@ async function start() {
 
   startSessionUsagePoller(config.polling.sessionUsageIntervalMs);
   startPricingRefreshJob(config.polling.modelPricingRefreshIntervalMs);
+  startAgentReconcileJob(config.polling.agentReconcileIntervalMs);
 
   startActivityIngestionPollers();
 }

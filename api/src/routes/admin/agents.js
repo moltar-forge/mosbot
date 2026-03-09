@@ -3,9 +3,25 @@ const crypto = require('crypto');
 const router = express.Router();
 const pool = require('../../db/pool');
 const { authenticateToken, requireManageUsers } = require('../auth');
+const { reconcileAgentsFromOpenClaw } = require('../../services/agentReconciliationService');
 
 router.use(authenticateToken);
 router.use(requireManageUsers);
+
+// POST /api/v1/admin/agents/sync
+// Reconcile DB agents table with openclaw.json source-of-truth
+router.post('/sync', async (req, res, next) => {
+  try {
+    const result = await reconcileAgentsFromOpenClaw({
+      trigger: 'manual',
+      actorUserId: req.user.id,
+    });
+
+    res.json({ data: result });
+  } catch (error) {
+    next(error);
+  }
+});
 
 function hashApiKey(rawKey) {
   return crypto.createHash('sha256').update(rawKey).digest('hex');
