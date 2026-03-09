@@ -13,7 +13,7 @@ const { recordActivityLogEventSafe } = require('../services/activityLogService')
 const { parseOpenClawConfig } = require('../utils/configParser');
 const { getJwtSecret } = require('../utils/jwt');
 const { ensureDocsLinkIfMissing } = require('../services/docsLinkReconciliationService');
-const { gatewayWsRpc } = require('../services/openclawGatewayClient');
+const { reconcileAgentsFromOpenClaw } = require('../services/agentReconciliationService');
 
 const BUILTIN_OPENCLAW_REMAP_PREFIXES = [
   '/home/node/.openclaw/workspace',
@@ -728,153 +728,114 @@ router.get('/agents', requireAuth, async (req, res, next) => {
 });
 
 // GET /api/v1/openclaw/agents/config
-// Get agents configuration (hierarchy, departments, status)
+// Get agent hierarchy/config from DB metadata + OpenClaw runtime source-of-truth.
 router.get('/agents/config', requireAuth, async (req, res, next) => {
   try {
     logger.info('Fetching agents configuration', { userId: req.user.id });
 
+    // Best-effort reconcile so DB metadata stays aligned with OpenClaw source-of-truth.
     try {
-      const data = await makeOpenClawRequest('GET', '/files/content?path=/agents.json');
-      const agentsConfig = JSON.parse(data.content);
-
-      // Basic validation
-      if (!agentsConfig || typeof agentsConfig !== 'object') {
-        return res.status(400).json({
-          error: {
-            message: 'Invalid agents config: must be a JSON object',
-            status: 400,
-            code: 'INVALID_CONFIG',
-          },
-        });
-      }
-
-      const leadership = agentsConfig.leadership || [];
-      const configDepartments = agentsConfig.departments || [];
-      const configSubagents = agentsConfig.subagents || [];
-
-      // Enrich leadership entries with active status from OpenClaw agents config
-      try {
-        const configData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
-        const config = parseOpenClawConfig(configData.content);
-        const agentsList = config?.agents?.list || [];
-        const activeAgentIds = new Set(agentsList.map((a) => a.id));
-
-        // Mark leadership entries as 'active' if they exist in OpenClaw's agents.list
-        leadership.forEach((entry) => {
-          if (entry.status !== 'human' && activeAgentIds.has(entry.id)) {
-            entry.status = 'active';
-            // Enrich with model info from OpenClaw config
-            const agent = agentsList.find((a) => a.id === entry.id);
-            if (agent) {
-              entry.model = agent.model?.primary || null;
-            }
-          }
-        });
-      } catch (configError) {
-        // If we can't read openclaw.json, still return config with original statuses
-        logger.warn('Could not read OpenClaw config for agent status enrichment', {
-          error: configError.message,
-        });
-      }
-
-      // Create a lookup map for subagents
-      const subagentMap = {};
-      configSubagents.forEach((subagent) => {
-        subagentMap[subagent.id] = subagent;
+      await reconcileAgentsFromOpenClaw({ trigger: 'read' });
+    } catch (reconcileErr) {
+      logger.warn('Agent reconcile failed during agents/config fetch', {
+        error: reconcileErr.message,
       });
-
-      // Transform departments to include full subagent data
-      const departments = configDepartments.map((dept) => ({
-        id: dept.id,
-        name: dept.name,
-        leadId: dept.leadId,
-        description: dept.description,
-        subagents: (dept.subagents || []).map((subagentId) => {
-          const subagent = subagentMap[subagentId];
-          return (
-            subagent || {
-              id: subagentId,
-              displayName: subagentId,
-              label: `mosbot-${subagentId}`,
-              description: '',
-              status: 'unknown',
-            }
-          );
-        }),
-      }));
-
-      // Ensure implicit default main agent is always represented in leadership.
-      if (!leadership.some((entry) => entry.id === 'main')) {
-        leadership.push(buildImplicitMainLeadership());
-      }
-
-      // Return in the same format the dashboard expects
-      const validatedConfig = {
-        version: agentsConfig.version || 1,
-        leadership,
-        departments,
-      };
-
-      res.json({ data: validatedConfig });
-    } catch (readError) {
-      // If agents.json not found, auto-generate a flat config from agents.list
-      if (readError.status === 404) {
-        logger.info('agents.json not found, generating agents config from agents.list');
-
-        try {
-          const configData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
-          const config = parseOpenClawConfig(configData.content);
-          const agentsList = config?.agents?.list || [];
-
-          // Build a flat agents config from agents.list using standard identity fields
-          let leadership = agentsList.map((agent) => ({
-            id: agent.id,
-            title: agent.identity?.name || agent.id,
-            label: `agent:${agent.id}:main`,
-            displayName: agent.identity?.name || agent.id,
-            description: agent.identity?.theme || '',
-            emoji: agent.identity?.emoji || null,
-            status: 'active',
-            reportsTo: null,
-            model: agent.model?.primary || null,
-          }));
-
-          // Ensure implicit default "main" is always represented when auto-generating config.
-          if (!leadership.some((entry) => entry.id === 'main')) {
-            leadership.push(buildImplicitMainLeadership());
-          }
-
-          return res.json({
-            data: { version: 1, leadership, departments: [] },
-          });
-        } catch (_err) {
-          // openclaw.json also unreadable — return empty config
-          logger.warn('Could not read openclaw.json for auto-generated agents config');
-          return res.json({
-            data: { version: 1, leadership: [], departments: [] },
-          });
-        }
-      }
-
-      // Other errors (invalid JSON, service error, etc.)
-      logger.warn('Failed to read agents config', {
-        error: readError.message,
-        status: readError.status,
-      });
-
-      throw readError;
     }
+
+    let openclawConfig = {};
+    try {
+      const configData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
+      openclawConfig = parseOpenClawConfig(configData.content);
+    } catch (readError) {
+      logger.warn('Could not read openclaw.json while fetching agents config', {
+        error: readError.message,
+      });
+    }
+
+    const agentsList = openclawConfig?.agents?.list || [];
+    const agentsDefaults = openclawConfig?.agents?.defaults || {};
+
+    // Routing default precedence (OpenClaw): explicit default -> first list entry -> main
+    const explicitDefault = agentsList.find((a) => a?.default === true)?.id || null;
+    const resolvedDefaultId = explicitDefault || agentsList[0]?.id || 'main';
+
+    const discoveredMap = new Map();
+    for (const agent of agentsList) {
+      discoveredMap.set(agent.id, {
+        id: agent.id,
+        title: agent.identity?.name || agent.id,
+        label: `agent:${agent.id}:main`,
+        displayName: agent.identity?.name || agent.id,
+        description: agent.identity?.theme || '',
+        emoji: agent.identity?.emoji || null,
+        status: 'active',
+        reportsTo: null,
+        isDefault: agent.id === resolvedDefaultId,
+        model: agent.model?.primary || agentsDefaults.model?.primary || null,
+      });
+    }
+
+    if (!discoveredMap.has('main')) {
+      discoveredMap.set('main', buildImplicitMainLeadership({
+        emoji: agentsDefaults.identity?.emoji || '🦞',
+        model: agentsDefaults.model?.primary || null,
+        isDefault: resolvedDefaultId === 'main',
+      }));
+    }
+
+    let dbRows = [];
+    try {
+      const dbResult = await pool.query(
+        `SELECT agent_id, name, title, status, reports_to, meta, active
+         FROM agents`,
+      );
+      dbRows = dbResult.rows || [];
+    } catch (dbErr) {
+      if (dbErr.code !== '42P01') {
+        logger.warn('Failed to read agents table for agents/config', { error: dbErr.message });
+      }
+    }
+
+    const dbByAgentId = new Map(dbRows.map((r) => [r.agent_id, r]));
+
+    const leadership = [];
+    for (const [agentId, discovered] of discoveredMap.entries()) {
+      const row = dbByAgentId.get(agentId);
+      const meta = row?.meta || {};
+      leadership.push({
+        id: agentId,
+        title: row?.title || discovered.title,
+        label: meta.label || discovered.label,
+        displayName: row?.name || discovered.displayName,
+        description: meta.description || discovered.description || '',
+        emoji: meta.emoji || discovered.emoji || null,
+        status: row ? (row.active === false ? 'deprecated' : (row.status || discovered.status)) : discovered.status,
+        reportsTo: row?.reports_to || null,
+        isDefault: Boolean(discovered.isDefault),
+        model: discovered.model || null,
+      });
+    }
+
+    leadership.sort((a, b) => (a.id === 'main' ? -1 : b.id === 'main' ? 1 : 0));
+
+    res.json({
+      data: {
+        version: 1,
+        leadership,
+        departments: [],
+      },
+    });
   } catch (error) {
     next(error);
   }
 });
 
 // PUT /api/v1/openclaw/agents/config/:agentId
-// Update an existing agent's config in agents.json + openclaw.json (admin/owner only)
+// Update an existing agent's config in DB metadata + openclaw runtime config (admin/owner only)
 router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const { agentId } = req.params;
-    const agentData = req.body;
+    const agentData = req.body || {};
 
     if (req.user.role === 'agent') {
       return res.status(403).json({
@@ -886,111 +847,72 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
       });
     }
 
-    logger.info('Updating agent config', { userId: req.user.id, agentId });
-
-    // Validate required fields
     if (!agentData.displayName) {
       return res.status(400).json({
         error: { message: 'displayName is required', status: 400 },
       });
     }
 
-    // Load current configs
-    let agentsConfig;
-    let agentsConfigMissing = false;
-    try {
-      const agentsData = await makeOpenClawRequest('GET', '/files/content?path=/agents.json');
-      agentsConfig = JSON.parse(agentsData.content);
-    } catch (err) {
-      if (err.status === 404) {
-        agentsConfigMissing = true;
-        agentsConfig = {
-          version: 1,
-          leadership: [],
-          departments: [],
-          subagents: [],
-        };
-      } else {
-        throw err;
-      }
-    }
-
     const openclawData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
     const openclawConfig = parseOpenClawConfig(openclawData.content);
 
-    // --- Update agents.json leadership ---
-    let leadership = agentsConfig.leadership || [];
-    let leadershipIndex = leadership.findIndex((l) => l.id === agentId);
-
-    // agents.json may not exist yet on fresh installs. In that case, allow editing
-    // implicit agents (e.g. main) and bootstrap their leadership entry on demand.
     const openclawAgentsList = openclawConfig.agents?.list || [];
     const existsInOpenClaw = agentId === 'main' || openclawAgentsList.some((a) => a.id === agentId);
-
-    if (leadershipIndex < 0) {
-      if (!existsInOpenClaw) {
-        return res.status(404).json({
-          error: {
-            message: `Agent "${agentId}" not found in agents config`,
-            status: 404,
-            code: 'AGENT_NOT_FOUND',
-          },
-        });
-      }
-
-      leadership.push({
-        id: agentId,
-        title: agentData.title || agentData.identityName || agentId,
-        label: agentData.label || `agent:${agentId}:main`,
-        displayName: agentData.displayName || agentData.identityName || agentId,
-        description: agentData.description || '',
-        status: agentData.status || 'active',
-        reportsTo: agentData.reportsTo || null,
+    if (!existsInOpenClaw) {
+      return res.status(404).json({
+        error: {
+          message: `Agent "${agentId}" not found in OpenClaw config`,
+          status: 404,
+          code: 'AGENT_NOT_FOUND',
+        },
       });
-      leadershipIndex = leadership.length - 1;
     }
 
-    // Update only the fields the form manages
-    leadership[leadershipIndex] = {
-      ...leadership[leadershipIndex],
-      title: agentData.title,
-      label: agentData.label || leadership[leadershipIndex].label,
-      displayName: agentData.displayName,
-      description: agentData.description || '',
-      status: agentData.status || leadership[leadershipIndex].status,
-      reportsTo: agentData.reportsTo || null,
-    };
-    agentsConfig.leadership = leadership;
+    // Upsert DB metadata (replaces agents.json leadership writes)
+    await pool.query(
+      `INSERT INTO agents (agent_id, name, title, status, reports_to, meta, active)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+       ON CONFLICT (agent_id)
+       DO UPDATE SET
+         name = EXCLUDED.name,
+         title = EXCLUDED.title,
+         status = EXCLUDED.status,
+         reports_to = EXCLUDED.reports_to,
+         meta = COALESCE(agents.meta, '{}'::jsonb) || EXCLUDED.meta,
+         active = EXCLUDED.active,
+         updated_at = NOW()`,
+      [
+        agentId,
+        agentData.displayName,
+        agentData.title || agentData.identityName || agentId,
+        agentData.status || 'active',
+        agentData.reportsTo || null,
+        JSON.stringify({
+          label: agentData.label || `agent:${agentId}:main`,
+          description: agentData.description || '',
+          emoji: agentData.identityEmoji || null,
+        }),
+        agentData.status !== 'deprecated',
+      ],
+    );
 
-    // --- Update openclaw.json agents.list (non-human only) ---
-    const isHuman = (agentData.status || leadership[leadershipIndex].status) === 'human';
+    // Update openclaw runtime config for non-human agents only
+    const isHuman = agentData.status === 'human';
     if (!isHuman) {
-      const agentsList = openclawConfig.agents?.list || [];
-      const agentIndex = agentsList.findIndex((a) => a.id === agentId);
-
+      const agentIndex = openclawAgentsList.findIndex((a) => a.id === agentId);
       if (agentIndex >= 0) {
-        const existing = agentsList[agentIndex];
+        const existing = openclawAgentsList[agentIndex];
 
-        // Merge identity
         if (agentData.identityName || agentData.identityTheme || agentData.identityEmoji) {
           existing.identity = {
             ...(existing.identity || {}),
             ...(agentData.identityName && { name: agentData.identityName }),
-            ...(agentData.identityTheme !== undefined && {
-              theme: agentData.identityTheme,
-            }),
-            ...(agentData.identityEmoji && {
-              emoji: agentData.identityEmoji,
-            }),
+            ...(agentData.identityTheme !== undefined && { theme: agentData.identityTheme }),
+            ...(agentData.identityEmoji && { emoji: agentData.identityEmoji }),
           };
         }
 
-        // Merge workspace
-        if (agentData.workspace) {
-          existing.workspace = agentData.workspace;
-        }
 
-        // Merge model
         if (agentData.modelPrimary) {
           existing.model = {
             ...(existing.model || {}),
@@ -1000,95 +922,32 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
           existing.model.fallbacks = fallbacks.length > 0 ? fallbacks : undefined;
         }
 
-        // Remove stale orgChart key if present (not recognized by OpenClaw schema)
-        delete existing.orgChart;
-
-        // Heartbeat
         if (agentData.heartbeatEnabled === true) {
           existing.heartbeat = {
             ...(existing.heartbeat || {}),
             every: agentData.heartbeatEvery || existing.heartbeat?.every || '60m',
             session: existing.heartbeat?.session || 'main',
             target: existing.heartbeat?.target || 'last',
-            prompt: existing.heartbeat?.prompt || undefined,
             ackMaxChars: existing.heartbeat?.ackMaxChars || 200,
           };
-          // Only set model if explicitly provided and not empty
-          // If heartbeatModel is null/undefined/empty, preserve existing model (if any)
-          // If heartbeatModel is provided with a value, use it
-          if (
-            agentData.heartbeatModel !== undefined &&
-            agentData.heartbeatModel !== null &&
-            agentData.heartbeatModel !== ''
-          ) {
-            existing.heartbeat.model = agentData.heartbeatModel;
-          }
-          // Note: If heartbeatModel is not provided, existing.heartbeat.model is preserved via spread operator above
-          delete existing.heartbeat.fallbacks;
+          if (agentData.heartbeatModel) existing.heartbeat.model = agentData.heartbeatModel;
         } else if (agentData.heartbeatEnabled === false) {
           delete existing.heartbeat;
         }
-
-        if (!openclawConfig.agents) openclawConfig.agents = {};
-        openclawConfig.agents.list = agentsList;
       }
-      // If agent doesn't exist in openclaw config, that's OK -- it stays as-is
-    }
 
-    // --- Clean up any stale orgChart keys from all agents (schema hygiene) ---
-    const allAgents = openclawConfig.agents?.list || [];
-    for (const agent of allAgents) {
-      delete agent.orgChart;
-    }
-
-    // --- Write both files ---
-    const agentsContent = JSON.stringify(agentsConfig, null, 2) + '\n';
-    const openclawContent = JSON.stringify(openclawConfig, null, 2) + '\n';
-
-    const writeAgentsConfig = async () => {
-      // If agents.json was missing, create it; otherwise update it.
-      const method = agentsConfigMissing ? 'POST' : 'PUT';
-      try {
-        return await makeOpenClawRequest(method, '/files', {
-          path: '/agents.json',
-          content: agentsContent,
-          encoding: 'utf8',
-        });
-      } catch (err) {
-        // Defensive fallback: if update races with missing file, retry as create.
-        if (method === 'PUT' && err.status === 404) {
-          return makeOpenClawRequest('POST', '/files', {
-            path: '/agents.json',
-            content: agentsContent,
-            encoding: 'utf8',
-          });
-        }
-        throw err;
-      }
-    };
-
-    // Persist agents.json + apply openclaw.json via Gateway RPC (config.apply)
-    const openclawBase = await gatewayWsRpc('config.get', {});
-    await Promise.all([
-      writeAgentsConfig(),
-      gatewayWsRpc('config.apply', {
+      // Apply via gateway config.apply
+      const openclawContent = JSON.stringify(openclawConfig, null, 2) + '\n';
+      const currentConfig = await gatewayWsRpc('config.get', {});
+      await gatewayWsRpc('config.apply', {
         raw: openclawContent,
-        baseHash: openclawBase?.hash || null,
+        baseHash: currentConfig?.hash || null,
         note: `Agent updated via MosBot (${agentId}) by ${req.user.id}`,
         restartDelayMs: 2000,
-      }),
-    ]);
+      });
 
-    if (!isHuman) {
       await ensureDocsLinkIfMissing(agentId);
     }
-
-    logger.info('Agent config updated successfully', {
-      userId: req.user.id,
-      agentId,
-      agentsConfigSize: agentsContent.length,
-      openclawSize: openclawContent.length,
-    });
 
     recordActivityLogEventSafe({
       event_type: 'agent_updated',
@@ -1105,7 +964,7 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
       data: {
         agentId,
         message: 'Agent updated successfully',
-        updatedFiles: ['/agents.json', '/openclaw.json'],
+        updatedFiles: ['/openclaw.json', 'database'],
       },
     });
   } catch (error) {
@@ -1114,10 +973,10 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
 });
 
 // POST /api/v1/openclaw/agents/config
-// Create a new agent in agents.json + openclaw.json (admin/owner only)
+// Create a new agent in DB metadata + openclaw runtime config (admin/owner only)
 router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) => {
   try {
-    const agentData = req.body;
+    const agentData = req.body || {};
 
     if (req.user.role === 'agent') {
       return res.status(403).json({
@@ -1129,79 +988,63 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
       });
     }
 
-    // Validate required fields
     if (!agentData.id || !agentData.displayName) {
       return res.status(400).json({
-        error: {
-          message: 'id and displayName are required',
-          status: 400,
-        },
+        error: { message: 'id and displayName are required', status: 400 },
       });
-    }
-
-    logger.info('Creating agent', {
-      userId: req.user.id,
-      agentId: agentData.id,
-    });
-
-    // Load current configs
-    let agentsConfig;
-    let agentsConfigMissing = false;
-    try {
-      const agentsData = await makeOpenClawRequest('GET', '/files/content?path=/agents.json');
-      agentsConfig = JSON.parse(agentsData.content);
-    } catch (err) {
-      if (err.status === 404) {
-        agentsConfigMissing = true;
-        agentsConfig = {
-          version: 1,
-          leadership: [],
-          departments: [],
-          subagents: [],
-        };
-      } else {
-        throw err;
-      }
     }
 
     const openclawData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
     const openclawConfig = parseOpenClawConfig(openclawData.content);
+    if (!openclawConfig.agents) openclawConfig.agents = {};
+    if (!Array.isArray(openclawConfig.agents.list)) openclawConfig.agents.list = [];
 
-    // Check for duplicates
-    const leadership = agentsConfig.leadership || [];
-    if (leadership.some((l) => l.id === agentData.id)) {
+    const isHuman = agentData.status === 'human';
+
+    if (!isHuman && openclawConfig.agents.list.some((a) => a.id === agentData.id)) {
       return res.status(409).json({
         error: {
-          message: `Agent "${agentData.id}" already exists in agents config`,
+          message: `Agent "${agentData.id}" already exists in OpenClaw config`,
           status: 409,
           code: 'AGENT_EXISTS',
         },
       });
     }
 
-    // --- Add to agents.json leadership ---
-    leadership.push({
-      id: agentData.id,
-      title: agentData.title,
-      label: agentData.label || `mosbot-${agentData.id}`,
-      displayName: agentData.displayName,
-      description: agentData.description || '',
-      status: agentData.status || 'scaffolded',
-      reportsTo: agentData.reportsTo || null,
-    });
-    agentsConfig.leadership = leadership;
+    // Upsert DB metadata (no agents.json writes)
+    await pool.query(
+      `INSERT INTO agents (agent_id, name, title, status, reports_to, meta, active)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+       ON CONFLICT (agent_id)
+       DO UPDATE SET
+         name = EXCLUDED.name,
+         title = EXCLUDED.title,
+         status = EXCLUDED.status,
+         reports_to = EXCLUDED.reports_to,
+         meta = COALESCE(agents.meta, '{}'::jsonb) || EXCLUDED.meta,
+         active = EXCLUDED.active,
+         updated_at = NOW()`,
+      [
+        agentData.id,
+        agentData.displayName,
+        agentData.title || agentData.identityName || agentData.id,
+        agentData.status || 'scaffolded',
+        agentData.reportsTo || null,
+        JSON.stringify({
+          label: agentData.label || `agent:${agentData.id}:main`,
+          description: agentData.description || '',
+          emoji: agentData.identityEmoji || null,
+        }),
+        agentData.status !== 'deprecated',
+      ],
+    );
 
-    // --- Add to openclaw.json agents.list (non-human only) ---
-    const isHuman = agentData.status === 'human';
     if (!isHuman) {
-      if (!openclawConfig.agents) openclawConfig.agents = {};
-      if (!Array.isArray(openclawConfig.agents.list)) openclawConfig.agents.list = [];
-
       const fallbacks = [agentData.modelFallback1, agentData.modelFallback2].filter(Boolean);
-
       const newAgent = {
         id: agentData.id,
-        workspace: agentData.workspace || `/home/node/.openclaw/workspace-${agentData.id}`,
+        // Intentionally omit `workspace` to let OpenClaw derive it from CONFIG_ROOT
+        // (workspace-<agentId>) and avoid hard-coding absolute host paths.
         identity: {
           name: agentData.identityName || agentData.displayName,
           theme: agentData.identityTheme || agentData.description || '',
@@ -1220,83 +1063,54 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
           target: 'last',
           ackMaxChars: 200,
         };
-        // Only set model if explicitly provided and not empty
-        // If heartbeatModel is null/undefined/empty, don't set it (OpenClaw will use agent's primary model)
-        if (agentData.heartbeatModel && agentData.heartbeatModel !== '') {
-          newAgent.heartbeat.model = agentData.heartbeatModel;
-        }
+        if (agentData.heartbeatModel) newAgent.heartbeat.model = agentData.heartbeatModel;
+      }
+
+      // Guard against default-agent hijack:
+      // OpenClaw fallback routing is: agents.list[].default -> first list entry -> main.
+      // If list is currently empty (or has no explicit default) and main is not listed,
+      // adding a non-main agent would accidentally make it the default. Ensure explicit main default.
+      const hasExplicitDefault = openclawConfig.agents.list.some((a) => a?.default === true);
+      const hasMainEntry = openclawConfig.agents.list.some((a) => a?.id === 'main');
+      if (!hasExplicitDefault && !hasMainEntry && agentData.id !== 'main') {
+        openclawConfig.agents.list.unshift({ id: 'main', default: true });
+      }
+
+      if (agentData.id === 'main') {
+        newAgent.default = true;
       }
 
       openclawConfig.agents.list.push(newAgent);
-    }
 
-    // --- Write both files ---
-    const agentsContent = JSON.stringify(agentsConfig, null, 2) + '\n';
-    const openclawContent = JSON.stringify(openclawConfig, null, 2) + '\n';
-
-    const writeAgentsConfig = async () => {
-      const method = agentsConfigMissing ? 'POST' : 'PUT';
-      try {
-        return await makeOpenClawRequest(method, '/files', {
-          path: '/agents.json',
-          content: agentsContent,
-          encoding: 'utf8',
-        });
-      } catch (err) {
-        if (method === 'PUT' && err.status === 404) {
-          return makeOpenClawRequest('POST', '/files', {
-            path: '/agents.json',
-            content: agentsContent,
-            encoding: 'utf8',
-          });
-        }
-        throw err;
-      }
-    };
-
-    // Persist agents.json + apply openclaw.json via Gateway RPC (config.apply)
-    const openclawBase = await gatewayWsRpc('config.get', {});
-    await Promise.all([
-      writeAgentsConfig(),
-      gatewayWsRpc('config.apply', {
+      const openclawContent = JSON.stringify(openclawConfig, null, 2) + '\n';
+      const currentConfig = await gatewayWsRpc('config.get', {});
+      await gatewayWsRpc('config.apply', {
         raw: openclawContent,
-        baseHash: openclawBase?.hash || null,
+        baseHash: currentConfig?.hash || null,
         note: `Agent created via MosBot (${agentData.id}) by ${req.user.id}`,
         restartDelayMs: 2000,
-      }),
-    ]);
+      });
 
-    if (!isHuman) {
       await ensureDocsLinkIfMissing(agentData.id);
     }
-
-    logger.info('Agent created successfully', {
-      userId: req.user.id,
-      agentId: agentData.id,
-      agentsConfigSize: agentsContent.length,
-      openclawSize: openclawContent.length,
-    });
 
     recordActivityLogEventSafe({
       event_type: 'agent_created',
       source: 'agents',
       title: `Agent created: ${agentData.id}`,
-      description: `New agent "${agentData.displayName}" (${agentData.id}) added`,
+      description: `Agent "${agentData.displayName}" (${agentData.id}) created`,
       severity: 'info',
       actor_user_id: req.user.id,
       agent_id: agentData.id,
-      meta: {
-        displayName: agentData.displayName,
-        title: agentData.title,
-        status: agentData.status,
-      },
+      meta: { agentData },
     });
 
     res.status(201).json({
       data: {
         agentId: agentData.id,
         message: 'Agent created successfully',
-        updatedFiles: ['/agents.json', '/openclaw.json'],
+        created: true,
+        updatedFiles: ['/openclaw.json', 'database'],
       },
     });
   } catch (error) {
@@ -1337,8 +1151,6 @@ router.get('/subagents', requireAuth, async (req, res, next) => {
   }
 });
 
-// GET /api/v1/openclaw/sessions
-// Get active sessions from OpenClaw Gateway (running and queued)
 // GET /api/v1/openclaw/sessions/status
 // Lightweight session counts for the global sidebar avatar.
 // Only calls sessions.list (no usage/cost enrichment) to keep latency low.
@@ -4034,6 +3846,8 @@ router.post('/usage/reset', requireAuth, requireAdmin, async (req, res, next) =>
 // Uses Gateway WebSocket RPC (config.get / config.apply) for validated writes.
 // Backups are stored in the database (openclaw_config_history).
 // ============================================================================
+
+const { gatewayWsRpc } = require('../services/openclawGatewayClient');
 
 // Middleware: allow only admin or owner roles (explicitly block agent)
 function requireOwnerOrAdmin(req, res, next) {

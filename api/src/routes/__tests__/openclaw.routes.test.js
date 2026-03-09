@@ -794,7 +794,9 @@ describe('OpenClaw Routes', () => {
         .set('Authorization', `Bearer ${token}`);
 
       expect(response.status).toBe(200);
-      expect(response.body.data.leadership).toEqual([]);
+      // main is implicit even when openclaw config cannot be read
+      expect(response.body.data.leadership).toHaveLength(1);
+      expect(response.body.data.leadership[0].id).toBe('main');
       expect(response.body.data.departments).toEqual([]);
     });
   });
@@ -808,14 +810,14 @@ describe('OpenClaw Routes', () => {
             status: 200,
             json: async () => ({
               content: JSON.stringify({
-                leadership: [
-                  {
-                    id: 'coo',
-                    title: 'COO',
-                    displayName: 'Chief Operating Officer',
-                    status: 'active',
-                  },
-                ],
+                agents: {
+                  list: [
+                    {
+                      id: 'coo',
+                      identity: { name: 'COO' },
+                    },
+                  ],
+                },
               }),
             }),
             text: async () => 'OK',
@@ -865,36 +867,17 @@ describe('OpenClaw Routes', () => {
       expect(ensureDocsLinkIfMissing).toHaveBeenCalledWith('coo');
     });
 
-    it('should bootstrap main leadership on update when agents.json is missing', async () => {
+    it('should update main metadata without requiring agents.json', async () => {
       const token = getToken('admin-id', 'admin');
 
-      let callCount = 0;
       global.fetch = jest.fn().mockImplementation(async (_url, options) => {
         if (options?.method === 'GET') {
-          callCount++;
-          // First GET: agents.json (missing)
-          if (callCount === 1) {
-            const err = new Error('File not found');
-            err.status = 404;
-            throw err;
-          }
-
-          // Second GET: openclaw.json
           return {
             ok: true,
             status: 200,
             json: async () => ({
               content: JSON.stringify({ agents: { list: [] } }),
             }),
-            text: async () => 'OK',
-          };
-        }
-
-        if (options?.method === 'PUT') {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({ updated: true }),
             text: async () => 'OK',
           };
         }
@@ -907,6 +890,12 @@ describe('OpenClaw Routes', () => {
         };
       });
 
+      gatewayWsRpc.mockImplementation((method) => {
+        if (method === 'config.get') return Promise.resolve({ hash: 'h1' });
+        if (method === 'config.apply') return Promise.resolve({ hash: 'h2' });
+        return Promise.resolve({});
+      });
+
       const response = await request(app)
         .put('/api/v1/openclaw/agents/config/main')
         .set('Authorization', `Bearer ${token}`)
@@ -916,21 +905,7 @@ describe('OpenClaw Routes', () => {
         });
 
       expect(response.status).toBe(200);
-      expect(response.body.data).toBeDefined();
       expect(response.body.data.agentId).toBe('main');
-
-      const calls = global.fetch.mock.calls || [];
-      const agentsWriteCall = calls.find((c) => {
-        const options = c[1] || {};
-        if (options.method !== 'POST') return false;
-        try {
-          const body = JSON.parse(options.body || '{}');
-          return body.path === '/agents.json';
-        } catch {
-          return false;
-        }
-      });
-      expect(agentsWriteCall).toBeDefined();
     });
 
     it('should require displayName', async () => {
@@ -1025,20 +1000,11 @@ describe('OpenClaw Routes', () => {
       expect(ensureDocsLinkIfMissing).toHaveBeenCalledWith('new-agent');
     });
 
-    it('should create agents.json on first write when missing', async () => {
+    it('should create agent without writing agents.json', async () => {
       const token = getToken('admin-id', 'admin');
 
-      let callCount = 0;
       global.fetch = jest.fn().mockImplementation(async (_url, options) => {
         if (options?.method === 'GET') {
-          callCount++;
-          // First GET: agents.json missing
-          if (callCount === 1) {
-            const err = new Error('File not found');
-            err.status = 404;
-            throw err;
-          }
-          // Second GET: openclaw.json
           return {
             ok: true,
             status: 200,
@@ -1047,19 +1013,10 @@ describe('OpenClaw Routes', () => {
           };
         }
 
-        if (options?.method === 'POST' || options?.method === 'PUT') {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({ created: true }),
-            text: async () => 'OK',
-          };
-        }
-
         return {
           ok: true,
           status: 200,
-          json: async () => ({}),
+          json: async () => ({ created: true }),
           text: async () => 'OK',
         };
       });
@@ -1078,7 +1035,7 @@ describe('OpenClaw Routes', () => {
       const calls = global.fetch.mock.calls || [];
       const agentsWriteCall = calls.find((c) => {
         const options = c[1] || {};
-        if (options.method !== 'POST') return false;
+        if (!options.method) return false;
         try {
           const body = JSON.parse(options.body || '{}');
           return body.path === '/agents.json';
@@ -1086,7 +1043,7 @@ describe('OpenClaw Routes', () => {
           return false;
         }
       });
-      expect(agentsWriteCall).toBeDefined();
+      expect(agentsWriteCall).toBeUndefined();
     });
 
     it('should require id and displayName', async () => {
