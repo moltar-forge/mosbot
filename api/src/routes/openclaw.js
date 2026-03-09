@@ -802,10 +802,30 @@ router.get('/agents/config', requireAuth, async (req, res, next) => {
         displayName: row?.name || discovered.displayName,
         description: meta.description || discovered.description || '',
         emoji: meta.emoji || discovered.emoji || null,
-        status: row ? (row.active === false ? 'deprecated' : (row.status || discovered.status)) : discovered.status,
+        status: row?.status || discovered.status,
         reportsTo: row?.reports_to || null,
         isDefault: Boolean(discovered.isDefault),
         model: discovered.model || null,
+      });
+    }
+
+    // Include DB-only active agents not present in discovered OpenClaw list
+    // (e.g., metadata rows that still need visibility in management UI).
+    for (const row of dbRows) {
+      if (!row?.agent_id || discoveredMap.has(row.agent_id)) continue;
+      if (row.active === false || row.status === 'deprecated') continue;
+      const meta = row.meta || {};
+      leadership.push({
+        id: row.agent_id,
+        title: row.title || row.name || row.agent_id,
+        label: meta.label || `agent:${row.agent_id}:main`,
+        displayName: row.name || row.agent_id,
+        description: meta.description || '',
+        emoji: meta.emoji || null,
+        status: row.status || 'active',
+        reportsTo: row.reports_to || null,
+        isDefault: false,
+        model: null,
       });
     }
 
@@ -902,11 +922,14 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
       ],
     );
 
-    // Update openclaw runtime config
+    // Update openclaw runtime config (only when there is an explicit agent entry to mutate)
     {
       const agentIndex = openclawAgentsList.findIndex((a) => a.id === agentId);
+      let configDirty = false;
+
       if (agentIndex >= 0) {
         const existing = openclawAgentsList[agentIndex];
+        configDirty = true;
 
         if (agentData.identityName || agentData.identityTheme || agentData.identityEmoji) {
           existing.identity = {
@@ -916,7 +939,6 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
             ...(agentData.identityEmoji && { emoji: agentData.identityEmoji }),
           };
         }
-
 
         if (agentData.modelPrimary) {
           existing.model = {
@@ -941,17 +963,19 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
         }
       }
 
-      // Apply via gateway config.apply
-      const openclawContent = JSON.stringify(openclawConfig, null, 2) + '\n';
-      const currentConfig = await gatewayWsRpc('config.get', {});
-      await gatewayWsRpc('config.apply', {
-        raw: openclawContent,
-        baseHash: currentConfig?.hash || null,
-        note: `Agent updated via MosBot (${agentId}) by ${req.user.id}`,
-        restartDelayMs: 2000,
-      });
+      if (configDirty) {
+        // Apply via gateway config.apply
+        const openclawContent = JSON.stringify(openclawConfig, null, 2) + '\n';
+        const currentConfig = await gatewayWsRpc('config.get', {});
+        await gatewayWsRpc('config.apply', {
+          raw: openclawContent,
+          baseHash: currentConfig?.hash || null,
+          note: `Agent updated via MosBot (${agentId}) by ${req.user.id}`,
+          restartDelayMs: 2000,
+        });
 
-      await ensureDocsLinkIfMissing(agentId);
+        await ensureDocsLinkIfMissing(agentId);
+      }
     }
 
     recordActivityLogEventSafe({
