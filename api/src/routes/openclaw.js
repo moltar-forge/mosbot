@@ -13,6 +13,7 @@ const { recordActivityLogEventSafe } = require('../services/activityLogService')
 const { parseOpenClawConfig } = require('../utils/configParser');
 const { getJwtSecret } = require('../utils/jwt');
 const { ensureDocsLinkIfMissing } = require('../services/docsLinkReconciliationService');
+const { gatewayWsRpc } = require('../services/openclawGatewayClient');
 
 const BUILTIN_OPENCLAW_REMAP_PREFIXES = [
   '/home/node/.openclaw/workspace',
@@ -3886,8 +3887,6 @@ router.post('/usage/reset', requireAuth, requireAdmin, async (req, res, next) =>
 // Uses Gateway WebSocket RPC (config.get / config.apply) for validated writes.
 // Backups are stored in the database (openclaw_config_history).
 // ============================================================================
-
-const { gatewayWsRpc } = require('../services/openclawGatewayClient');
 
 // Middleware: allow only admin or owner roles (explicitly block agent)
 function requireOwnerOrAdmin(req, res, next) {
