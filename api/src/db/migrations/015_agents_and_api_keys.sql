@@ -21,6 +21,13 @@ CREATE INDEX IF NOT EXISTS idx_agents_agent_id ON agents(agent_id);
 CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
 CREATE INDEX IF NOT EXISTS idx_agents_reports_to ON agents(reports_to);
 
+-- Keep updated_at fresh on updates (same behavior as core tables)
+DROP TRIGGER IF EXISTS update_agents_updated_at ON agents;
+CREATE TRIGGER update_agents_updated_at
+    BEFORE UPDATE ON agents
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at();
+
 CREATE TABLE IF NOT EXISTS agent_api_keys (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   agent_id TEXT NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,

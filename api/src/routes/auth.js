@@ -260,10 +260,12 @@ const authenticateToken = async (req, res, next) => {
     try {
       const keyHash = crypto.createHash('sha256').update(token).digest('hex');
       const result = await pool.query(
-        `SELECT a.id, a.agent_id, a.name, a.status, a.active,
-                k.id AS key_id, k.revoked_at
+        `SELECT a.id AS agent_db_id, a.agent_id, a.name, a.status, a.active,
+                k.id AS key_id, k.revoked_at,
+                u.id AS user_id
          FROM agent_api_keys k
          JOIN agents a ON a.agent_id = k.agent_id
+         LEFT JOIN users u ON u.agent_id = a.agent_id
          WHERE k.key_hash = $1
          LIMIT 1`,
         [keyHash],
@@ -288,11 +290,17 @@ const authenticateToken = async (req, res, next) => {
         });
       }
 
-      // Best effort usage tracking
-      await pool.query('UPDATE agent_api_keys SET last_used = NOW() WHERE id = $1', [row.key_id]);
+      // Best effort usage tracking (must not block auth)
+      try {
+        await pool.query('UPDATE agent_api_keys SET last_used = NOW() WHERE id = $1', [row.key_id]);
+      } catch (_trackErr) {
+        // non-fatal
+      }
 
       req.user = {
-        id: row.id,
+        // Keep compatibility: use users.id when available for existing FK-based writes/logs
+        id: row.user_id || null,
+        agent_db_id: row.agent_db_id,
         role: 'agent',
         name: row.name,
         agent_id: row.agent_id,

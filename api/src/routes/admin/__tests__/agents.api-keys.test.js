@@ -39,6 +39,28 @@ describe('admin agents API key routes', () => {
     app = makeApp();
   });
 
+  it('rejects invalid agentId slug on create', async () => {
+    const res = await request(app)
+      .post('/api/v1/admin/agents')
+      .send({ agentId: 'Bad Slug', name: 'Bad' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toContain('valid slug');
+  });
+
+  it('maps invalid reportsTo FK to 400', async () => {
+    const err = new Error('fk violation');
+    err.code = '23503';
+    pool.query.mockRejectedValueOnce(err);
+
+    const res = await request(app)
+      .post('/api/v1/admin/agents')
+      .send({ agentId: 'worker', name: 'Worker', reportsTo: 'missing' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('INVALID_REPORTS_TO');
+  });
+
   it('creates agent API key and returns plaintext once', async () => {
     pool.query
       .mockResolvedValueOnce({ rows: [{ agent_id: 'main' }] }) // agent exists
