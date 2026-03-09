@@ -219,7 +219,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
         workspace: rawAgentEntry?.workspace || `/home/node/.openclaw/workspace-${agentId}`,
         identityName: rawAgentEntry?.identity?.name || leadershipEntry?.displayName || '',
         identityTheme: rawAgentEntry?.identity?.theme || leadershipEntry?.description || '',
-        identityEmoji: rawAgentEntry?.identity?.emoji || '🤖',
+        identityEmoji: rawAgentEntry?.identity?.emoji || leadershipEntry?.emoji || '🤖',
         modelPrimary: configuredModelPrimary,
         modelFallback1: configuredFallback1,
         modelFallback2: configuredFallback2,
