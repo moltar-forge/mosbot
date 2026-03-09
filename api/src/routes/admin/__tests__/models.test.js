@@ -315,5 +315,126 @@ describe('/api/v1/admin/models', () => {
       expect(response.status).toBe(200);
       expect(response.body.data.is_default).toBe(true);
     });
+
+    it('should return 404 if model not found for default patch', async () => {
+      makeOpenClawRequest.mockResolvedValueOnce({
+        content: JSON.stringify({ agents: { defaults: { models: {} } } }),
+      });
+
+      const response = await request(app).patch('/api/v1/admin/models/missing/default');
+      expect(response.status).toBe(404);
+    });
+
+    it('should create defaults.model object if missing when setting default', async () => {
+      makeOpenClawRequest
+        .mockResolvedValueOnce({
+          content: JSON.stringify({
+            agents: {
+              defaults: {
+                models: {
+                  'openrouter/openai/gpt-4': { alias: 'GPT-4', params: {} },
+                },
+              },
+            },
+          }),
+        })
+        .mockResolvedValueOnce({ success: true });
+
+      const response = await request(app).patch('/api/v1/admin/models/openrouter/openai/gpt-4/default');
+      expect(response.status).toBe(200);
+      expect(makeOpenClawRequest).toHaveBeenLastCalledWith('PUT', '/files', expect.objectContaining({
+        path: '/openclaw.json',
+      }));
+    });
+  });
+
+  describe('additional validation/error coverage', () => {
+    it('GET should return 500 on read/config parse failure', async () => {
+      makeOpenClawRequest.mockRejectedValueOnce(new Error('workspace down'));
+      const response = await request(app).get('/api/v1/admin/models');
+      expect(response.status).toBe(500);
+    });
+
+    it('POST validates model id length', async () => {
+      const longId = 'a'.repeat(201);
+      const response = await request(app)
+        .post('/api/v1/admin/models')
+        .send({ id: longId, alias: 'Too long', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain('200 characters or less');
+    });
+
+    it('POST validates alias required', async () => {
+      const response = await request(app)
+        .post('/api/v1/admin/models')
+        .send({ id: 'openrouter/test/model', alias: '', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain('Model alias is required');
+    });
+
+    it('POST validates params object required', async () => {
+      const response = await request(app)
+        .post('/api/v1/admin/models')
+        .send({ id: 'openrouter/test/model', alias: 'Test', params: [] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain('Model params is required');
+    });
+
+    it('POST creates missing nested config blocks', async () => {
+      makeOpenClawRequest
+        .mockResolvedValueOnce({ content: JSON.stringify({}) })
+        .mockResolvedValueOnce({ success: true });
+
+      const response = await request(app)
+        .post('/api/v1/admin/models')
+        .send({ id: 'openrouter/test/model', alias: 'Test', params: {} });
+
+      expect(response.status).toBe(201);
+      expect(makeOpenClawRequest).toHaveBeenLastCalledWith('PUT', '/files', expect.objectContaining({
+        path: '/openclaw.json',
+      }));
+    });
+
+    it('PUT validates alias non-empty when provided', async () => {
+      makeOpenClawRequest.mockResolvedValueOnce({
+        content: JSON.stringify({
+          agents: { defaults: { models: { 'openrouter/test/model': { alias: 'A', params: {} } } } },
+        }),
+      });
+
+      const response = await request(app)
+        .put('/api/v1/admin/models/openrouter/test/model')
+        .send({ alias: '' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain('non-empty string');
+    });
+
+    it('PUT validates params object when provided', async () => {
+      makeOpenClawRequest.mockResolvedValueOnce({
+        content: JSON.stringify({
+          agents: { defaults: { models: { 'openrouter/test/model': { alias: 'A', params: {} } } } },
+        }),
+      });
+
+      const response = await request(app)
+        .put('/api/v1/admin/models/openrouter/test/model')
+        .send({ params: [] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain('must be an object');
+    });
+
+    it('DELETE returns 404 when model missing', async () => {
+      makeOpenClawRequest.mockResolvedValueOnce({
+        content: JSON.stringify({ agents: { defaults: { models: {} } } }),
+      });
+
+      const response = await request(app).delete('/api/v1/admin/models/missing');
+      expect(response.status).toBe(404);
+    });
   });
 });
