@@ -77,15 +77,18 @@ async function upsertWorkspaceFile(path, content, encoding = 'utf8') {
   }
 }
 
-function getMosbotApiBaseUrl(req) {
+function getMosbotApiBaseUrl(_req) {
   const explicit = process.env.MOSBOT_API_URL || null;
   if (explicit) return explicit.replace(/\/$/, '');
 
-  const protoHeader = req.get('x-forwarded-proto');
-  const hostHeader = req.get('x-forwarded-host') || req.get('host');
-  const proto = protoHeader ? protoHeader.split(',')[0].trim() : req.protocol || 'http';
-  const host = hostHeader || 'localhost:3000';
-  return `${proto}://${host}/api/v1`;
+  // Safe server-side fallback when explicit MOSBOT_API_URL is not configured.
+  // Never derive from request headers (host/x-forwarded-*) to avoid host-header poisoning.
+  const corsOrigin = config.corsOrigin || null;
+  if (corsOrigin) {
+    return `${String(corsOrigin).replace(/\/$/, '')}/api/v1`;
+  }
+
+  throw new Error('MOSBOT_API_URL (or CORS_ORIGIN fallback) is not configured');
 }
 
 function buildAgentToolkitFiles(workspaceRoot) {
@@ -167,14 +170,21 @@ shift || true
 
 case "\${cmd}" in
   list)
-    params=""
+    status=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
-        --status) params="\${params}&status=$2"; shift 2 ;;
+        --status) status="$2"; shift 2 ;;
         *) echo "Unknown arg: $1" >&2; exit 1 ;;
       esac
     done
-    curl -s "\${MOSBOT_API_URL}/tasks?\${params#&}" -H "\${AUTH_HEADER}"
+
+    if [[ -n "\${status}" ]]; then
+      curl -sG "\${MOSBOT_API_URL}/tasks" \
+        -H "\${AUTH_HEADER}" \
+        --data-urlencode "status=\${status}"
+    else
+      curl -s "\${MOSBOT_API_URL}/tasks" -H "\${AUTH_HEADER}"
+    fi
     ;;
 
   create)
@@ -659,8 +669,8 @@ async function reconcileAgentsIfStale({ trigger = 'read', minIntervalMs = 60_000
     try {
       const { reconcileAgentsFromOpenClaw } = require('../services/agentReconciliationService');
       await reconcileAgentsFromOpenClaw({ trigger });
-    } finally {
       lastAgentReconcileAtMs = Date.now();
+    } finally {
       agentReconcileInFlight = null;
     }
   })();
@@ -1726,22 +1736,16 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
       // Trigger bootstrap execution immediately after agent creation so
       // first-run setup is deterministic from the MosBot flow.
       if (!setupWarnings.some((w) => w.startsWith('workspace bootstrap failed:'))) {
+        let bootstrapTriggered = false;
+
         try {
           const bootstrapResult = await runBootstrapForNewAgent(agentData.id);
+          bootstrapTriggered = true;
           logger.info('Triggered bootstrap run for new agent', {
             agentId: agentData.id,
             status: bootstrapResult?.status || 'ok',
             runId: bootstrapResult?.runId || null,
           });
-
-          // Best-effort deterministic cleanup: if bootstrap artifacts are present but
-          // BOOTSTRAP.md remains, remove it from backend once required root files exist.
-          const finalize = await maybeFinalizeBootstrapFile(workspaceRoot);
-          if (finalize.status === 'still_present') {
-            setupWarnings.push(
-              `bootstrap file still present after trigger (missing: ${(finalize.missingRequired || []).join(', ')})`,
-            );
-          }
         } catch (bootstrapRunError) {
           setupWarnings.push(`bootstrap execution trigger failed: ${bootstrapRunError.message}`);
           logger.warn('Failed to trigger bootstrap run for new agent', {
@@ -1749,6 +1753,26 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
             error: bootstrapRunError.message,
             code: bootstrapRunError.code,
           });
+        }
+
+        if (bootstrapTriggered) {
+          // Best-effort deterministic cleanup: if bootstrap artifacts are present but
+          // BOOTSTRAP.md remains, remove it from backend once required root files exist.
+          try {
+            const finalize = await maybeFinalizeBootstrapFile(workspaceRoot);
+            if (finalize.status === 'still_present') {
+              setupWarnings.push(
+                `bootstrap file still present after trigger (missing: ${(finalize.missingRequired || []).join(', ')})`,
+              );
+            }
+          } catch (bootstrapFinalizeError) {
+            setupWarnings.push(`bootstrap finalization failed: ${bootstrapFinalizeError.message}`);
+            logger.warn('Failed to finalize bootstrap file for new agent', {
+              agentId: agentData.id,
+              error: bootstrapFinalizeError.message,
+              code: bootstrapFinalizeError.code,
+            });
+          }
         }
       }
 
