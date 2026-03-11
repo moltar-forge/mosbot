@@ -110,12 +110,38 @@ async function getOrCreateSingleAgentApiKey({ agentId, createdByUserId, label })
   const keyHash = hashApiKey(rawKey);
   const keyPrefix = rawKey.slice(0, 12);
 
-  const insertResult = await pool.query(
-    `INSERT INTO agent_api_keys (agent_id, key_hash, key_prefix, label, created_by_user_id)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id`,
-    [agentId, keyHash, keyPrefix, label, createdByUserId],
-  );
+  let insertResult;
+  try {
+    insertResult = await pool.query(
+      `INSERT INTO agent_api_keys (agent_id, key_hash, key_prefix, label, created_by_user_id)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [agentId, keyHash, keyPrefix, label, createdByUserId],
+    );
+  } catch (insertError) {
+    // Concurrency safety: when active-key uniqueness is enforced by DB,
+    // another request may have inserted the active key between our read and insert.
+    if (insertError.code === '23505') {
+      const refreshed = await pool.query(
+        `SELECT id
+         FROM agent_api_keys
+         WHERE agent_id = $1 AND revoked_at IS NULL
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [agentId],
+      );
+      const keyId = refreshed.rows?.[0]?.id || null;
+      if (keyId) {
+        return {
+          created: false,
+          keyId,
+          apiKey: null,
+          warnings: ['detected concurrent API key provisioning; reusing existing active key'],
+        };
+      }
+    }
+    throw insertError;
+  }
 
   return {
     created: true,
@@ -128,6 +154,38 @@ async function getOrCreateSingleAgentApiKey({ agentId, createdByUserId, label })
 async function deleteAgentApiKeyById(keyId) {
   if (!keyId) return;
   await pool.query('DELETE FROM agent_api_keys WHERE id = $1', [keyId]);
+}
+
+async function cleanupProvisionedApiKeyArtifacts({
+  createdApiKeyId,
+  workspaceRoot,
+  envWasWritten,
+  agentId,
+  flow,
+}) {
+  if (!createdApiKeyId) return;
+
+  try {
+    await deleteAgentApiKeyById(createdApiKeyId);
+  } catch (cleanupError) {
+    logger.warn(`Failed to cleanup ${flow} API key after provisioning failure`, {
+      agentId,
+      keyId: createdApiKeyId,
+      error: cleanupError.message,
+    });
+  }
+
+  if (!envWasWritten) return;
+
+  try {
+    await makeOpenClawRequest('DELETE', `/files?path=${encodeURIComponent(`${workspaceRoot}/mosbot.env`)}`);
+  } catch (envCleanupError) {
+    logger.warn(`Failed to cleanup ${flow} mosbot.env after provisioning failure`, {
+      agentId,
+      workspaceRoot,
+      error: envCleanupError.message,
+    });
+  }
 }
 
 async function upsertWorkspaceFile(path, content, encoding = 'utf8') {
@@ -1658,6 +1716,7 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
     req._agentWorkspaceRoot = workspaceRoot;
     req._agentCreateApiKeyProvisioned = false;
     let createdApiKeyId = null;
+    let updatedMosbotEnv = false;
 
     try {
       await writeAgentToolkit(workspaceRoot);
@@ -1696,17 +1755,16 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
             buildAgentMosbotEnv({ req, agentId: agentData.id, apiKey: apiKeyResult.apiKey }),
           );
           req._agentCreateApiKeyProvisioned = true;
+          updatedMosbotEnv = true;
         } catch (envWriteError) {
-          try {
-            await deleteAgentApiKeyById(createdApiKeyId);
-          } catch (cleanupError) {
-            setupWarnings.push(`failed to cleanup bootstrap API key after env write error: ${cleanupError.message}`);
-            logger.warn('Failed to cleanup bootstrap API key after env write error', {
-              agentId: agentData.id,
-              keyId: createdApiKeyId,
-              error: cleanupError.message,
-            });
-          }
+          await cleanupProvisionedApiKeyArtifacts({
+            createdApiKeyId,
+            workspaceRoot,
+            envWasWritten: updatedMosbotEnv,
+            agentId: agentData.id,
+            flow: 'bootstrap',
+          });
+          req._agentCreateApiKeyProvisioned = false;
 
           return res.status(500).json({
             error: {
@@ -1736,6 +1794,14 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
         buildAgentBootstrapContent(agentData),
       );
     } catch (workspaceError) {
+      await cleanupProvisionedApiKeyArtifacts({
+        createdApiKeyId,
+        workspaceRoot,
+        envWasWritten: updatedMosbotEnv,
+        agentId: agentData.id,
+        flow: 'bootstrap',
+      });
+      req._agentCreateApiKeyProvisioned = false;
       logger.error('Workspace bootstrap failed before agent creation', {
         agentId: agentData.id,
         error: workspaceError.message,
@@ -2037,16 +2103,14 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
           );
           updatedMosbotEnv = true;
         } catch (envWriteError) {
-          try {
-            await deleteAgentApiKeyById(createdApiKeyId);
-          } catch (cleanupError) {
-            setupWarnings.push(`failed to cleanup re-bootstrap API key after env write error: ${cleanupError.message}`);
-            logger.warn('Failed to cleanup re-bootstrap API key after env write error', {
-              agentId: agentData.id,
-              keyId: createdApiKeyId,
-              error: cleanupError.message,
-            });
-          }
+          await cleanupProvisionedApiKeyArtifacts({
+            createdApiKeyId,
+            workspaceRoot,
+            envWasWritten: updatedMosbotEnv,
+            agentId: agentData.id,
+            flow: 're-bootstrap',
+          });
+          updatedMosbotEnv = false;
 
           return res.status(500).json({
             error: {
@@ -2076,6 +2140,14 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
         buildAgentBootstrapContent(agentData),
       );
     } catch (workspaceError) {
+      await cleanupProvisionedApiKeyArtifacts({
+        createdApiKeyId,
+        workspaceRoot,
+        envWasWritten: updatedMosbotEnv,
+        agentId: agentData.id,
+        flow: 're-bootstrap',
+      });
+      updatedMosbotEnv = false;
       return res.status(500).json({
         error: {
           message: `workspace re-bootstrap failed: ${workspaceError.message}`,
