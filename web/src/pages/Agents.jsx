@@ -257,6 +257,13 @@ export default function Agents() {
                 {leader.emoji && <span className="mr-2">{leader.emoji}</span>}
                 {leader.displayName || leader.label}
               </h3>
+              {leader.project?.slug && (
+                <div className="mb-1">
+                  <span className="px-2 py-0.5 bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 rounded text-[10px] font-semibold uppercase tracking-wide">
+                    Project: {leader.project.slug}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2 ml-auto">
               {leader.isDefault && (

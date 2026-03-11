@@ -171,6 +171,41 @@ export const syncAgentsFromOpenClaw = async () => {
   return response.data.data;
 };
 
+export const rebootstrapAgent = async (agentId) => {
+  const response = await api.post(`/openclaw/agents/config/${encodeURIComponent(agentId)}/rebootstrap`);
+  return response.data.data;
+};
+
+export const getProjects = async () => {
+  const response = await api.get('/openclaw/projects');
+  return response.data.data;
+};
+
+export const createProject = async (payload) => {
+  const response = await api.post('/openclaw/projects', payload);
+  return response.data.data;
+};
+
+export const updateProject = async (projectId, payload) => {
+  const response = await api.put(`/openclaw/projects/${encodeURIComponent(projectId)}`, payload);
+  return response.data.data;
+};
+
+export const assignAgentToProject = async (projectId, payload) => {
+  const response = await api.post(
+    `/openclaw/projects/${encodeURIComponent(projectId)}/assign-agent`,
+    payload,
+  );
+  return response.data.data;
+};
+
+export const unassignAgentFromProject = async (projectId, agentId) => {
+  const response = await api.delete(
+    `/openclaw/projects/${encodeURIComponent(projectId)}/assign-agent/${encodeURIComponent(agentId)}`,
+  );
+  return response.data?.data || null;
+};
+
 // OpenClaw Subagents API - returns object with { running, queued, completed, retention }
 export const getSubagents = async () => {
   const response = await api.get('/openclaw/subagents');

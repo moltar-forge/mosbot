@@ -8,7 +8,11 @@ const logger = require('../utils/logger');
 const path = require('path');
 const pool = require('../db/pool');
 const { requireAdmin } = require('./auth');
-const { makeOpenClawRequest } = require('../services/openclawWorkspaceClient');
+const {
+  makeOpenClawRequest,
+  ensureWorkspaceLink,
+  deleteWorkspaceLink,
+} = require('../services/openclawWorkspaceClient');
 const { estimateCostFromTokens } = require('../services/modelPricingService');
 const { recordActivityLogEventSafe } = require('../services/activityLogService');
 const { parseOpenClawConfig } = require('../utils/configParser');
@@ -514,6 +518,44 @@ function normalizeAgentIdForPath(agentId) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, '-');
+}
+
+function normalizeProjectSlug(input) {
+  return String(input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function normalizeProjectRootPath(inputPath, slug) {
+  const normalized = normalizeAndValidateWorkspacePath(inputPath || `/projects/${slug}`);
+  if (!normalized.startsWith('/projects/')) {
+    const err = new Error('Project rootPath must be under /projects/*');
+    err.status = 400;
+    err.code = 'INVALID_PROJECT_ROOT_PATH';
+    throw err;
+  }
+  return normalized;
+}
+
+async function ensureProjectLink(agentId, projectRootPath) {
+  return ensureWorkspaceLink('project', agentId, { targetPath: projectRootPath });
+}
+
+async function deleteProjectLink(agentId, projectRootPath) {
+  return deleteWorkspaceLink('project', agentId, { targetPath: projectRootPath });
+}
+
+async function getAssignedProjectForAgent(agentId) {
+  const result = await pool.query(
+    `SELECT p.id, p.slug, p.name, p.root_path, p.contract_path
+       FROM agent_project_assignments apa
+       JOIN projects p ON p.id = apa.project_id
+      WHERE apa.agent_id = $1`,
+    [agentId],
+  );
+  return result.rows[0] || null;
 }
 
 function normalizeAndValidateWorkspacePath(inputPath) {
@@ -1117,6 +1159,251 @@ function getNextPurgeTime() {
   return new Date(nextPurge.getTime() - sgOffset * 60 * 1000).toISOString();
 }
 
+// GET /api/v1/openclaw/projects
+// List project registry and assignment counts (admin/owner/agent read)
+router.get('/projects', requireAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT p.id, p.slug, p.name, p.description, p.root_path, p.contract_path, p.status,
+              p.created_at, p.updated_at,
+              COUNT(apa.agent_id)::int AS assigned_agents
+         FROM projects p
+         LEFT JOIN agent_project_assignments apa ON apa.project_id = p.id
+        GROUP BY p.id
+        ORDER BY p.slug ASC`,
+    );
+
+    res.json({ data: result.rows || [] });
+  } catch (error) {
+    if (error.code === '42P01') {
+      return res.json({ data: [] });
+    }
+    next(error);
+  }
+});
+
+// POST /api/v1/openclaw/projects
+// Create project registry entry (admin/owner only)
+router.post('/projects', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const slug = normalizeProjectSlug(body.slug || body.name);
+
+    if (!slug) {
+      return res.status(400).json({
+        error: { message: 'slug (or name) is required', status: 400, code: 'PROJECT_SLUG_REQUIRED' },
+      });
+    }
+
+    const name = String(body.name || slug).trim();
+    const rootPath = normalizeProjectRootPath(body.rootPath, slug);
+    const contractPath = body.contractPath
+      ? normalizeAndValidateWorkspacePath(body.contractPath)
+      : `${rootPath}/agent-contract.md`;
+
+    const result = await pool.query(
+      `INSERT INTO projects (slug, name, description, root_path, contract_path, status, created_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, slug, name, description, root_path, contract_path, status, created_at, updated_at`,
+      [
+        slug,
+        name,
+        body.description || '',
+        rootPath,
+        contractPath,
+        body.status === 'archived' ? 'archived' : 'active',
+        req.user.id,
+      ],
+    );
+
+    // Ensure project root + default contract file exist.
+    try {
+      await upsertWorkspaceFile(`${rootPath}/.keep`, '');
+      const defaultContract = `# Agent Contract — ${name}\n\n- Branch naming: feat/cc-<scope> | fix/cc-<scope>\n- Handoff must include: changed files, tests+results, risks, assumptions\n- Done: local tests pass; regenerate API types/contracts when touched\n`;
+      await upsertWorkspaceFile(contractPath, defaultContract);
+    } catch (workspaceErr) {
+      logger.warn('Project root scaffold failed (non-fatal)', {
+        slug,
+        error: workspaceErr.message,
+      });
+    }
+
+    res.status(201).json({ data: result.rows[0] });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({
+        error: { message: 'Project slug already exists', status: 409, code: 'PROJECT_EXISTS' },
+      });
+    }
+    next(error);
+  }
+});
+
+// PUT /api/v1/openclaw/projects/:projectId
+// Update project metadata (admin/owner only)
+router.put('/projects/:projectId', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const body = req.body || {};
+
+    const currentResult = await pool.query(`SELECT * FROM projects WHERE id = $1`, [projectId]);
+    const current = currentResult.rows[0];
+    if (!current) {
+      return res.status(404).json({
+        error: { message: 'Project not found', status: 404, code: 'PROJECT_NOT_FOUND' },
+      });
+    }
+
+    const slug = body.slug ? normalizeProjectSlug(body.slug) : current.slug;
+    const name = body.name ? String(body.name).trim() : current.name;
+    const rootPath = body.rootPath
+      ? normalizeProjectRootPath(body.rootPath, slug)
+      : current.root_path;
+    const contractPath = body.contractPath
+      ? normalizeAndValidateWorkspacePath(body.contractPath)
+      : current.contract_path;
+
+    const result = await pool.query(
+      `UPDATE projects
+          SET slug = $2,
+              name = $3,
+              description = $4,
+              root_path = $5,
+              contract_path = $6,
+              status = $7,
+              updated_at = NOW()
+        WHERE id = $1
+      RETURNING id, slug, name, description, root_path, contract_path, status, created_at, updated_at`,
+      [
+        projectId,
+        slug,
+        name,
+        body.description ?? current.description,
+        rootPath,
+        contractPath,
+        body.status === 'archived' ? 'archived' : body.status === 'active' ? 'active' : current.status,
+      ],
+    );
+
+    res.json({ data: result.rows[0] });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({
+        error: { message: 'Project slug already exists', status: 409, code: 'PROJECT_EXISTS' },
+      });
+    }
+    next(error);
+  }
+});
+
+// POST /api/v1/openclaw/projects/:projectId/assign-agent
+// Assign one agent to a project and ensure workspace /project symlink
+router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const { agentId, role } = req.body || {};
+
+    if (!agentId) {
+      return res.status(400).json({
+        error: { message: 'agentId is required', status: 400, code: 'AGENT_ID_REQUIRED' },
+      });
+    }
+
+    const projectResult = await pool.query(
+      `SELECT id, slug, name, root_path, contract_path, status FROM projects WHERE id = $1`,
+      [projectId],
+    );
+    const project = projectResult.rows[0];
+    if (!project) {
+      return res.status(404).json({
+        error: { message: 'Project not found', status: 404, code: 'PROJECT_NOT_FOUND' },
+      });
+    }
+
+    await pool.query(
+      `INSERT INTO agent_project_assignments (agent_id, project_id, role, assigned_by_user_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (agent_id)
+       DO UPDATE SET project_id = EXCLUDED.project_id,
+                     role = EXCLUDED.role,
+                     assigned_by_user_id = EXCLUDED.assigned_by_user_id,
+                     updated_at = NOW()`,
+      [agentId, project.id, role || 'contributor', req.user.id],
+    );
+
+    try {
+      await ensureProjectLink(agentId, project.root_path);
+    } catch (linkErr) {
+      return res.status(500).json({
+        error: {
+          message: `Project assigned but failed to create project link: ${linkErr.message}`,
+          status: 500,
+          code: 'PROJECT_LINK_FAILED',
+        },
+      });
+    }
+
+    res.json({
+      data: {
+        agentId,
+        project: {
+          id: project.id,
+          slug: project.slug,
+          name: project.name,
+          rootPath: project.root_path,
+          contractPath: project.contract_path,
+        },
+        message: 'Agent assigned to project',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE /api/v1/openclaw/projects/:projectId/assign-agent/:agentId
+// Unassign agent and remove /project symlink for the assignment
+router.delete(
+  '/projects/:projectId/assign-agent/:agentId',
+  requireAuth,
+  requireAdmin,
+  async (req, res, next) => {
+    try {
+      const { projectId, agentId } = req.params;
+
+      const projectResult = await pool.query(
+        `SELECT id, root_path FROM projects WHERE id = $1`,
+        [projectId],
+      );
+      const project = projectResult.rows[0];
+      if (!project) {
+        return res.status(404).json({
+          error: { message: 'Project not found', status: 404, code: 'PROJECT_NOT_FOUND' },
+        });
+      }
+
+      await pool.query(`DELETE FROM agent_project_assignments WHERE agent_id = $1 AND project_id = $2`, [
+        agentId,
+        project.id,
+      ]);
+
+      try {
+        await deleteProjectLink(agentId, project.root_path);
+      } catch (linkErr) {
+        logger.warn('Failed to delete project link after unassign (non-fatal)', {
+          projectId,
+          agentId,
+          error: linkErr.message,
+        });
+      }
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 // GET /api/v1/openclaw/agents
 // Get configured agents from OpenClaw config file (auto-discovery)
 router.get('/agents', requireAuth, async (req, res, next) => {
@@ -1307,6 +1594,33 @@ router.get('/agents/config', requireAuth, async (req, res, next) => {
 
     const dbByAgentId = new Map(dbRows.map((r) => [r.agent_id, r]));
 
+    let projectByAgentId = new Map();
+    try {
+      const projectRows = await pool.query(
+        `SELECT apa.agent_id, p.id AS project_id, p.slug, p.name, p.root_path, p.contract_path
+           FROM agent_project_assignments apa
+           JOIN projects p ON p.id = apa.project_id`,
+      );
+      projectByAgentId = new Map(
+        (projectRows.rows || []).map((row) => [
+          row.agent_id,
+          {
+            id: row.project_id,
+            slug: row.slug,
+            name: row.name,
+            rootPath: row.root_path,
+            contractPath: row.contract_path,
+          },
+        ]),
+      );
+    } catch (projectErr) {
+      if (projectErr.code !== '42P01') {
+        logger.warn('Failed to read project assignments for agents/config', {
+          error: projectErr.message,
+        });
+      }
+    }
+
     const leadership = [];
     for (const [agentId, discovered] of discoveredMap.entries()) {
       const row = dbByAgentId.get(agentId);
@@ -1322,6 +1636,7 @@ router.get('/agents/config', requireAuth, async (req, res, next) => {
         reportsTo: row?.reports_to || null,
         isDefault: Boolean(discovered.isDefault),
         model: discovered.model || null,
+        project: projectByAgentId.get(agentId) || null,
       });
     }
 
@@ -1342,6 +1657,7 @@ router.get('/agents/config', requireAuth, async (req, res, next) => {
         reportsTo: row.reports_to || null,
         isDefault: false,
         model: null,
+        project: projectByAgentId.get(row.agent_id) || null,
       });
     }
 
@@ -1663,6 +1979,20 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
 
       await ensureDocsLinkIfMissing(agentData.id);
 
+      // If agent is already project-assigned, ensure /project link exists.
+      try {
+        const assignedProject = await getAssignedProjectForAgent(agentData.id);
+        if (assignedProject?.root_path) {
+          await ensureProjectLink(agentData.id, assignedProject.root_path);
+        }
+      } catch (projectLinkErr) {
+        setupWarnings.push(`project link ensure failed: ${projectLinkErr.message}`);
+        logger.warn('Failed to ensure project link on agent create (non-fatal)', {
+          agentId: agentData.id,
+          error: projectLinkErr.message,
+        });
+      }
+
       // Keep DB agent registry aligned immediately after runtime config mutation.
       try {
         const { reconcileAgentsFromOpenClaw } = require('../services/agentReconciliationService');
@@ -1809,6 +2139,178 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
         created: true,
         updatedFiles,
         warnings: req._agentCreateWarnings || [],
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/v1/openclaw/agents/config/:agentId/rebootstrap
+// Re-seed toolkit/bootstrap and trigger bootstrap execution for existing agent
+router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const agentId = req.params.agentId;
+
+    if (!agentId) {
+      return res.status(400).json({
+        error: { message: 'agentId is required', status: 400 },
+      });
+    }
+
+    const openclawData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
+    const openclawConfig = parseOpenClawConfig(openclawData.content);
+    const agentsList = Array.isArray(openclawConfig?.agents?.list) ? openclawConfig.agents.list : [];
+
+    const runtimeAgent = agentsList.find((a) => a?.id === agentId);
+    if (!runtimeAgent) {
+      return res.status(404).json({
+        error: {
+          message: `Agent "${agentId}" not found in OpenClaw config`,
+          status: 404,
+          code: 'AGENT_NOT_FOUND',
+        },
+      });
+    }
+
+    const dbStatus = 'active';
+    const dbActive = true;
+
+    const agentData = {
+      id: agentId,
+      displayName: runtimeAgent?.identity?.name || agentId,
+      title: runtimeAgent?.identity?.name || agentId,
+      description: runtimeAgent?.identity?.theme || '',
+      identityName: runtimeAgent?.identity?.name || agentId,
+      identityTheme: runtimeAgent?.identity?.theme || '',
+      identityEmoji: runtimeAgent?.identity?.emoji || '🤖',
+      modelPrimary: runtimeAgent?.model?.primary || null,
+      modelFallback1: runtimeAgent?.model?.fallbacks?.[0] || null,
+      modelFallback2: runtimeAgent?.model?.fallbacks?.[1] || null,
+    };
+
+    // Ensure DB row exists (agent_api_keys FK depends on this).
+    await pool.query(
+      `INSERT INTO agents (agent_id, name, title, status, reports_to, meta, active)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+       ON CONFLICT (agent_id)
+       DO UPDATE SET
+         name = EXCLUDED.name,
+         title = EXCLUDED.title,
+         status = EXCLUDED.status,
+         meta = COALESCE(agents.meta, '{}'::jsonb) || EXCLUDED.meta,
+         active = EXCLUDED.active,
+         updated_at = NOW()`,
+      [
+        agentData.id,
+        agentData.displayName,
+        agentData.title,
+        dbStatus,
+        null,
+        JSON.stringify({
+          label: `agent:${agentData.id}:main`,
+          description: agentData.description || '',
+          emoji: agentData.identityEmoji || null,
+        }),
+        dbActive,
+      ],
+    );
+
+    const setupWarnings = [];
+
+    let agentApiKey = null;
+    try {
+      const rawKey = generateApiKey();
+      const keyHash = hashApiKey(rawKey);
+      const keyPrefix = rawKey.slice(0, 12);
+
+      await pool.query(
+        `INSERT INTO agent_api_keys (agent_id, key_hash, key_prefix, label, created_by_user_id)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [agentData.id, keyHash, keyPrefix, 'rebootstrap', req.user.id],
+      );
+
+      agentApiKey = rawKey;
+    } catch (apiKeyError) {
+      if (apiKeyError.code === '42P01') {
+        setupWarnings.push('agent_api_keys table not found; skipped API key bootstrap');
+      } else {
+        setupWarnings.push(`agent API key bootstrap failed: ${apiKeyError.message}`);
+      }
+      logger.warn('Failed to create re-bootstrap API key', {
+        agentId: agentData.id,
+        error: apiKeyError.message,
+        code: apiKeyError.code,
+      });
+    }
+
+    const safeAgentId = normalizeAgentIdForPath(agentData.id);
+    const workspaceRoot = safeAgentId === 'main' ? '/workspace' : `/workspace-${safeAgentId}`;
+
+    try {
+      await writeAgentToolkit(workspaceRoot);
+
+      if (agentApiKey) {
+        await upsertWorkspaceFile(
+          `${workspaceRoot}/mosbot.env`,
+          buildAgentMosbotEnv({ req, agentId: agentData.id, apiKey: agentApiKey }),
+        );
+      }
+
+      await upsertWorkspaceFile(
+        `${workspaceRoot}/BOOTSTRAP.md`,
+        buildAgentBootstrapContent(agentData),
+      );
+    } catch (workspaceError) {
+      return res.status(500).json({
+        error: {
+          message: `workspace re-bootstrap failed: ${workspaceError.message}`,
+          status: 500,
+          code: 'WORKSPACE_REBOOTSTRAP_FAILED',
+        },
+      });
+    }
+
+    try {
+      const assignedProject = await getAssignedProjectForAgent(agentData.id);
+      if (assignedProject?.root_path) {
+        await ensureProjectLink(agentData.id, assignedProject.root_path);
+      }
+    } catch (projectLinkErr) {
+      setupWarnings.push(`project link ensure failed: ${projectLinkErr.message}`);
+      logger.warn('Failed to ensure project link on re-bootstrap (non-fatal)', {
+        agentId: agentData.id,
+        error: projectLinkErr.message,
+      });
+    }
+
+    try {
+      const bootstrapResult = await runBootstrapForNewAgent(agentData.id);
+      logger.info('Triggered re-bootstrap run for agent', {
+        agentId: agentData.id,
+        status: bootstrapResult?.status || 'ok',
+        runId: bootstrapResult?.runId || null,
+      });
+    } catch (bootstrapRunError) {
+      setupWarnings.push(`bootstrap execution trigger failed: ${bootstrapRunError.message}`);
+      logger.warn('Failed to trigger re-bootstrap run for agent', {
+        agentId: agentData.id,
+        error: bootstrapRunError.message,
+        code: bootstrapRunError.code,
+      });
+    }
+
+    res.json({
+      data: {
+        agentId: agentData.id,
+        message: 'Agent re-bootstrap triggered',
+        updatedFiles: [
+          `${workspaceRoot}/tools/*`,
+          `${workspaceRoot}/TOOLS.md`,
+          `${workspaceRoot}/BOOTSTRAP.md`,
+          ...(agentApiKey ? [`${workspaceRoot}/mosbot.env`] : []),
+        ],
+        warnings: setupWarnings,
       },
     });
   } catch (error) {

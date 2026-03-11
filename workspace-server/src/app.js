@@ -14,7 +14,9 @@ const ALLOWED_CONFIG_PREFIXES = [
 const WORKSPACE_AGENT_PATH_PATTERN = /^\/workspace-[^/]+(?:\/.*)?$/;
 const PATH_NOT_ALLOWED_CODE = "PATH_NOT_ALLOWED";
 const SHARED_DOCS_DIR = "docs";
-const SUPPORTED_LINK_TYPE = "docs";
+const SHARED_PROJECTS_DIR = "projects";
+const PROJECT_LINK_NAME = "project";
+const SUPPORTED_LINK_TYPES = new Set(["docs", "project"]);
 const LINK_TYPE_UNSUPPORTED_CODE = "LINK_TYPE_UNSUPPORTED";
 const INVALID_AGENT_ID_CODE = "INVALID_AGENT_ID";
 const LINK_CONFLICT_CODE = "LINK_CONFLICT";
@@ -358,8 +360,15 @@ function createApp(opts) {
     return agentId === "main" ? "/workspace" : `/workspace-${agentId}`;
   }
 
-  function buildDocsLinkContext(linkType, agentId) {
-    if (linkType !== SUPPORTED_LINK_TYPE) {
+  function resolveProjectTargetPath(targetPathInput) {
+    const normalized = normalizeRelativePath(targetPathInput || "");
+    if (!normalized || normalized === "/") return null;
+    if (!normalized.startsWith(`/${SHARED_PROJECTS_DIR}/`)) return null;
+    return normalized;
+  }
+
+  function buildLinkContext(linkType, agentId, targetPathInput) {
+    if (!SUPPORTED_LINK_TYPES.has(linkType)) {
       return {
         ok: false,
         status: 400,
@@ -377,13 +386,37 @@ function createApp(opts) {
     }
 
     const workspacePath = path.resolve(CONFIG_ROOT, workspaceDirName);
-    const targetPath = path.resolve(CONFIG_ROOT, SHARED_DOCS_DIR);
-    const linkPath = path.resolve(workspacePath, SHARED_DOCS_DIR);
+    const workspaceVirtualPath = resolveWorkspaceVirtualPath(agentId);
+
+    let linkPath = null;
+    let targetVirtualPath = null;
+
+    if (linkType === "docs") {
+      linkPath = path.resolve(workspacePath, SHARED_DOCS_DIR);
+      targetVirtualPath = `/${SHARED_DOCS_DIR}`;
+    } else {
+      const projectTargetVirtualPath = resolveProjectTargetPath(targetPathInput);
+      if (!projectTargetVirtualPath) {
+        return {
+          ok: false,
+          status: 400,
+          payload: {
+            error: "Invalid project target path",
+            code: "INVALID_PROJECT_TARGET_PATH",
+            targetPath: targetPathInput || null,
+          },
+        };
+      }
+
+      linkPath = path.resolve(workspacePath, PROJECT_LINK_NAME);
+      targetVirtualPath = projectTargetVirtualPath;
+    }
+
+    const targetPath = path.resolve(CONFIG_ROOT, targetVirtualPath.replace(/^\/+/, ""));
+
     assertWithinRoot(CONFIG_ROOT, workspacePath);
     assertWithinRoot(CONFIG_ROOT, targetPath);
     assertWithinRoot(CONFIG_ROOT, linkPath);
-
-    const workspaceVirtualPath = resolveWorkspaceVirtualPath(agentId);
 
     return {
       ok: true,
@@ -393,12 +426,15 @@ function createApp(opts) {
       targetPath,
       linkPath,
       workspaceVirtualPath,
-      linkVirtualPath: `${workspaceVirtualPath}/${SHARED_DOCS_DIR}`,
-      targetVirtualPath: `/${SHARED_DOCS_DIR}`,
+      linkVirtualPath:
+        linkType === "docs"
+          ? `${workspaceVirtualPath}/${SHARED_DOCS_DIR}`
+          : `${workspaceVirtualPath}/${PROJECT_LINK_NAME}`,
+      targetVirtualPath,
     };
   }
 
-  async function inspectDocsLinkState(context) {
+  async function inspectLinkState(context) {
     try {
       const lstat = await fs.lstat(context.linkPath);
 
@@ -673,12 +709,16 @@ function createApp(opts) {
 
   app.get("/links/:type/:agentId", optionalAuth, async (req, res, next) => {
     try {
-      const contextResult = buildDocsLinkContext(req.params.type, req.params.agentId);
+      const contextResult = buildLinkContext(
+        req.params.type,
+        req.params.agentId,
+        req.query.targetPath,
+      );
       if (!contextResult.ok) {
         return res.status(contextResult.status).json(contextResult.payload);
       }
 
-      const stateResult = await inspectDocsLinkState(contextResult);
+      const stateResult = await inspectLinkState(contextResult);
       return res.json(buildLinkResponsePayload(contextResult, stateResult));
     } catch (error) {
       next(error);
@@ -687,7 +727,11 @@ function createApp(opts) {
 
   app.put("/links/:type/:agentId", optionalAuth, async (req, res, next) => {
     try {
-      const contextResult = buildDocsLinkContext(req.params.type, req.params.agentId);
+      const contextResult = buildLinkContext(
+        req.params.type,
+        req.params.agentId,
+        req.query.targetPath,
+      );
       if (!contextResult.ok) {
         return res.status(contextResult.status).json(contextResult.payload);
       }
@@ -695,7 +739,7 @@ function createApp(opts) {
       await fs.mkdir(contextResult.targetPath, { recursive: true });
       await fs.mkdir(contextResult.workspacePath, { recursive: true });
 
-      const stateResult = await inspectDocsLinkState(contextResult);
+      const stateResult = await inspectLinkState(contextResult);
       if (stateResult.state === "conflict") {
         return res.status(409).json({
           error: "Link conflict",
@@ -715,7 +759,7 @@ function createApp(opts) {
         path.relative(contextResult.workspacePath, contextResult.targetPath) || ".";
       await fs.symlink(relativeTarget, contextResult.linkPath);
 
-      const createdState = await inspectDocsLinkState(contextResult);
+      const createdState = await inspectLinkState(contextResult);
       return res.json({
         action: "created",
         ...buildLinkResponsePayload(contextResult, createdState),
@@ -727,12 +771,16 @@ function createApp(opts) {
 
   app.delete("/links/:type/:agentId", optionalAuth, async (req, res, next) => {
     try {
-      const contextResult = buildDocsLinkContext(req.params.type, req.params.agentId);
+      const contextResult = buildLinkContext(
+        req.params.type,
+        req.params.agentId,
+        req.query.targetPath,
+      );
       if (!contextResult.ok) {
         return res.status(contextResult.status).json(contextResult.payload);
       }
 
-      const stateResult = await inspectDocsLinkState(contextResult);
+      const stateResult = await inspectLinkState(contextResult);
       if (stateResult.state === "conflict") {
         return res.status(409).json({
           error: "Link conflict",
