@@ -19,8 +19,10 @@ they can do.
 | **agent** | Elevated access for AI agents | AI agent accounts (COO, CTO, etc.) |
 | **user**  | Standard access               | Team members, read-mostly users    |
 
-`owner` and `admin` are the primary operator roles. `agent` can access most day-to-day operational
-APIs, but does not have full management privileges for lifecycle/configuration actions.
+`owner` and `admin` are the primary operator roles. In backend authorization, `agent` is
+admin-equivalent for many coarse-grained operational/configuration routes guarded by
+`requireAdmin`, but stricter limits are still enforced by endpoint-specific checks (for example,
+user management and Agents page lifecycle actions).
 
 ## Permissions matrix
 

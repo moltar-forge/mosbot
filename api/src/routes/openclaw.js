@@ -2238,16 +2238,33 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
       });
     }
 
+    const updatedFiles = [
+      `${workspaceRoot}/tools/*`,
+      `${workspaceRoot}/TOOLS.md`,
+      `${workspaceRoot}/BOOTSTRAP.md`,
+      ...(updatedMosbotEnv ? [`${workspaceRoot}/mosbot.env`] : []),
+    ];
+
+    recordActivityLogEventSafe({
+      event_type: 'agent_rebootstrapped',
+      source: 'agents',
+      title: `Agent re-bootstrapped: ${agentData.id}`,
+      description: `Agent re-bootstrap triggered for "${agentData.id}"`,
+      severity: 'info',
+      actor_user_id: req.user.id,
+      agent_id: agentData.id,
+      meta: {
+        workspaceRoot,
+        updatedFiles,
+        warnings: setupWarnings,
+      },
+    });
+
     res.json({
       data: {
         agentId: agentData.id,
         message: 'Agent re-bootstrap triggered',
-        updatedFiles: [
-          `${workspaceRoot}/tools/*`,
-          `${workspaceRoot}/TOOLS.md`,
-          `${workspaceRoot}/BOOTSTRAP.md`,
-          ...(updatedMosbotEnv ? [`${workspaceRoot}/mosbot.env`] : []),
-        ],
+        updatedFiles,
         warnings: setupWarnings,
       },
     });

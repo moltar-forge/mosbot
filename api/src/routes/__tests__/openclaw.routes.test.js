@@ -1469,6 +1469,23 @@ describe('OpenClaw Routes', () => {
         label: 'agent:coo:main',
         description: 'Operations',
       });
+      expect(recordActivityLogEventSafe).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_type: 'agent_rebootstrapped',
+          source: 'agents',
+          actor_user_id: 'admin-id',
+          agent_id: 'coo',
+          meta: expect.objectContaining({
+            workspaceRoot: '/workspace-custom-coo',
+            updatedFiles: expect.arrayContaining([
+              '/workspace-custom-coo/tools/*',
+              '/workspace-custom-coo/TOOLS.md',
+              '/workspace-custom-coo/BOOTSTRAP.md',
+              '/workspace-custom-coo/mosbot.env',
+            ]),
+          }),
+        }),
+      );
       expect(invokeTool).toHaveBeenCalledWith(
         'sessions_send',
         expect.objectContaining({
