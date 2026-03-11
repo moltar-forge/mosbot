@@ -2252,6 +2252,19 @@ describe('OpenClaw Routes', () => {
       expect(response.body.data.warnings[0]).toContain('agent cto link cleanup failed');
     });
 
+    it('rejects unassign when agentId format is invalid before any side effects', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .delete('/api/v1/openclaw/projects/project-1/assign-agent/Bad.Agent')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_AGENT_ID');
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
     it('fails unassign when link deletion fails and keeps assignment untouched', async () => {
       const token = getToken('admin-id', 'admin');
       pool.query.mockResolvedValueOnce({

@@ -1612,6 +1612,17 @@ router.delete(
   async (req, res, next) => {
     try {
       const { projectId, agentId } = req.params;
+      const normalizedAgentId = String(agentId || '').trim();
+      if (!normalizedAgentId) {
+        return res.status(400).json({
+          error: { message: 'agentId is required', status: 400, code: 'AGENT_ID_REQUIRED' },
+        });
+      }
+      if (!AGENT_ID_INPUT_PATTERN.test(normalizedAgentId)) {
+        return res.status(400).json({
+          error: { message: 'Invalid agentId format', status: 400, code: 'INVALID_AGENT_ID' },
+        });
+      }
 
       const projectResult = await pool.query(
         'SELECT id, root_path FROM projects WHERE id = $1',
@@ -1625,11 +1636,11 @@ router.delete(
       }
 
       try {
-        await deleteProjectLink(agentId, project.root_path);
+        await deleteProjectLink(normalizedAgentId, project.root_path);
       } catch (linkErr) {
         logger.error('Failed to delete project link before unassign', {
           projectId,
-          agentId,
+          agentId: normalizedAgentId,
           error: linkErr.message,
         });
 
@@ -1643,7 +1654,7 @@ router.delete(
       }
 
       await pool.query('DELETE FROM agent_project_assignments WHERE agent_id = $1 AND project_id = $2', [
-        agentId,
+        normalizedAgentId,
         project.id,
       ]);
 
