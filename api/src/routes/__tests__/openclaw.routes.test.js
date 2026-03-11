@@ -27,6 +27,7 @@ jest.mock('../../services/activityLogService', () => ({
 jest.mock('../../services/openclawGatewayClient', () => ({
   cronList: jest.fn(),
   gatewayWsRpc: jest.fn(),
+  invokeTool: jest.fn(),
   sessionsListAllViaWs: jest.fn(),
   sessionsList: jest.fn(),
   sessionsHistory: jest.fn(),
@@ -56,6 +57,7 @@ const { recordActivityLogEventSafe } = require('../../services/activityLogServic
 const {
   cronList,
   gatewayWsRpc,
+  invokeTool,
   sessionsListAllViaWs,
   sessionsHistory,
 } = require('../../services/openclawGatewayClient');
@@ -110,6 +112,7 @@ describe('OpenClaw Routes', () => {
     recordActivityLogEventSafe.mockResolvedValue(undefined);
     cronList.mockResolvedValue([]);
     gatewayWsRpc.mockResolvedValue({});
+    invokeTool.mockResolvedValue({ status: 'ok', reply: 'DONE', runId: 'run-1' });
     sessionsListAllViaWs.mockResolvedValue([]);
     sessionsHistory.mockResolvedValue({ messages: [] });
     upsertSessionUsageBatch.mockResolvedValue(undefined);

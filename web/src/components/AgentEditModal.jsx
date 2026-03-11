@@ -8,9 +8,11 @@ import {
   DEFAULT_HEARTBEAT_MODEL,
 } from '../constants/models';
 import logger from '../utils/logger';
+import { useAgentStore } from '../stores/agentStore';
 
 export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null, mode = 'edit' }) {
   const { showToast } = useToastStore();
+  const fetchAgents = useAgentStore((state) => state.fetchAgents);
   const isCreateMode = mode === 'create' || !agentId;
 
   const [isLoading, setIsLoading] = useState(false);
@@ -295,6 +297,9 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
       if (onSave) {
         await onSave();
       }
+
+      // Refresh workspace/agent dropdown sources immediately after mutation.
+      await fetchAgents({ force: true });
 
       onClose();
     } catch (error) {

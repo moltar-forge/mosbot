@@ -752,7 +752,7 @@ export default function WorkspaceExplorer({
             {showAgentSelector && (
               <Menu as="div" className="relative flex-shrink-0">
                 <Menu.Button className="flex items-center gap-2 px-3 py-1.5 bg-dark-800 border border-dark-700 rounded hover:bg-dark-750 transition-colors">
-                  <span className="text-lg">{agent?.icon || '🤖'}</span>
+                  <span className="text-lg">{agent?.icon || agent?.emoji || '🤖'}</span>
                   <span className="text-sm font-medium text-dark-200">
                     {agent?.name || 'Agent'}
                   </span>
@@ -781,7 +781,7 @@ export default function WorkspaceExplorer({
                                   'bg-primary-900/40 text-primary-200 border-l-2 border-primary-500',
                               )}
                             >
-                              <span className="text-lg flex-shrink-0">{workspace.icon}</span>
+                              <span className="text-lg flex-shrink-0">{workspace.icon || workspace.emoji || '🤖'}</span>
                               <div className="flex-1 min-w-0">
                                 <div className="font-medium truncate">{workspace.name}</div>
                                 <div className="text-xs text-dark-400 truncate">

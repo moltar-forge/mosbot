@@ -34,17 +34,15 @@ export default function Sidebar({ onCloseMobile, collapsed = false }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
-  const { getDefaultAgent, fetchAgents, agents } = useAgentStore();
+  const { getDefaultAgent, fetchAgents } = useAgentStore();
   const attention = useSchedulerStore((state) => state.attention);
   const setAttention = useSchedulerStore((state) => state.setAttention);
   const [expandedItems, setExpandedItems] = useState({});
 
-  // Fetch agents on mount for dynamic navigation
+  // Fetch agents on mount for dynamic navigation (store handles staleness)
   useEffect(() => {
-    if (agents.length === 0) {
-      fetchAgents();
-    }
-  }, [agents.length, fetchAgents]);
+    fetchAgents();
+  }, [fetchAgents]);
 
   // Fetch scheduler attention stats on mount for sidebar badges (no need to visit Scheduler page)
   useEffect(() => {

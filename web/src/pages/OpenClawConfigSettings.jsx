@@ -13,6 +13,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
+import { useAgentStore } from '../stores/agentStore';
 import {
   getOpenClawConfig,
   updateOpenClawConfig,
@@ -216,6 +217,7 @@ function HistoryDrawer({
 export default function OpenClawConfigSettings() {
   const { user } = useAuthStore();
   const { showToast } = useToastStore();
+  const fetchAgents = useAgentStore((state) => state.fetchAgents);
   const onOpenNav = useMobileNav();
 
   const canEdit = useMemo(() => user?.role === 'admin' || user?.role === 'owner', [user]);
@@ -369,6 +371,9 @@ export default function OpenClawConfigSettings() {
       // Invalidate backup list so it reloads next time the drawer opens
       setBackupsLoaded(false);
       setBackups([]);
+      // Refresh dynamic agent/workspace lists after config apply.
+      await fetchAgents({ force: true });
+
       showToast('Config applied successfully. Gateway is restarting.', 'success');
       logger.info('OpenClaw config saved', { hash: result.hash, backupPath: result.backupPath });
     } catch (err) {

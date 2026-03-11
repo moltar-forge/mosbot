@@ -9,12 +9,10 @@ export default function Workspace() {
   const { agents, isLoading, fetchAgents, getAgentById, isValidAgentId, getDefaultAgent } =
     useAgentStore();
 
-  // Fetch agents on mount
+  // Fetch agents on mount (store handles staleness/refresh windows)
   useEffect(() => {
-    if (agents.length === 0) {
-      fetchAgents();
-    }
-  }, [agents.length, fetchAgents]);
+    fetchAgents();
+  }, [fetchAgents]);
 
   // Wait for agents to load
   if (isLoading || agents.length === 0) {

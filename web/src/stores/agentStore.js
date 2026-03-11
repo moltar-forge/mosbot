@@ -54,13 +54,24 @@ export const useAgentStore = create((set, get) => ({
   isLoading: false,
   error: null,
   isInitialized: false,
+  lastFetchedAt: 0,
 
   // Fetch agents from API (auto-discovery)
-  fetchAgents: async () => {
+  // Options:
+  // - force: bypass cache guard and refresh immediately
+  // - staleMs: refresh when cache older than this age (default 30s)
+  fetchAgents: async ({ force = false, staleMs = 30_000 } = {}) => {
     const state = get();
+    const now = Date.now();
+    const isFresh = state.lastFetchedAt > 0 && now - state.lastFetchedAt < staleMs;
 
-    // Don't fetch if already loading or already loaded
-    if (state.isLoading || (state.isInitialized && state.agents.length > 0)) {
+    // Don't fetch if already loading
+    if (state.isLoading) {
+      return state.agents;
+    }
+
+    // Return cached data when fresh unless force=true
+    if (!force && state.isInitialized && state.agents.length > 0 && isFresh) {
       return state.agents;
     }
 
@@ -88,6 +99,8 @@ export const useAgentStore = create((set, get) => ({
         }
         return {
           ...agent,
+          // Keep a single canonical icon field for workspace dropdowns.
+          icon: agent.icon || agent.emoji || '🤖',
           workspaceRootPath,
         };
       });
@@ -103,6 +116,7 @@ export const useAgentStore = create((set, get) => ({
         isLoading: false,
         error: null,
         isInitialized: true,
+        lastFetchedAt: Date.now(),
       });
 
       return finalAgents;
@@ -122,6 +136,7 @@ export const useAgentStore = create((set, get) => ({
         isLoading: false,
         error: error.message,
         isInitialized: true,
+        lastFetchedAt: Date.now(),
       });
 
       return fallbackAgents;
@@ -153,6 +168,7 @@ export const useAgentStore = create((set, get) => ({
       isLoading: false,
       error: null,
       isInitialized: false,
+      lastFetchedAt: 0,
     });
   },
 }));
