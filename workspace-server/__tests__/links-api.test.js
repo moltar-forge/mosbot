@@ -282,7 +282,7 @@ describe("Typed docs link API", () => {
     expect(res.body.error).toBe("unlink failed");
   });
 
-  it("GET /links/project/main requires targetPath under /projects/*", async () => {
+  it("GET /links/project/main requires targetPath to be /projects/<slug>", async () => {
     const noTarget = await request(app).get("/links/project/main");
     expect(noTarget.status).toBe(400);
     expect(noTarget.body.code).toBe("INVALID_PROJECT_TARGET_PATH");
@@ -290,6 +290,12 @@ describe("Typed docs link API", () => {
     const badTarget = await request(app).get("/links/project/main?targetPath=/docs");
     expect(badTarget.status).toBe(400);
     expect(badTarget.body.code).toBe("INVALID_PROJECT_TARGET_PATH");
+
+    const nestedTarget = await request(app).get(
+      "/links/project/main?targetPath=/projects/chaos-codex/subdir",
+    );
+    expect(nestedTarget.status).toBe(400);
+    expect(nestedTarget.body.code).toBe("INVALID_PROJECT_TARGET_PATH");
   });
 
   it("GET /links/project/main rejects invalid project slug in target path", async () => {

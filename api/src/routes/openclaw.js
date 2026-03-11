@@ -532,13 +532,29 @@ function normalizeProjectSlug(input) {
 }
 
 function normalizeProjectRootPath(inputPath, slug) {
-  const normalized = normalizeAndValidateWorkspacePath(inputPath || `/projects/${slug}`);
+  const normalizedSlug = normalizeProjectSlug(slug);
+  const normalized = normalizeAndValidateWorkspacePath(inputPath || `/projects/${normalizedSlug}`);
   if (!normalized.startsWith('/projects/')) {
     const err = new Error('Project rootPath must be under /projects/*');
     err.status = 400;
     err.code = 'INVALID_PROJECT_ROOT_PATH';
     throw err;
   }
+
+  // Keep project registry slug and mounted root path aligned.
+  if (normalizedSlug) {
+    const segments = normalized.split('/').filter(Boolean);
+    const rootSegment = segments[0];
+    const slugSegment = segments[1];
+
+    if (rootSegment !== 'projects' || slugSegment !== normalizedSlug) {
+      const err = new Error('Project rootPath must be /projects/<slug>[/*]');
+      err.status = 400;
+      err.code = 'INVALID_PROJECT_ROOT_PATH';
+      throw err;
+    }
+  }
+
   return normalized;
 }
 
@@ -1263,9 +1279,7 @@ router.put('/projects/:projectId', requireAuth, requireAdmin, async (req, res, n
 
     const slug = body.slug ? normalizeProjectSlug(body.slug) : current.slug;
     const name = body.name ? String(body.name).trim() : current.name;
-    const rootPath = body.rootPath
-      ? normalizeProjectRootPath(body.rootPath, slug)
-      : current.root_path;
+    const rootPath = normalizeProjectRootPath(body.rootPath || current.root_path, slug);
     const contractPath = body.contractPath
       ? normalizeAndValidateWorkspacePath(body.contractPath)
       : current.contract_path;
@@ -1369,7 +1383,7 @@ router.delete('/projects/:projectId', requireAuth, requireAdmin, async (req, res
 });
 
 // POST /api/v1/openclaw/projects/:projectId/assign-agent
-// Assign one agent to a project and ensure workspace /project symlink
+// Assign one agent to a project and ensure workspace /projects/<slug> symlink
 router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const { projectId } = req.params;
@@ -1392,27 +1406,71 @@ router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, asyn
       });
     }
 
-    await pool.query(
-      `INSERT INTO agent_project_assignments (agent_id, project_id, role, assigned_by_user_id)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (agent_id, project_id)
-       DO UPDATE SET role = EXCLUDED.role,
-                     assigned_by_user_id = EXCLUDED.assigned_by_user_id,
-                     updated_at = NOW()`,
-      [agentId, project.id, role || 'contributor', req.user.id],
-    );
-
-    try {
-      await ensureProjectLinkIfMissing('main', project.root_path);
-      await ensureProjectLink(agentId, project.root_path);
-    } catch (linkErr) {
-      return res.status(500).json({
+    if (project.status !== 'active') {
+      return res.status(400).json({
         error: {
-          message: `Project assigned but failed to create project link: ${linkErr.message}`,
-          status: 500,
-          code: 'PROJECT_LINK_FAILED',
+          message: 'Cannot assign agent to a non-active project',
+          status: 400,
+          code: 'PROJECT_NOT_ACTIVE',
         },
       });
+    }
+
+    const client = await pool.connect();
+    let txOpen = false;
+
+    try {
+      await client.query('BEGIN');
+      txOpen = true;
+
+      await client.query(
+        `INSERT INTO agent_project_assignments (agent_id, project_id, role, assigned_by_user_id)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (agent_id, project_id)
+         DO UPDATE SET role = EXCLUDED.role,
+                       assigned_by_user_id = EXCLUDED.assigned_by_user_id,
+                       updated_at = NOW()`,
+        [agentId, project.id, role || 'contributor', req.user.id],
+      );
+
+      try {
+        await ensureProjectLinkIfMissing('main', project.root_path);
+        await ensureProjectLink(agentId, project.root_path);
+      } catch (linkErr) {
+        const err = new Error(linkErr.message);
+        err.code = 'PROJECT_LINK_FAILED';
+        throw err;
+      }
+
+      await client.query('COMMIT');
+      txOpen = false;
+    } catch (assignError) {
+      if (txOpen) {
+        try {
+          await client.query('ROLLBACK');
+          txOpen = false;
+        } catch (rollbackErr) {
+          logger.error('Failed to rollback assign-agent transaction', {
+            agentId,
+            projectId: project.id,
+            error: rollbackErr.message,
+          });
+        }
+      }
+
+      if (assignError.code === 'PROJECT_LINK_FAILED') {
+        return res.status(500).json({
+          error: {
+            message: `Failed to assign agent to project due to link setup failure: ${assignError.message}`,
+            status: 500,
+            code: 'PROJECT_LINK_FAILED',
+          },
+        });
+      }
+
+      throw assignError;
+    } finally {
+      client.release();
     }
 
     res.json({
@@ -1434,7 +1492,7 @@ router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, asyn
 });
 
 // DELETE /api/v1/openclaw/projects/:projectId/assign-agent/:agentId
-// Unassign agent and remove /project symlink for the assignment
+// Unassign agent and remove /projects/<slug> symlink for the assignment
 router.delete(
   '/projects/:projectId/assign-agent/:agentId',
   requireAuth,
@@ -1454,20 +1512,28 @@ router.delete(
         });
       }
 
-      await pool.query('DELETE FROM agent_project_assignments WHERE agent_id = $1 AND project_id = $2', [
-        agentId,
-        project.id,
-      ]);
-
       try {
         await deleteProjectLink(agentId, project.root_path);
       } catch (linkErr) {
-        logger.warn('Failed to delete project link after unassign (non-fatal)', {
+        logger.error('Failed to delete project link before unassign', {
           projectId,
           agentId,
           error: linkErr.message,
         });
+
+        return res.status(500).json({
+          error: {
+            message: `Failed to remove project link before unassigning agent: ${linkErr.message}`,
+            status: 500,
+            code: 'PROJECT_LINK_DELETE_FAILED',
+          },
+        });
       }
+
+      await pool.query('DELETE FROM agent_project_assignments WHERE agent_id = $1 AND project_id = $2', [
+        agentId,
+        project.id,
+      ]);
 
       res.status(204).send();
     } catch (error) {
@@ -2052,7 +2118,7 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
 
       await ensureDocsLinkIfMissing(agentData.id);
 
-      // If agent is already project-assigned, ensure /project link exists.
+      // If agent is already project-assigned, ensure /projects/<slug> links exist.
       try {
         const assignedProjects = await getAssignedProjectsForAgent(agentData.id);
         for (const assignedProject of assignedProjects) {
@@ -2294,18 +2360,21 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
     const setupWarnings = [];
 
     let agentApiKey = null;
+    let createdAgentApiKeyId = null;
     try {
       const rawKey = generateApiKey();
       const keyHash = hashApiKey(rawKey);
       const keyPrefix = rawKey.slice(0, 12);
 
-      await pool.query(
+      const insertKeyResult = await pool.query(
         `INSERT INTO agent_api_keys (agent_id, key_hash, key_prefix, label, created_by_user_id)
-         VALUES ($1, $2, $3, $4, $5)`,
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
         [agentData.id, keyHash, keyPrefix, 'rebootstrap', req.user.id],
       );
 
       agentApiKey = rawKey;
+      createdAgentApiKeyId = insertKeyResult.rows?.[0]?.id || null;
     } catch (apiKeyError) {
       if (apiKeyError.code === '42P01') {
         setupWarnings.push('agent_api_keys table not found; skipped API key bootstrap');
@@ -2336,7 +2405,40 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
         `${workspaceRoot}/BOOTSTRAP.md`,
         buildAgentBootstrapContent(agentData),
       );
+
+      if (createdAgentApiKeyId) {
+        try {
+          await pool.query(
+            `UPDATE agent_api_keys
+                SET revoked_at = NOW()
+              WHERE agent_id = $1
+                AND revoked_at IS NULL
+                AND id <> $2`,
+            [agentData.id, createdAgentApiKeyId],
+          );
+        } catch (revokeErr) {
+          setupWarnings.push(`failed to revoke older API keys: ${revokeErr.message}`);
+          logger.warn('Failed to revoke older API keys after re-bootstrap', {
+            agentId: agentData.id,
+            error: revokeErr.message,
+          });
+        }
+      }
     } catch (workspaceError) {
+      if (createdAgentApiKeyId) {
+        try {
+          await pool.query('UPDATE agent_api_keys SET revoked_at = NOW() WHERE id = $1', [
+            createdAgentApiKeyId,
+          ]);
+        } catch (cleanupErr) {
+          logger.warn('Failed to revoke newly-created API key after re-bootstrap failure', {
+            agentId: agentData.id,
+            apiKeyId: createdAgentApiKeyId,
+            error: cleanupErr.message,
+          });
+        }
+      }
+
       return res.status(500).json({
         error: {
           message: `workspace re-bootstrap failed: ${workspaceError.message}`,

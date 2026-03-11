@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 import Header from '../components/Header';
 import WorkspaceExplorer from '../components/WorkspaceExplorer';
@@ -38,7 +38,7 @@ export default function Projects() {
     fetchAgents();
   }, [fetchAgents]);
 
-  const loadProjects = async () => {
+  const loadProjects = useCallback(async () => {
     setIsLoadingProjects(true);
     try {
       const data = await getProjects();
@@ -50,11 +50,11 @@ export default function Projects() {
     } finally {
       setIsLoadingProjects(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadProjects();
-  }, []);
+  }, [loadProjects]);
 
   useEffect(() => {
     const ensureDir = async () => {
@@ -152,8 +152,9 @@ export default function Projects() {
             <div>
               <h2 className="text-sm font-semibold text-dark-100">Registry</h2>
               <p className="text-xs text-dark-400">
-                Projects live under <code className="text-dark-300">/projects/*</code> and can be
-                linked into agent workspaces as <code className="text-dark-300">/project</code>.
+                Projects live under <code className="text-dark-300">/projects/*</code> and are mounted
+                into agent workspaces at{' '}
+                <code className="text-dark-300">/workspace-&lt;agentId&gt;/projects/&lt;slug&gt;</code>.
               </p>
             </div>
 
@@ -281,4 +282,3 @@ placeholder="project-slug"
     </div>
   );
 }
-

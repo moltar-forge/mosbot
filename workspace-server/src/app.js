@@ -361,9 +361,16 @@ function createApp(opts) {
 
   function resolveProjectTargetPath(targetPathInput) {
     const normalized = normalizeRelativePath(targetPathInput || "");
-    if (!normalized || normalized === "/") return null;
-    if (!normalized.startsWith(`/${SHARED_PROJECTS_DIR}/`)) return null;
-    return normalized;
+    const match = normalized.match(/^\/projects\/([^/]+)\/?$/);
+    if (!match) return null;
+
+    const projectSlug = match[1];
+    if (!projectSlug || !AGENT_ID_PATTERN.test(projectSlug)) return null;
+
+    return {
+      projectSlug,
+      targetVirtualPath: `/${SHARED_PROJECTS_DIR}/${projectSlug}`,
+    };
   }
 
   function buildLinkContext(linkType, agentId, targetPathInput) {
@@ -394,8 +401,8 @@ function createApp(opts) {
       linkPath = path.resolve(workspacePath, SHARED_DOCS_DIR);
       targetVirtualPath = `/${SHARED_DOCS_DIR}`;
     } else {
-      const projectTargetVirtualPath = resolveProjectTargetPath(targetPathInput);
-      if (!projectTargetVirtualPath) {
+      const projectTarget = resolveProjectTargetPath(targetPathInput);
+      if (!projectTarget) {
         return {
           ok: false,
           status: 400,
@@ -407,23 +414,10 @@ function createApp(opts) {
         };
       }
 
-      const projectSlug = projectTargetVirtualPath
-        .replace(/^\/projects\//, "")
-        .split("/")[0];
-      if (!projectSlug || !AGENT_ID_PATTERN.test(projectSlug)) {
-        return {
-          ok: false,
-          status: 400,
-          payload: {
-            error: "Invalid project slug in target path",
-            code: "INVALID_PROJECT_TARGET_PATH",
-            targetPath: targetPathInput,
-          },
-        };
-      }
+      const { projectSlug, targetVirtualPath: projectTargetVirtualPath } = projectTarget;
 
       linkPath = path.resolve(workspacePath, SHARED_PROJECTS_DIR, projectSlug);
-      targetVirtualPath = `/projects/${projectSlug}`;
+      targetVirtualPath = projectTargetVirtualPath;
     }
 
     const targetPath = path.resolve(CONFIG_ROOT, targetVirtualPath.replace(/^\/+/, ""));
