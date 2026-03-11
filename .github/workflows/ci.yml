@@ -70,6 +70,7 @@ jobs:
           flag-name: api
           parallel: true
           fail-on-error: false
+          allow-empty: true
 
   checks:
     name: ${{ matrix.name }}
@@ -121,6 +122,7 @@ jobs:
           flag-name: web
           parallel: true
           fail-on-error: false
+          allow-empty: true
 
       - name: Web build
         if: matrix.component == 'web'
@@ -169,6 +171,7 @@ jobs:
           flag-name: workspace
           parallel: true
           fail-on-error: false
+          allow-empty: true
 
   coverage-finalize:
     name: Finalize coverage
