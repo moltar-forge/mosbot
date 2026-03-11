@@ -36,6 +36,7 @@ describe('agentStore', () => {
       agents: [{ id: 'cto' }],
       isLoading: false,
       isInitialized: true,
+      lastFetchedAt: Date.now(),
     });
     await expect(useAgentStore.getState().fetchAgents()).resolves.toEqual([{ id: 'cto' }]);
     expect(getAgents).not.toHaveBeenCalled();
