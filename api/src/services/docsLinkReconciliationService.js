@@ -19,11 +19,13 @@ async function ensureTypedLinkIfMissing(type, agentId, options = {}) {
     return { agentId: null, action: 'skipped' };
   }
 
+  const { repairOnConflict = false, ...linkOptions } = options;
+
   try {
-    const state = await getWorkspaceLink(type, agentId, options);
+    const state = await getWorkspaceLink(type, agentId, linkOptions);
 
     if (state?.state === 'missing') {
-      await ensureWorkspaceLink(type, agentId, options);
+      await ensureWorkspaceLink(type, agentId, linkOptions);
       return { agentId, action: 'created', state: 'linked' };
     }
 
@@ -32,10 +34,27 @@ async function ensureTypedLinkIfMissing(type, agentId, options = {}) {
     }
 
     if (state?.state === 'conflict') {
+      if (repairOnConflict) {
+        try {
+          await ensureWorkspaceLink(type, agentId, linkOptions);
+          return { agentId, action: 'repaired', state: 'linked' };
+        } catch (repairError) {
+          logger.warn(`${type} link reconciliation failed to repair conflict`, {
+            agentId,
+            conflict: state.conflict || null,
+            message: repairError.message,
+            status: repairError.status,
+            code: repairError.code,
+            ...(linkOptions.targetPath ? { targetPath: linkOptions.targetPath } : {}),
+          });
+          return { agentId, action: 'error', state: 'conflict' };
+        }
+      }
+
       logger.warn(`${type} link reconciliation found conflict`, {
         agentId,
         conflict: state.conflict || null,
-        ...(options.targetPath ? { targetPath: options.targetPath } : {}),
+        ...(linkOptions.targetPath ? { targetPath: linkOptions.targetPath } : {}),
       });
       return { agentId, action: 'conflict', state: 'conflict' };
     }
@@ -43,7 +62,7 @@ async function ensureTypedLinkIfMissing(type, agentId, options = {}) {
     logger.warn(`${type} link reconciliation received unexpected state`, {
       agentId,
       state: state?.state || null,
-      ...(options.targetPath ? { targetPath: options.targetPath } : {}),
+      ...(linkOptions.targetPath ? { targetPath: linkOptions.targetPath } : {}),
     });
     return { agentId, action: 'unknown', state: state?.state || null };
   } catch (error) {
@@ -52,7 +71,7 @@ async function ensureTypedLinkIfMissing(type, agentId, options = {}) {
       message: error.message,
       status: error.status,
       code: error.code,
-      ...(options.targetPath ? { targetPath: options.targetPath } : {}),
+      ...(linkOptions.targetPath ? { targetPath: linkOptions.targetPath } : {}),
     });
     return { agentId, action: 'error' };
   }
@@ -68,7 +87,10 @@ async function ensureProjectLinkIfMissing(agentId, projectRootPath) {
     return { agentId, action: 'skipped' };
   }
 
-  return ensureTypedLinkIfMissing('project', agentId, { targetPath: projectRootPath });
+  return ensureTypedLinkIfMissing('project', agentId, {
+    targetPath: projectRootPath,
+    repairOnConflict: true,
+  });
 }
 
 function collectAgentIdsFromOpenClawConfig(content) {

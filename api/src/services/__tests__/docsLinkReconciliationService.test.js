@@ -21,6 +21,7 @@ const {
 } = require('../openclawWorkspaceClient');
 const {
   ensureDocsLinkIfMissing,
+  ensureProjectLinkIfMissing,
   reconcileDocsLinksOnStartup,
   collectAgentIdsFromOpenClawConfig,
 } = require('../docsLinkReconciliationService');
@@ -65,6 +66,24 @@ describe('docsLinkReconciliationService', () => {
       'docs link reconciliation found conflict',
       expect.objectContaining({ agentId: 'cto' }),
     );
+  });
+
+  it('repairs project link conflicts when workspace service supports self-heal', async () => {
+    getWorkspaceLink.mockResolvedValueOnce({
+      state: 'conflict',
+      conflict: { reason: 'Symlink points to unexpected target' },
+    });
+    ensureWorkspaceLink.mockResolvedValueOnce({ action: 'created' });
+
+    const result = await ensureProjectLinkIfMissing('cto', '/projects/chaos-codex');
+
+    expect(result).toEqual({ agentId: 'cto', action: 'repaired', state: 'linked' });
+    expect(getWorkspaceLink).toHaveBeenCalledWith('project', 'cto', {
+      targetPath: '/projects/chaos-codex',
+    });
+    expect(ensureWorkspaceLink).toHaveBeenCalledWith('project', 'cto', {
+      targetPath: '/projects/chaos-codex',
+    });
   });
 
   it('warns and returns skipped when agentId is missing', async () => {

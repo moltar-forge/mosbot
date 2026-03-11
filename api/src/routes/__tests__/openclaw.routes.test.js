@@ -1806,6 +1806,56 @@ describe('OpenClaw Routes', () => {
       expect(ensureProjectLinkIfMissing).not.toHaveBeenCalled();
     });
 
+    it('repairs main project link when project rootPath remains unchanged', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: 'project-1',
+              slug: 'alpha',
+              name: 'Alpha',
+              description: '',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: 'project-1',
+              slug: 'alpha',
+              name: 'Alpha (Updated)',
+              description: '',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        });
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ action: 'created', state: 'linked' }),
+        text: async () => 'OK',
+      });
+
+      const response = await request(app)
+        .put('/api/v1/openclaw/projects/project-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Alpha (Updated)' });
+
+      expect(response.status).toBe(200);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/links/project/main?targetPath=%2Fprojects%2Falpha'),
+        expect.any(Object),
+      );
+      expect(ensureProjectLinkIfMissing).not.toHaveBeenCalled();
+    });
+
     it('rejects project rootPath when it does not match slug', async () => {
       const token = getToken('admin-id', 'admin');
 
@@ -1832,18 +1882,22 @@ describe('OpenClaw Routes', () => {
 
     it('assigns an agent to an active project and commits before link operations', async () => {
       const token = getToken('admin-id', 'admin');
-      pool.query.mockResolvedValueOnce({
-        rows: [
-          {
-            id: 'project-1',
-            slug: 'alpha',
-            name: 'Alpha',
-            root_path: '/projects/alpha',
-            contract_path: '/projects/alpha/agent-contract.md',
-            status: 'active',
-          },
-        ],
-      });
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{ agent_id: 'cto' }],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: 'project-1',
+              slug: 'alpha',
+              name: 'Alpha',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        });
 
       const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
       const release = jest.fn();
@@ -1873,18 +1927,22 @@ describe('OpenClaw Routes', () => {
 
     it('rejects assignment to non-active projects', async () => {
       const token = getToken('admin-id', 'admin');
-      pool.query.mockResolvedValueOnce({
-        rows: [
-          {
-            id: 'project-1',
-            slug: 'alpha',
-            name: 'Alpha',
-            root_path: '/projects/alpha',
-            contract_path: '/projects/alpha/agent-contract.md',
-            status: 'archived',
-          },
-        ],
-      });
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{ agent_id: 'cto' }],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: 'project-1',
+              slug: 'alpha',
+              name: 'Alpha',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'archived',
+            },
+          ],
+        });
 
       const response = await request(app)
         .post('/api/v1/openclaw/projects/project-1/assign-agent')
@@ -1898,18 +1956,22 @@ describe('OpenClaw Routes', () => {
 
     it('cleans up assignment when project link ensure fails after commit', async () => {
       const token = getToken('admin-id', 'admin');
-      pool.query.mockResolvedValueOnce({
-        rows: [
-          {
-            id: 'project-1',
-            slug: 'alpha',
-            name: 'Alpha',
-            root_path: '/projects/alpha',
-            contract_path: '/projects/alpha/agent-contract.md',
-            status: 'active',
-          },
-        ],
-      });
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{ agent_id: 'cto' }],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: 'project-1',
+              slug: 'alpha',
+              name: 'Alpha',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        });
 
       const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
       const release = jest.fn();
@@ -1934,6 +1996,33 @@ describe('OpenClaw Routes', () => {
         expect.stringContaining('DELETE FROM agent_project_assignments'),
         ['cto', 'project-1'],
       );
+    });
+
+    it('rejects invalid assign-agent IDs before DB writes', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects/project-1/assign-agent')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ agentId: 'Bad.Agent' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_AGENT_ID');
+      expect(pool.connect).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when assign-agent target is not a known agent', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects/project-1/assign-agent')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ agentId: 'cto' });
+
+      expect(response.status).toBe(404);
+      expect(response.body.error.code).toBe('AGENT_NOT_FOUND');
+      expect(pool.connect).not.toHaveBeenCalled();
     });
 
     it('returns warnings when delete project link cleanup partially fails', async () => {

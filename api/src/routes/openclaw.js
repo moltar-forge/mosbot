@@ -33,6 +33,7 @@ const MAIN_WORKSPACE_REMAP_PREFIXES = new Set([
   '/home/node/.openclaw/workspace',
   '/~/.openclaw/workspace',
 ]);
+const AGENT_ID_INPUT_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 // Auth middleware - require valid JWT
 const requireAuth = (req, res, next) => {
@@ -1232,7 +1233,7 @@ router.post('/projects', requireAuth, requireAdmin, async (req, res, next) => {
       await upsertWorkspaceFile(contractPath, defaultContract);
 
       // Main should always have links to all project docs.
-      await ensureProjectLinkIfMissing('main', rootPath);
+      await ensureProjectLink('main', rootPath);
     } catch (workspaceErr) {
       logger.warn('Project root scaffold failed (non-fatal)', {
         slug,
@@ -1344,7 +1345,7 @@ router.put('/projects/:projectId', requireAuth, requireAdmin, async (req, res, n
       }
     } else {
       try {
-        await ensureProjectLinkIfMissing('main', rootPath);
+        await ensureProjectLink('main', rootPath);
       } catch (linkErr) {
         logger.warn('Failed to ensure main project link after project update (non-fatal)', {
           projectId,
@@ -1433,6 +1434,22 @@ router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, asyn
       });
     }
 
+    const normalizedAgentId = String(agentId).trim();
+    if (!AGENT_ID_INPUT_PATTERN.test(normalizedAgentId)) {
+      return res.status(400).json({
+        error: { message: 'Invalid agentId format', status: 400, code: 'INVALID_AGENT_ID' },
+      });
+    }
+
+    const agentResult = await pool.query('SELECT agent_id FROM agents WHERE agent_id = $1', [
+      normalizedAgentId,
+    ]);
+    if (!agentResult.rows[0]) {
+      return res.status(404).json({
+        error: { message: 'Agent not found', status: 404, code: 'AGENT_NOT_FOUND' },
+      });
+    }
+
     const projectResult = await pool.query(
       'SELECT id, slug, name, root_path, contract_path, status FROM projects WHERE id = $1',
       [projectId],
@@ -1466,7 +1483,7 @@ router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, asyn
          DO UPDATE SET role = EXCLUDED.role,
                        assigned_by_user_id = EXCLUDED.assigned_by_user_id,
                        updated_at = NOW()`,
-        [agentId, project.id, role || 'contributor', req.user.id],
+        [normalizedAgentId, project.id, role || 'contributor', req.user.id],
       );
 
       await client.query('COMMIT');
@@ -1475,7 +1492,7 @@ router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, asyn
         await client.query('ROLLBACK');
       } catch (rollbackErr) {
         logger.error('Failed to rollback assign-agent transaction', {
-          agentId,
+          agentId: normalizedAgentId,
           projectId: project.id,
           error: rollbackErr.message,
         });
@@ -1487,19 +1504,19 @@ router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, asyn
 
     try {
       await ensureProjectLinkIfMissing('main', project.root_path);
-      await ensureProjectLink(agentId, project.root_path);
+      await ensureProjectLink(normalizedAgentId, project.root_path);
     } catch (linkErr) {
       // Compensate committed assignment if link setup fails after transaction commit.
       let cleanupFailed = false;
       try {
         await pool.query('DELETE FROM agent_project_assignments WHERE agent_id = $1 AND project_id = $2', [
-          agentId,
+          normalizedAgentId,
           project.id,
         ]);
       } catch (cleanupErr) {
         cleanupFailed = true;
         logger.error('Failed to cleanup assignment after project link setup failure', {
-          agentId,
+          agentId: normalizedAgentId,
           projectId: project.id,
           error: cleanupErr.message,
         });
@@ -1518,7 +1535,7 @@ router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, asyn
 
     res.json({
       data: {
-        agentId,
+        agentId: normalizedAgentId,
         project: {
           id: project.id,
           slug: project.slug,
