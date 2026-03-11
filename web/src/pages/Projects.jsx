@@ -143,7 +143,7 @@ export default function Projects() {
                   <input
                     value={newProjectName}
                     onChange={(e) => setNewProjectName(e.target.value)}
-                    className="input mt-1 w-48"
+                    className="input-field mt-1 w-48"
                     placeholder="Chaos Codex"
                   />
                 </div>
@@ -152,7 +152,7 @@ export default function Projects() {
                   <input
                     value={newProjectSlug}
                     onChange={(e) => setNewProjectSlug(e.target.value)}
-                    className="input mt-1 w-44"
+                    className="input-field mt-1 w-44"
                     placeholder="chaos-codex"
                   />
                 </div>
@@ -195,7 +195,7 @@ export default function Projects() {
                   {isAdmin() && (
                     <div className="flex items-end gap-2">
                       <select
-                        className="select"
+                        className="input-field"
                         value={assignments[p.id] || ''}
                         onChange={(e) =>
                           setAssignments((prev) => ({ ...prev, [p.id]: e.target.value }))

@@ -754,11 +754,27 @@ function createApp(opts) {
 
       const stateResult = await inspectLinkState(contextResult);
       if (stateResult.state === "conflict") {
-        return res.status(409).json({
-          error: "Link conflict",
-          code: LINK_CONFLICT_CODE,
-          ...buildLinkResponsePayload(contextResult, stateResult),
-        });
+        const canSelfHealProjectConflict =
+          contextResult.linkType === "project" &&
+          stateResult.conflict?.reason === "Symlink points to unexpected target";
+
+        if (canSelfHealProjectConflict) {
+          try {
+            await fs.unlink(contextResult.linkPath);
+          } catch (unlinkError) {
+            return res.status(409).json({
+              error: "Link conflict",
+              code: LINK_CONFLICT_CODE,
+              ...buildLinkResponsePayload(contextResult, stateResult),
+            });
+          }
+        } else {
+          return res.status(409).json({
+            error: "Link conflict",
+            code: LINK_CONFLICT_CODE,
+            ...buildLinkResponsePayload(contextResult, stateResult),
+          });
+        }
       }
 
       if (stateResult.state === "linked") {
@@ -769,7 +785,7 @@ function createApp(opts) {
       }
 
       const relativeTarget =
-        path.relative(contextResult.workspacePath, contextResult.targetPath) || ".";
+        path.relative(path.dirname(contextResult.linkPath), contextResult.targetPath) || ".";
       await fs.symlink(relativeTarget, contextResult.linkPath);
 
       const createdState = await inspectLinkState(contextResult);

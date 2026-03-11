@@ -17,7 +17,10 @@ const { estimateCostFromTokens } = require('../services/modelPricingService');
 const { recordActivityLogEventSafe } = require('../services/activityLogService');
 const { parseOpenClawConfig } = require('../utils/configParser');
 const { getJwtSecret } = require('../utils/jwt');
-const { ensureDocsLinkIfMissing } = require('../services/docsLinkReconciliationService');
+const {
+  ensureDocsLinkIfMissing,
+  ensureProjectLinkIfMissing,
+} = require('../services/docsLinkReconciliationService');
 const { gatewayWsRpc, invokeTool } = require('../services/openclawGatewayClient');
 
 const BUILTIN_OPENCLAW_REMAP_PREFIXES = [
@@ -1222,6 +1225,9 @@ router.post('/projects', requireAuth, requireAdmin, async (req, res, next) => {
       await upsertWorkspaceFile(`${rootPath}/.keep`, '');
       const defaultContract = `# Agent Contract — ${name}\n\n- Branch naming: feat/cc-<scope> | fix/cc-<scope>\n- Handoff must include: changed files, tests+results, risks, assumptions\n- Done: local tests pass; regenerate API types/contracts when touched\n`;
       await upsertWorkspaceFile(contractPath, defaultContract);
+
+      // Main should always have links to all project docs.
+      await ensureProjectLinkIfMissing('main', rootPath);
     } catch (workspaceErr) {
       logger.warn('Project root scaffold failed (non-fatal)', {
         slug,
@@ -1286,6 +1292,16 @@ router.put('/projects/:projectId', requireAuth, requireAdmin, async (req, res, n
       ],
     );
 
+    try {
+      await ensureProjectLinkIfMissing('main', rootPath);
+    } catch (linkErr) {
+      logger.warn('Failed to ensure main project link after project update (non-fatal)', {
+        projectId,
+        rootPath,
+        error: linkErr.message,
+      });
+    }
+
     res.json({ data: result.rows[0] });
   } catch (error) {
     if (error.code === '23505') {
@@ -1332,6 +1348,7 @@ router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, asyn
     );
 
     try {
+      await ensureProjectLinkIfMissing('main', project.root_path);
       await ensureProjectLink(agentId, project.root_path);
     } catch (linkErr) {
       return res.status(500).json({

@@ -46,6 +46,7 @@ jest.mock('../../services/cronJobsService', () => ({
 
 jest.mock('../../services/docsLinkReconciliationService', () => ({
   ensureDocsLinkIfMissing: jest.fn().mockResolvedValue({ action: 'unchanged' }),
+  ensureProjectLinkIfMissing: jest.fn().mockResolvedValue({ action: 'unchanged' }),
 }));
 
 const request = require('supertest');
