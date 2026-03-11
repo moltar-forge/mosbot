@@ -2105,11 +2105,13 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
        ON CONFLICT (agent_id)
        DO UPDATE SET
-         name = EXCLUDED.name,
-         title = EXCLUDED.title,
-         status = EXCLUDED.status,
-         meta = COALESCE(agents.meta, '{}'::jsonb) || EXCLUDED.meta,
-         active = EXCLUDED.active,
+         -- Preserve curated DB values; only backfill missing runtime-derived fields.
+         name = COALESCE(NULLIF(agents.name, ''), EXCLUDED.name),
+         title = COALESCE(NULLIF(agents.title, ''), EXCLUDED.title),
+         status = COALESCE(NULLIF(agents.status, ''), EXCLUDED.status),
+         -- Merge with DB values winning on key collisions to avoid clobbering custom metadata.
+         meta = COALESCE(EXCLUDED.meta, '{}'::jsonb) || COALESCE(agents.meta, '{}'::jsonb),
+         active = COALESCE(agents.active, EXCLUDED.active),
          updated_at = NOW()`,
       [
         agentData.id,

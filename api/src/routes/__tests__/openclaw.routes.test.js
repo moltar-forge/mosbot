@@ -1448,6 +1448,14 @@ describe('OpenClaw Routes', () => {
         String(sql).includes('INSERT INTO agents (agent_id, name, title, status, reports_to, meta, active)'),
       );
       expect(agentsUpsertCall).toBeDefined();
+      const agentsUpsertSql = String(agentsUpsertCall[0]);
+      expect(agentsUpsertSql).toContain("name = COALESCE(NULLIF(agents.name, ''), EXCLUDED.name)");
+      expect(agentsUpsertSql).toContain("title = COALESCE(NULLIF(agents.title, ''), EXCLUDED.title)");
+      expect(agentsUpsertSql).toContain("status = COALESCE(NULLIF(agents.status, ''), EXCLUDED.status)");
+      expect(agentsUpsertSql).toContain(
+        "meta = COALESCE(EXCLUDED.meta, '{}'::jsonb) || COALESCE(agents.meta, '{}'::jsonb)",
+      );
+      expect(agentsUpsertSql).toContain('active = COALESCE(agents.active, EXCLUDED.active)');
       const metaJson = agentsUpsertCall[1][5];
       const parsedMeta = JSON.parse(metaJson);
       expect(parsedMeta).toEqual({
