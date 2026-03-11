@@ -528,31 +528,20 @@ function normalizeProjectSlug(input) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/^-+|-+$/g, '')
+    .replace(/^[^a-z0-9]+/, '');
 }
 
 function normalizeProjectRootPath(inputPath, slug) {
   const normalizedSlug = normalizeProjectSlug(slug);
   const normalized = normalizeAndValidateWorkspacePath(inputPath || `/projects/${normalizedSlug}`);
-  if (!normalized.startsWith('/projects/')) {
-    const err = new Error('Project rootPath must be under /projects/*');
+  const expected = `/projects/${normalizedSlug}`;
+
+  if (normalized !== expected) {
+    const err = new Error('Project rootPath must be exactly /projects/<slug>');
     err.status = 400;
     err.code = 'INVALID_PROJECT_ROOT_PATH';
     throw err;
-  }
-
-  // Keep project registry slug and mounted root path aligned.
-  if (normalizedSlug) {
-    const segments = normalized.split('/').filter(Boolean);
-    const rootSegment = segments[0];
-    const slugSegment = segments[1];
-
-    if (rootSegment !== 'projects' || slugSegment !== normalizedSlug) {
-      const err = new Error('Project rootPath must be /projects/<slug>[/*]');
-      err.status = 400;
-      err.code = 'INVALID_PROJECT_ROOT_PATH';
-      throw err;
-    }
   }
 
   return normalized;
@@ -1417,11 +1406,9 @@ router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, asyn
     }
 
     const client = await pool.connect();
-    let txOpen = false;
 
     try {
       await client.query('BEGIN');
-      txOpen = true;
 
       await client.query(
         `INSERT INTO agent_project_assignments (agent_id, project_id, role, assigned_by_user_id)
@@ -1433,44 +1420,51 @@ router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, asyn
         [agentId, project.id, role || 'contributor', req.user.id],
       );
 
-      try {
-        await ensureProjectLinkIfMissing('main', project.root_path);
-        await ensureProjectLink(agentId, project.root_path);
-      } catch (linkErr) {
-        const err = new Error(linkErr.message);
-        err.code = 'PROJECT_LINK_FAILED';
-        throw err;
-      }
-
       await client.query('COMMIT');
-      txOpen = false;
     } catch (assignError) {
-      if (txOpen) {
-        try {
-          await client.query('ROLLBACK');
-          txOpen = false;
-        } catch (rollbackErr) {
-          logger.error('Failed to rollback assign-agent transaction', {
-            agentId,
-            projectId: project.id,
-            error: rollbackErr.message,
-          });
-        }
-      }
-
-      if (assignError.code === 'PROJECT_LINK_FAILED') {
-        return res.status(500).json({
-          error: {
-            message: `Failed to assign agent to project due to link setup failure: ${assignError.message}`,
-            status: 500,
-            code: 'PROJECT_LINK_FAILED',
-          },
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        logger.error('Failed to rollback assign-agent transaction', {
+          agentId,
+          projectId: project.id,
+          error: rollbackErr.message,
         });
       }
-
       throw assignError;
     } finally {
       client.release();
+    }
+
+    try {
+      await ensureProjectLinkIfMissing('main', project.root_path);
+      await ensureProjectLink(agentId, project.root_path);
+    } catch (linkErr) {
+      // Compensate committed assignment if link setup fails after transaction commit.
+      let cleanupFailed = false;
+      try {
+        await pool.query('DELETE FROM agent_project_assignments WHERE agent_id = $1 AND project_id = $2', [
+          agentId,
+          project.id,
+        ]);
+      } catch (cleanupErr) {
+        cleanupFailed = true;
+        logger.error('Failed to cleanup assignment after project link setup failure', {
+          agentId,
+          projectId: project.id,
+          error: cleanupErr.message,
+        });
+      }
+
+      return res.status(500).json({
+        error: {
+          message: cleanupFailed
+            ? `Failed to assign agent to project due to link setup failure, and cleanup also failed: ${linkErr.message}`
+            : `Failed to assign agent to project due to link setup failure: ${linkErr.message}`,
+          status: 500,
+          code: 'PROJECT_LINK_FAILED',
+        },
+      });
     }
 
     res.json({

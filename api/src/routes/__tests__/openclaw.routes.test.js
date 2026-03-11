@@ -1741,7 +1741,19 @@ describe('OpenClaw Routes', () => {
       expect(response.body.error.message).toContain('Project rootPath');
     });
 
-    it('assigns an agent to an active project and commits when links succeed', async () => {
+    it('rejects project rootPath when it contains extra segments', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Alpha', slug: 'alpha', rootPath: '/projects/alpha/subdir' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain('exactly /projects/<slug>');
+    });
+
+    it('assigns an agent to an active project and commits before link operations', async () => {
       const token = getToken('admin-id', 'admin');
       pool.query.mockResolvedValueOnce({
         rows: [
@@ -1774,6 +1786,8 @@ describe('OpenClaw Routes', () => {
         ['cto', 'project-1', 'contributor', 'admin-id'],
       );
       expect(ensureProjectLinkIfMissing).toHaveBeenCalledWith('main', '/projects/alpha');
+      expect(release).toHaveBeenCalled();
+      expect(release.mock.invocationCallOrder[0]).toBeLessThan(global.fetch.mock.invocationCallOrder[0]);
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('/links/project/cto?targetPath=%2Fprojects%2Falpha'),
         expect.any(Object),
@@ -1805,7 +1819,7 @@ describe('OpenClaw Routes', () => {
       expect(pool.connect).not.toHaveBeenCalled();
     });
 
-    it('rolls back assignment when project link ensure fails', async () => {
+    it('cleans up assignment when project link ensure fails after commit', async () => {
       const token = getToken('admin-id', 'admin');
       pool.query.mockResolvedValueOnce({
         rows: [
@@ -1837,8 +1851,12 @@ describe('OpenClaw Routes', () => {
 
       expect(response.status).toBe(500);
       expect(response.body.error.code).toBe('PROJECT_LINK_FAILED');
-      expect(clientQuery).toHaveBeenCalledWith('ROLLBACK');
-      expect(clientQuery).not.toHaveBeenCalledWith('COMMIT');
+      expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+      expect(clientQuery).not.toHaveBeenCalledWith('ROLLBACK');
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM agent_project_assignments'),
+        ['cto', 'project-1'],
+      );
     });
 
     it('returns warnings when delete project link cleanup partially fails', async () => {

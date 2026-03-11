@@ -360,8 +360,9 @@ function createApp(opts) {
   }
 
   function resolveProjectTargetPath(targetPathInput) {
-    const normalized = normalizeRelativePath(targetPathInput || "");
-    const match = normalized.match(/^\/projects\/([^/]+)\/?$/);
+    if (typeof targetPathInput !== "string" || !targetPathInput.trim()) return null;
+    const raw = targetPathInput.trim().replace(/\\/g, "/");
+    const match = raw.match(/^\/projects\/([^/]+)\/?$/);
     if (!match) return null;
 
     const projectSlug = match[1];

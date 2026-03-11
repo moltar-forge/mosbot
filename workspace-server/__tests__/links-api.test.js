@@ -296,6 +296,12 @@ describe("Typed docs link API", () => {
     );
     expect(nestedTarget.status).toBe(400);
     expect(nestedTarget.body.code).toBe("INVALID_PROJECT_TARGET_PATH");
+
+    const traversalTarget = await request(app).get(
+      "/links/project/main?targetPath=/projects/chaos-codex/../other",
+    );
+    expect(traversalTarget.status).toBe(400);
+    expect(traversalTarget.body.code).toBe("INVALID_PROJECT_TARGET_PATH");
   });
 
   it("GET /links/project/main rejects invalid project slug in target path", async () => {

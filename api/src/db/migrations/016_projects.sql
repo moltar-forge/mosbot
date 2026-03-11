@@ -11,9 +11,9 @@ CREATE TABLE IF NOT EXISTS projects (
   created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT check_project_slug_format CHECK (slug ~ '^[a-z0-9_-]+$'),
+  CONSTRAINT check_project_slug_format CHECK (slug ~ '^[a-z0-9][a-z0-9_-]*$'),
   CONSTRAINT check_project_status CHECK (status IN ('active', 'archived')),
-  CONSTRAINT check_project_root_path CHECK (root_path LIKE '/projects/%')
+  CONSTRAINT check_project_root_path CHECK (root_path = ('/projects/' || slug))
 );
 
 CREATE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
