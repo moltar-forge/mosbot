@@ -27,6 +27,7 @@ Each agent card shows:
 - Role description (from `identity.theme`)
 - Current status badge
 - Model information
+- Assigned project badges (when project assignment is configured)
 
 ### Custom hierarchy mode
 
@@ -58,6 +59,13 @@ a new agent:
 
 Alternatively, admins can use the **Add Agent** button in the dashboard to create agents through the
 UI.
+
+## Re-bootstrap action
+
+Each editable agent card includes a **Re-bootstrap** action (circular arrows icon).
+
+Use this when onboarding drifted or when an agent was created outside MosBot. Re-bootstrap re-seeds
+workspace toolkit/bootstrap files and triggers bootstrap execution for that agent.
 
 ## Custom hierarchy with agents.json
 

@@ -35,6 +35,23 @@ docs/                    ← shared documentation
 projects/                ← shared project files
 ```
 
+With project assignment enabled, agents also get per-project links inside their own workspace:
+
+```text
+workspace-cc-api/
+└── projects/
+    ├── chaos-codex -> ../../projects/chaos-codex
+    └── chaos-lab   -> ../../projects/chaos-lab
+```
+
+Main workspace also receives project links:
+
+```text
+workspace/
+└── projects/
+    └── <project-slug> -> ../../projects/<project-slug>
+```
+
 ## Browsing files
 
 The workspace browser shows a file tree on the left and file content on the right. You can:
