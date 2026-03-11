@@ -199,6 +199,62 @@ async function upsertWorkspaceFile(path, content, encoding = 'utf8') {
   }
 }
 
+async function workspaceFileExists(path) {
+  try {
+    await makeOpenClawRequest('GET', `/files/content?path=${encodeURIComponent(path)}`);
+    return true;
+  } catch (error) {
+    if (error?.status === 404) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function rotateSingleAgentApiKey({ agentId, createdByUserId, label }) {
+  const activeKeys = await pool.query(
+    `SELECT id
+     FROM agent_api_keys
+     WHERE agent_id = $1 AND revoked_at IS NULL
+     ORDER BY created_at DESC`,
+    [agentId],
+  );
+
+  const activeRows = activeKeys.rows || [];
+  const warnings = [];
+
+  if (activeRows.length > 0) {
+    const activeIds = activeRows.map((row) => row.id).filter(Boolean);
+    if (activeIds.length > 0) {
+      await pool.query(
+        `UPDATE agent_api_keys
+         SET revoked_at = NOW()
+         WHERE id = ANY($1::uuid[])`,
+        [activeIds],
+      );
+      warnings.push('rotated active API key to restore missing mosbot.env credentials');
+    }
+  }
+
+  const rawKey = generateApiKey();
+  const keyHash = hashApiKey(rawKey);
+  const keyPrefix = rawKey.slice(0, 12);
+
+  const insertResult = await pool.query(
+    `INSERT INTO agent_api_keys (agent_id, key_hash, key_prefix, label, created_by_user_id)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id`,
+    [agentId, keyHash, keyPrefix, label, createdByUserId],
+  );
+
+  return {
+    created: true,
+    keyId: insertResult.rows?.[0]?.id || null,
+    apiKey: rawKey,
+    warnings,
+  };
+}
+
 function getMosbotApiBaseUrl(_req) {
   const explicit = process.env.MOSBOT_API_URL || null;
   if (explicit) return explicit.replace(/\/$/, '');
@@ -2106,6 +2162,18 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
         },
       });
     }
+    if (
+      agentId !== 'main' &&
+      (workspaceRoot === '/workspace' || workspaceRoot.startsWith('/workspace/'))
+    ) {
+      return res.status(400).json({
+        error: {
+          message: `invalid workspace path for agent "${agentId}": non-main agents must use an agent-specific workspace root`,
+          status: 400,
+          code: 'INVALID_WORKSPACE_PATH',
+        },
+      });
+    }
 
     // Ensure DB row exists (agent_api_keys FK depends on this).
     await pool.query(
@@ -2135,6 +2203,7 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
     const setupWarnings = [];
     let updatedMosbotEnv = false;
     let createdApiKeyId = null;
+    const mosbotEnvPath = `${workspaceRoot}/mosbot.env`;
 
     try {
       await writeAgentToolkit(workspaceRoot);
@@ -2163,7 +2232,7 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
         createdApiKeyId = apiKeyResult.keyId || null;
         try {
           await upsertWorkspaceFile(
-            `${workspaceRoot}/mosbot.env`,
+            mosbotEnvPath,
             buildAgentMosbotEnv({ req, agentId: agentData.id, apiKey: apiKeyResult.apiKey }),
           );
           updatedMosbotEnv = true;
@@ -2184,6 +2253,63 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
               code: 'WORKSPACE_REBOOTSTRAP_FAILED',
             },
           });
+        }
+      } else {
+        let envExists = false;
+        try {
+          envExists = await workspaceFileExists(mosbotEnvPath);
+        } catch (envCheckError) {
+          return res.status(500).json({
+            error: {
+              message: `workspace re-bootstrap failed: ${envCheckError.message}`,
+              status: 500,
+              code: 'WORKSPACE_REBOOTSTRAP_FAILED',
+            },
+          });
+        }
+
+        if (!envExists) {
+          setupWarnings.push('mosbot.env missing; rotated active API key to restore credentials');
+          const rotatedApiKeyResult = await rotateSingleAgentApiKey({
+            agentId: agentData.id,
+            createdByUserId: req.user.id,
+            label: 'rebootstrap-recovery',
+          });
+          if (
+            Array.isArray(rotatedApiKeyResult?.warnings) &&
+            rotatedApiKeyResult.warnings.length > 0
+          ) {
+            setupWarnings.push(...rotatedApiKeyResult.warnings);
+          }
+
+          createdApiKeyId = rotatedApiKeyResult.keyId || null;
+          try {
+            await upsertWorkspaceFile(
+              mosbotEnvPath,
+              buildAgentMosbotEnv({
+                req,
+                agentId: agentData.id,
+                apiKey: rotatedApiKeyResult.apiKey,
+              }),
+            );
+            updatedMosbotEnv = true;
+          } catch (envWriteError) {
+            await cleanupProvisionedApiKeyArtifacts({
+              createdApiKeyId,
+              workspaceRoot,
+              envWasWritten: updatedMosbotEnv,
+              agentId: agentData.id,
+              flow: 're-bootstrap',
+            });
+            updatedMosbotEnv = false;
+            return res.status(500).json({
+              error: {
+                message: `workspace re-bootstrap failed: ${envWriteError.message}`,
+                status: 500,
+                code: 'WORKSPACE_REBOOTSTRAP_FAILED',
+              },
+            });
+          }
         }
       }
     } catch (apiKeyError) {

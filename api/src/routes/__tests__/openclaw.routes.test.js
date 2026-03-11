@@ -1674,6 +1674,146 @@ describe('OpenClaw Routes', () => {
       expect(response.body.data.updatedFiles.some((f) => f.endsWith('/mosbot.env'))).toBe(false);
     });
 
+    it('should rotate active api key when mosbot.env is missing', async () => {
+      const token = getToken('admin-id', 'admin');
+      const writePaths = [];
+      let activeKeySelectCount = 0;
+
+      pool.query.mockImplementation((sql) => {
+        if (
+          String(sql).includes('FROM agent_api_keys') &&
+          String(sql).includes('revoked_at IS NULL')
+        ) {
+          activeKeySelectCount += 1;
+          return Promise.resolve({ rows: [{ id: 'key-existing' }] });
+        }
+        if (
+          String(sql).includes('UPDATE agent_api_keys') &&
+          String(sql).includes('SET revoked_at = NOW()')
+        ) {
+          return Promise.resolve({ rows: [] });
+        }
+        if (String(sql).includes('INSERT INTO agent_api_keys')) {
+          return Promise.resolve({ rows: [{ id: 'key-rotated' }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      global.fetch = jest.fn().mockImplementation(async (url, options) => {
+        if (
+          options?.method === 'GET' &&
+          (String(url).includes('/files/content?path=/openclaw.json') ||
+            String(url).includes('/files/content?path=%2Fopenclaw.json'))
+        ) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              content: JSON.stringify({
+                agents: {
+                  list: [
+                    {
+                      id: 'coo',
+                      workspace: '/workspace-coo',
+                      identity: { name: 'COO', theme: 'Operations' },
+                    },
+                  ],
+                },
+              }),
+            }),
+            text: async () => 'OK',
+          };
+        }
+
+        if (
+          options?.method === 'GET' &&
+          (String(url).includes('/files/content?path=%2Fworkspace-coo%2Fmosbot.env') ||
+            String(url).includes('/files/content?path=/workspace-coo/mosbot.env'))
+        ) {
+          return {
+            ok: false,
+            status: 404,
+            text: async () => 'not found',
+          };
+        }
+
+        if ((options?.method === 'PUT' || options?.method === 'POST') && options?.body) {
+          const body = JSON.parse(options.body);
+          if (body?.path) writePaths.push(body.path);
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true }),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config/coo/rebootstrap')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(activeKeySelectCount).toBeGreaterThanOrEqual(2);
+      expect(writePaths).toEqual(expect.arrayContaining(['/workspace-coo/mosbot.env']));
+      expect(response.body.data.updatedFiles).toContain('/workspace-coo/mosbot.env');
+      expect(
+        (response.body.data.warnings || []).some((w) =>
+          String(w).includes('mosbot.env missing; rotated active API key'),
+        ),
+      ).toBe(true);
+
+      const revokeCall = pool.query.mock.calls.find(
+        ([sql]) =>
+          String(sql).includes('UPDATE agent_api_keys') &&
+          String(sql).includes('SET revoked_at = NOW()'),
+      );
+      expect(revokeCall).toBeDefined();
+      expect(revokeCall[1]).toEqual([['key-existing']]);
+    });
+
+    it('should reject rebootstrap when non-main agent resolves to shared /workspace root', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      global.fetch = jest.fn().mockImplementation(async (url, options) => {
+        if (
+          options?.method === 'GET' &&
+          (String(url).includes('/files/content?path=/openclaw.json') ||
+            String(url).includes('/files/content?path=%2Fopenclaw.json'))
+        ) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              content: JSON.stringify({
+                agents: {
+                  list: [{ id: 'coo', workspace: '/workspace' }],
+                },
+              }),
+            }),
+            text: async () => 'OK',
+          };
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true }),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config/coo/rebootstrap')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_WORKSPACE_PATH');
+      expect(response.body.error.message).toContain('non-main agents must use an agent-specific workspace root');
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+
     it('should cleanup new api key/env when rebootstrap BOOTSTRAP write fails', async () => {
       const token = getToken('admin-id', 'admin');
 
