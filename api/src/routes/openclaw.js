@@ -1295,14 +1295,63 @@ router.put('/projects/:projectId', requireAuth, requireAdmin, async (req, res, n
       ],
     );
 
-    try {
-      await ensureProjectLinkIfMissing('main', rootPath);
-    } catch (linkErr) {
-      logger.warn('Failed to ensure main project link after project update (non-fatal)', {
-        projectId,
-        rootPath,
-        error: linkErr.message,
-      });
+    const oldRootPath = current.root_path;
+    const projectRootChanged = oldRootPath !== rootPath;
+
+    if (projectRootChanged) {
+      let assignmentRows = { rows: [] };
+      try {
+        assignmentRows = await pool.query(
+          'SELECT agent_id FROM agent_project_assignments WHERE project_id = $1',
+          [projectId],
+        );
+      } catch (assignmentErr) {
+        logger.warn('Failed to load project assignments after project root update (non-fatal)', {
+          projectId,
+          error: assignmentErr.message,
+        });
+      }
+
+      const assignedAgentIds = (assignmentRows.rows || [])
+        .map((row) => row.agent_id)
+        .filter(Boolean);
+      const agentsToReconcile = ['main', ...assignedAgentIds];
+
+      for (const targetAgentId of agentsToReconcile) {
+        try {
+          await deleteProjectLink(targetAgentId, oldRootPath);
+        } catch (cleanupErr) {
+          logger.warn('Failed to remove old project link after project root update (non-fatal)', {
+            projectId,
+            targetAgentId,
+            oldRootPath,
+            error: cleanupErr.message,
+          });
+        }
+      }
+
+      for (const targetAgentId of agentsToReconcile) {
+        try {
+          await ensureProjectLink(targetAgentId, rootPath);
+        } catch (linkErr) {
+          logger.warn('Failed to ensure new project link after project root update (non-fatal)', {
+            projectId,
+            targetAgentId,
+            rootPath,
+            error: linkErr.message,
+          });
+        }
+      }
+    } else {
+      try {
+        await ensureProjectLinkIfMissing('main', rootPath);
+      } catch (linkErr) {
+        logger.warn('Failed to ensure main project link after project update (non-fatal)', {
+          projectId,
+          rootPath,
+          error: linkErr.message,
+        });
+      }
     }
 
     res.json({ data: result.rows[0] });

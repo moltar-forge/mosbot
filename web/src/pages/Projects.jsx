@@ -166,7 +166,7 @@ export default function Projects() {
                     value={newProjectName}
                     onChange={(e) => setNewProjectName(e.target.value)}
                     className="input-field mt-1 w-48"
-placeholder="My Project"
+                    placeholder="My Project"
                   />
                 </div>
                 <div>
@@ -175,7 +175,7 @@ placeholder="My Project"
                     value={newProjectSlug}
                     onChange={(e) => setNewProjectSlug(e.target.value)}
                     className="input-field mt-1 w-44"
-placeholder="project-slug"
+                    placeholder="project-slug"
                   />
                 </div>
                 <button

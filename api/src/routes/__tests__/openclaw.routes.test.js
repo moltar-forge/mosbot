@@ -125,7 +125,9 @@ describe('OpenClaw Routes', () => {
     ensureDocsLinkIfMissing.mockResolvedValue({ action: 'unchanged' });
     ensureProjectLinkIfMissing.mockReset();
     ensureProjectLinkIfMissing.mockResolvedValue({ action: 'unchanged' });
+    pool.query.mockReset();
     pool.query.mockResolvedValue({ rows: [] });
+    pool.connect.mockReset();
     pool.connect.mockResolvedValue({
       query: jest.fn().mockResolvedValue({ rows: [] }),
       release: jest.fn(),
@@ -1727,6 +1729,81 @@ describe('OpenClaw Routes', () => {
 
       expect(response.status).toBe(409);
       expect(response.body.error.code).toBe('PROJECT_EXISTS');
+    });
+
+    it('reconciles links when project rootPath changes', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: 'project-1',
+              slug: 'alpha',
+              name: 'Alpha',
+              description: '',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: 'project-1',
+              slug: 'alpha',
+              name: 'Alpha',
+              description: '',
+              root_path: '/projects/alpha-new',
+              contract_path: '/projects/alpha-new/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ agent_id: 'cto' }],
+        });
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ action: 'created', state: 'linked' }),
+        text: async () => 'OK',
+      });
+
+      const response = await request(app)
+        .put('/api/v1/openclaw/projects/project-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ slug: 'alpha-new', rootPath: '/projects/alpha-new' });
+
+      expect(response.status).toBe(200);
+      expect(pool.query).toHaveBeenCalledWith(
+        'SELECT agent_id FROM agent_project_assignments WHERE project_id = $1',
+        ['project-1'],
+      );
+
+      const calledUrls = (global.fetch.mock.calls || []).map((call) => String(call[0]));
+      expect(
+        calledUrls.some((url) =>
+          url.includes('/links/project/main?targetPath=%2Fprojects%2Falpha'),
+        ),
+      ).toBe(true);
+      expect(
+        calledUrls.some((url) =>
+          url.includes('/links/project/cto?targetPath=%2Fprojects%2Falpha'),
+        ),
+      ).toBe(true);
+      expect(
+        calledUrls.some((url) =>
+          url.includes('/links/project/main?targetPath=%2Fprojects%2Falpha-new'),
+        ),
+      ).toBe(true);
+      expect(
+        calledUrls.some((url) =>
+          url.includes('/links/project/cto?targetPath=%2Fprojects%2Falpha-new'),
+        ),
+      ).toBe(true);
+      expect(ensureProjectLinkIfMissing).not.toHaveBeenCalled();
     });
 
     it('rejects project rootPath when it does not match slug', async () => {
