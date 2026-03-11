@@ -748,6 +748,21 @@ describe('OpenClaw Routes', () => {
       expect(response.body.data.departments).toEqual([]);
     });
 
+    it('should filter archived projects from agents/config project assignments query', async () => {
+      const token = getToken('user-id', 'user');
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/agents/config')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      const projectQueryCall = (pool.query.mock.calls || []).find((call) =>
+        String(call[0]).includes('FROM agent_project_assignments'),
+      );
+      expect(projectQueryCall).toBeDefined();
+      expect(String(projectQueryCall[0])).toContain("WHERE p.status = 'active'");
+    });
+
     it('should synthesize main leadership when agents.list is empty', async () => {
       const token = getToken('user-id', 'user');
 

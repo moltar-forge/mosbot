@@ -1238,7 +1238,7 @@ router.post('/projects', requireAuth, requireAdmin, async (req, res, next) => {
       const defaultContract = `# Agent Contract — ${name}\n\n- Branch naming: feat/cc-<scope> | fix/cc-<scope>\n- Handoff must include: changed files, tests+results, risks, assumptions\n- Done: local tests pass; regenerate API types/contracts when touched\n`;
       await upsertWorkspaceFile(contractPath, defaultContract);
 
-      // Main should always have links to all project docs.
+      // Main should always have links to all project roots.
       await ensureProjectLink('main', rootPath);
     } catch (workspaceErr) {
       logger.warn('Project root scaffold failed (non-fatal)', {
@@ -1809,6 +1809,7 @@ router.get('/agents/config', requireAuth, async (req, res, next) => {
         `SELECT apa.agent_id, p.id AS project_id, p.slug, p.name, p.root_path, p.contract_path
            FROM agent_project_assignments apa
            JOIN projects p ON p.id = apa.project_id
+          WHERE p.status = 'active'
           ORDER BY p.slug ASC`,
       );
       for (const row of projectRows.rows || []) {

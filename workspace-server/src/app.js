@@ -359,10 +359,17 @@ function createApp(opts) {
     return agentId === "main" ? "/workspace" : `/workspace-${agentId}`;
   }
 
+  function escapeRegex(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
   function resolveProjectTargetPath(targetPathInput) {
     if (typeof targetPathInput !== "string" || !targetPathInput.trim()) return null;
     const raw = targetPathInput.trim().replace(/\\/g, "/");
-    const match = raw.match(/^\/projects\/([^/]+)\/?$/);
+    const projectPathPattern = new RegExp(
+      `^/${escapeRegex(SHARED_PROJECTS_DIR)}/([^/]+)/?$`,
+    );
+    const match = raw.match(projectPathPattern);
     if (!match) return null;
 
     const projectSlug = match[1];
@@ -397,6 +404,7 @@ function createApp(opts) {
 
     let linkPath = null;
     let targetVirtualPath = null;
+    let projectSlug = null;
 
     if (linkType === "docs") {
       linkPath = path.resolve(workspacePath, SHARED_DOCS_DIR);
@@ -415,10 +423,14 @@ function createApp(opts) {
         };
       }
 
-      const { projectSlug, targetVirtualPath: projectTargetVirtualPath } = projectTarget;
+      const {
+        projectSlug: resolvedProjectSlug,
+        targetVirtualPath: resolvedTargetVirtualPath,
+      } = projectTarget;
+      projectSlug = resolvedProjectSlug;
 
       linkPath = path.resolve(workspacePath, SHARED_PROJECTS_DIR, projectSlug);
-      targetVirtualPath = projectTargetVirtualPath;
+      targetVirtualPath = resolvedTargetVirtualPath;
     }
 
     const targetPath = path.resolve(CONFIG_ROOT, targetVirtualPath.replace(/^\/+/, ""));
@@ -438,7 +450,7 @@ function createApp(opts) {
       linkVirtualPath:
         linkType === "docs"
           ? `${workspaceVirtualPath}/${SHARED_DOCS_DIR}`
-          : `${workspaceVirtualPath}/${SHARED_PROJECTS_DIR}/${targetVirtualPath.replace(/^\/projects\//, "")}`,
+          : `${workspaceVirtualPath}/${SHARED_PROJECTS_DIR}/${projectSlug}`,
       targetVirtualPath,
     };
   }
