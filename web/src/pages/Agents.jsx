@@ -11,7 +11,12 @@ import {
   ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import Header from '../components/Header';
-import { getActiveSubagentSessions, getAgentsConfig, syncAgentsFromOpenClaw } from '../api/client';
+import {
+  getActiveSubagentSessions,
+  getAgentsConfig,
+  rebootstrapAgent,
+  syncAgentsFromOpenClaw,
+} from '../api/client';
 import { useAuthStore } from '../stores/authStore';
 import AgentEditModal from '../components/AgentEditModal';
 import logger from '../utils/logger';
@@ -48,6 +53,7 @@ export default function Agents() {
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [agentModalMode, setAgentModalMode] = useState('edit'); // 'edit' or 'create'
   const [isSyncingAgents, setIsSyncingAgents] = useState(false);
+  const [rebootstrappingAgentId, setRebootstrappingAgentId] = useState(null);
   const pollingRef = useRef(null);
   const { isAdmin } = useAuthStore();
 
@@ -154,6 +160,24 @@ export default function Agents() {
     setSelectedAgentId(agentId);
     setAgentModalMode('edit');
     setShowAgentModal(true);
+  };
+
+  const handleRebootstrapAgent = async (agentId) => {
+    if (!agentId) return;
+
+    setRebootstrappingAgentId(agentId);
+    try {
+      await rebootstrapAgent(agentId);
+      await loadConfig();
+      setConfigError(null);
+    } catch (err) {
+      logger.error('Failed to re-bootstrap agent', { agentId, error: err.message });
+      setConfigError(
+        err?.response?.data?.error?.message || err.message || `Failed to re-bootstrap ${agentId}`,
+      );
+    } finally {
+      setRebootstrappingAgentId(null);
+    }
   };
 
   const handleAddAgent = () => {
@@ -265,13 +289,25 @@ export default function Agents() {
                 </span>
               )}
               {canEdit && (
-                <button
-                  onClick={() => handleEditAgent(leader.id)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity h-[21px] px-1.5 bg-dark-800/70 hover:bg-dark-700 rounded border border-dark-600 hover:border-dark-500 flex items-center justify-center"
-                  title="Edit agent"
-                >
-                  <PencilIcon className="w-3 h-3 text-dark-300" />
-                </button>
+                <>
+                  <button
+                    onClick={() => handleRebootstrapAgent(leader.id)}
+                    disabled={rebootstrappingAgentId === leader.id}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity h-[21px] px-1.5 bg-dark-800/70 hover:bg-dark-700 rounded border border-dark-600 hover:border-dark-500 flex items-center justify-center disabled:opacity-50"
+                    title="Re-bootstrap agent"
+                  >
+                    <ArrowPathIcon
+                      className={`w-3 h-3 text-dark-300 ${rebootstrappingAgentId === leader.id ? 'animate-spin' : ''}`}
+                    />
+                  </button>
+                  <button
+                    onClick={() => handleEditAgent(leader.id)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity h-[21px] px-1.5 bg-dark-800/70 hover:bg-dark-700 rounded border border-dark-600 hover:border-dark-500 flex items-center justify-center"
+                    title="Edit agent"
+                  >
+                    <PencilIcon className="w-3 h-3 text-dark-300" />
+                  </button>
+                </>
               )}
               <StatusBadge status={status} />
             </div>
