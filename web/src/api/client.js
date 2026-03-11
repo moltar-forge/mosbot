@@ -199,6 +199,11 @@ export const assignAgentToProject = async (projectId, payload) => {
   return response.data.data;
 };
 
+export const deleteProject = async (projectId) => {
+  const response = await api.delete(`/openclaw/projects/${encodeURIComponent(projectId)}`);
+  return response.data?.data || null;
+};
+
 export const unassignAgentFromProject = async (projectId, agentId) => {
   const response = await api.delete(
     `/openclaw/projects/${encodeURIComponent(projectId)}/assign-agent/${encodeURIComponent(agentId)}`,

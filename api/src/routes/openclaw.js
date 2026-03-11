@@ -1253,7 +1253,7 @@ router.put('/projects/:projectId', requireAuth, requireAdmin, async (req, res, n
     const { projectId } = req.params;
     const body = req.body || {};
 
-    const currentResult = await pool.query(`SELECT * FROM projects WHERE id = $1`, [projectId]);
+    const currentResult = await pool.query('SELECT * FROM projects WHERE id = $1', [projectId]);
     const current = currentResult.rows[0];
     if (!current) {
       return res.status(404).json({
@@ -1313,6 +1313,61 @@ router.put('/projects/:projectId', requireAuth, requireAdmin, async (req, res, n
   }
 });
 
+// DELETE /api/v1/openclaw/projects/:projectId
+// Delete project registry entry and cleanup project links
+router.delete('/projects/:projectId', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+
+    const projectResult = await pool.query(
+      'SELECT id, slug, root_path FROM projects WHERE id = $1',
+      [projectId],
+    );
+    const project = projectResult.rows[0];
+    if (!project) {
+      return res.status(404).json({
+        error: { message: 'Project not found', status: 404, code: 'PROJECT_NOT_FOUND' },
+      });
+    }
+
+    const assignmentRows = await pool.query(
+      'SELECT agent_id FROM agent_project_assignments WHERE project_id = $1',
+      [project.id],
+    );
+
+    const warnings = [];
+
+    // Remove per-agent project links (best effort)
+    for (const row of assignmentRows.rows || []) {
+      try {
+        await deleteProjectLink(row.agent_id, project.root_path);
+      } catch (linkErr) {
+        warnings.push(`agent ${row.agent_id} link cleanup failed: ${linkErr.message}`);
+      }
+    }
+
+    // Remove main project link too (best effort)
+    try {
+      await deleteProjectLink('main', project.root_path);
+    } catch (mainLinkErr) {
+      warnings.push(`main link cleanup failed: ${mainLinkErr.message}`);
+    }
+
+    await pool.query('DELETE FROM projects WHERE id = $1', [project.id]);
+
+    res.json({
+      data: {
+        id: project.id,
+        slug: project.slug,
+        removedAssignments: (assignmentRows.rows || []).length,
+        warnings,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // POST /api/v1/openclaw/projects/:projectId/assign-agent
 // Assign one agent to a project and ensure workspace /project symlink
 router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, async (req, res, next) => {
@@ -1327,7 +1382,7 @@ router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, asyn
     }
 
     const projectResult = await pool.query(
-      `SELECT id, slug, name, root_path, contract_path, status FROM projects WHERE id = $1`,
+      'SELECT id, slug, name, root_path, contract_path, status FROM projects WHERE id = $1',
       [projectId],
     );
     const project = projectResult.rows[0];
@@ -1389,7 +1444,7 @@ router.delete(
       const { projectId, agentId } = req.params;
 
       const projectResult = await pool.query(
-        `SELECT id, root_path FROM projects WHERE id = $1`,
+        'SELECT id, root_path FROM projects WHERE id = $1',
         [projectId],
       );
       const project = projectResult.rows[0];
@@ -1399,7 +1454,7 @@ router.delete(
         });
       }
 
-      await pool.query(`DELETE FROM agent_project_assignments WHERE agent_id = $1 AND project_id = $2`, [
+      await pool.query('DELETE FROM agent_project_assignments WHERE agent_id = $1 AND project_id = $2', [
         agentId,
         project.id,
       ]);

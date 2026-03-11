@@ -1,9 +1,9 @@
 import { useParams } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
-import { PlusIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 import Header from '../components/Header';
 import WorkspaceExplorer from '../components/WorkspaceExplorer';
-import { createProject, assignAgentToProject, getProjects } from '../api/client';
+import { createProject, assignAgentToProject, deleteProject, getProjects } from '../api/client';
 import { useAgentStore } from '../stores/agentStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useAuthStore } from '../stores/authStore';
@@ -32,6 +32,7 @@ export default function Projects() {
 
   const [assignments, setAssignments] = useState({}); // { [projectId]: agentId }
   const [assigningProjectId, setAssigningProjectId] = useState(null);
+  const [deletingProjectId, setDeletingProjectId] = useState(null);
 
   useEffect(() => {
     fetchAgents();
@@ -121,6 +122,26 @@ export default function Projects() {
     }
   };
 
+  const handleDeleteProject = async (project) => {
+    if (!isAdmin() || !project?.id) return;
+
+    const confirmed = window.confirm(
+      `Delete project "${project.slug}"? This removes project assignments and project links for assigned agents.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingProjectId(project.id);
+    try {
+      await deleteProject(project.id);
+      showToast(`Deleted project ${project.slug}`, 'success');
+      await loadProjects();
+    } catch (err) {
+      showToast(err?.response?.data?.error?.message || err.message || 'Failed to delete project', 'error');
+    } finally {
+      setDeletingProjectId(null);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <Header title="Projects" subtitle="Project registry + shared project workspace" />
@@ -144,7 +165,7 @@ export default function Projects() {
                     value={newProjectName}
                     onChange={(e) => setNewProjectName(e.target.value)}
                     className="input-field mt-1 w-48"
-                    placeholder="Chaos Codex"
+placeholder="My Project"
                   />
                 </div>
                 <div>
@@ -153,7 +174,7 @@ export default function Projects() {
                     value={newProjectSlug}
                     onChange={(e) => setNewProjectSlug(e.target.value)}
                     className="input-field mt-1 w-44"
-                    placeholder="chaos-codex"
+placeholder="project-slug"
                   />
                 </div>
                 <button
@@ -214,6 +235,15 @@ export default function Projects() {
                         disabled={assigningProjectId === p.id}
                       >
                         {assigningProjectId === p.id ? 'Assigning…' : 'Assign'}
+                      </button>
+                      <button
+                        className="btn-danger disabled:opacity-50 flex items-center gap-1"
+                        onClick={() => handleDeleteProject(p)}
+                        disabled={deletingProjectId === p.id}
+                        title="Delete project"
+                      >
+                        <TrashIcon className="w-4 h-4" />
+                        {deletingProjectId === p.id ? 'Deleting…' : 'Delete'}
                       </button>
                     </div>
                   )}

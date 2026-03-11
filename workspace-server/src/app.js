@@ -407,7 +407,9 @@ function createApp(opts) {
         };
       }
 
-      const projectSlug = projectTargetVirtualPath.replace(/^\/projects\//, "").split("/")[0];
+      const projectSlug = projectTargetVirtualPath
+        .replace(/^\/projects\//, "")
+        .split("/")[0];
       if (!projectSlug || !AGENT_ID_PATTERN.test(projectSlug)) {
         return {
           ok: false,
@@ -785,7 +787,8 @@ function createApp(opts) {
       }
 
       const relativeTarget =
-        path.relative(path.dirname(contextResult.linkPath), contextResult.targetPath) || ".";
+        path.relative(path.dirname(contextResult.linkPath), contextResult.targetPath) ||
+        ".";
       await fs.symlink(relativeTarget, contextResult.linkPath);
 
       const createdState = await inspectLinkState(contextResult);
