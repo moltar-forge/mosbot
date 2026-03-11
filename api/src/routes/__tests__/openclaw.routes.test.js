@@ -1379,6 +1379,7 @@ describe('OpenClaw Routes', () => {
     it('should rebootstrap an existing configured agent', async () => {
       const token = getToken('admin-id', 'admin');
       const writePaths = [];
+      let bootstrapContent = '';
 
       global.fetch = jest.fn().mockImplementation(async (url, options) => {
         if (
@@ -1410,6 +1411,9 @@ describe('OpenClaw Routes', () => {
         if ((options?.method === 'PUT' || options?.method === 'POST') && String(url).endsWith('/files')) {
           const body = JSON.parse(options.body || '{}');
           writePaths.push(body.path);
+          if (body.path === '/workspace-custom-coo/BOOTSTRAP.md') {
+            bootstrapContent = body.content || '';
+          }
           return {
             ok: true,
             status: 200,
@@ -1443,6 +1447,9 @@ describe('OpenClaw Routes', () => {
           '/workspace-custom-coo/mosbot.env',
         ]),
       );
+      expect(bootstrapContent).toContain('re-bootstrap');
+      expect(bootstrapContent).toContain('Agent profile (re-bootstrap snapshot)');
+      expect(bootstrapContent).not.toContain('Agent profile (from create form)');
 
       const agentsUpsertCall = pool.query.mock.calls.find(([sql]) =>
         String(sql).includes('INSERT INTO agents (agent_id, name, title, status, reports_to, meta, active)'),
@@ -1578,6 +1585,7 @@ describe('OpenClaw Routes', () => {
 
       expect(response.status).toBe(403);
       expect(response.body.error.code).toBe('INSUFFICIENT_PERMISSIONS');
+      expect(response.body.error.message).toContain('Re-bootstrap requires admin or owner role');
     });
 
     it('should reject invalid rebootstrap agent id format', async () => {

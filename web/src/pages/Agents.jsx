@@ -301,12 +301,15 @@ export default function Agents() {
                   <button
                     onClick={() => handleRebootstrapAgent(leader.id)}
                     disabled={Boolean(rebootstrappingByAgentId[leader.id])}
+                    aria-label={`Re-bootstrap ${leader.displayName || leader.label}`}
+                    aria-busy={Boolean(rebootstrappingByAgentId[leader.id])}
                     className={`transition-opacity h-[21px] px-1.5 bg-dark-800/70 hover:bg-dark-700 rounded border border-dark-600 hover:border-dark-500 flex items-center justify-center disabled:opacity-50 ${
                       rebootstrappingByAgentId[leader.id] ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                     }`}
                     title="Re-bootstrap agent"
                   >
                     <ArrowPathIcon
+                      aria-hidden="true"
                       className={`w-3 h-3 text-dark-300 ${rebootstrappingByAgentId[leader.id] ? 'animate-spin' : ''}`}
                     />
                   </button>

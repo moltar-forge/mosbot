@@ -453,6 +453,14 @@ async function writeAgentToolkit(workspaceRoot) {
 }
 
 function buildAgentBootstrapContent(agentData = {}) {
+  const flow = agentData.flow === 're-bootstrap' ? 're-bootstrap' : 'create';
+  const introLine =
+    flow === 're-bootstrap'
+      ? 'You are an existing agent workspace running a re-bootstrap. Complete the checklist below before taking new work.'
+      : 'You are a newly created agent workspace. Complete the setup below before taking work.';
+  const profileHeading =
+    flow === 're-bootstrap' ? 'Agent profile (re-bootstrap snapshot)' : 'Agent profile (create snapshot)';
+
   const profile = {
     id: agentData.id || '',
     displayName: agentData.displayName || '',
@@ -472,9 +480,9 @@ function buildAgentBootstrapContent(agentData = {}) {
 
   return `# BOOTSTRAP.md
 
-You are a newly created agent workspace. Complete the setup below before taking work.
+${introLine}
 
-## Agent profile (from create form)
+## ${profileHeading}
 
 \`\`\`json
 ${JSON.stringify(profile, null, 2)}
@@ -2018,7 +2026,7 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
     if (req.user.role === 'agent') {
       return res.status(403).json({
         error: {
-          message: 'System configuration files can only be modified by admin or owner roles',
+          message: 'Re-bootstrap requires admin or owner role (agent lifecycle management access)',
           status: 403,
           code: 'INSUFFICIENT_PERMISSIONS',
         },
@@ -2194,7 +2202,7 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
     try {
       await upsertWorkspaceFile(
         `${workspaceRoot}/BOOTSTRAP.md`,
-        buildAgentBootstrapContent(agentData),
+        buildAgentBootstrapContent({ ...agentData, flow: 're-bootstrap' }),
       );
     } catch (workspaceError) {
       await cleanupProvisionedApiKeyArtifacts({
