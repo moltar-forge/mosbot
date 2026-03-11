@@ -66,6 +66,70 @@ function generateApiKey() {
   return `mba_${random}`;
 }
 
+const AGENT_ID_REGEX = /^[a-z0-9_-]+$/;
+
+function isValidAgentId(agentId) {
+  return typeof agentId === 'string' && AGENT_ID_REGEX.test(agentId);
+}
+
+async function getOrCreateSingleAgentApiKey({ agentId, createdByUserId, label }) {
+  const activeKeys = await pool.query(
+    `SELECT id
+     FROM agent_api_keys
+     WHERE agent_id = $1 AND revoked_at IS NULL
+     ORDER BY created_at DESC`,
+    [agentId],
+  );
+
+  const activeRows = activeKeys.rows || [];
+  const warnings = [];
+
+  if (activeRows.length > 0) {
+    if (activeRows.length > 1) {
+      const staleIds = activeRows.slice(1).map((row) => row.id).filter(Boolean);
+      if (staleIds.length > 0) {
+        await pool.query(
+          `UPDATE agent_api_keys
+           SET revoked_at = NOW()
+           WHERE id = ANY($1::uuid[])`,
+          [staleIds],
+        );
+        warnings.push('revoked duplicate active API keys and kept the most recent key');
+      }
+    }
+
+    return {
+      created: false,
+      keyId: activeRows[0]?.id || null,
+      apiKey: null,
+      warnings,
+    };
+  }
+
+  const rawKey = generateApiKey();
+  const keyHash = hashApiKey(rawKey);
+  const keyPrefix = rawKey.slice(0, 12);
+
+  const insertResult = await pool.query(
+    `INSERT INTO agent_api_keys (agent_id, key_hash, key_prefix, label, created_by_user_id)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id`,
+    [agentId, keyHash, keyPrefix, label, createdByUserId],
+  );
+
+  return {
+    created: true,
+    keyId: insertResult.rows?.[0]?.id || null,
+    apiKey: rawKey,
+    warnings,
+  };
+}
+
+async function deleteAgentApiKeyById(keyId) {
+  if (!keyId) return;
+  await pool.query('DELETE FROM agent_api_keys WHERE id = $1', [keyId]);
+}
+
 async function upsertWorkspaceFile(path, content, encoding = 'utf8') {
   try {
     return await makeOpenClawRequest('PUT', '/files', { path, content, encoding });
@@ -1518,6 +1582,17 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
       });
     }
 
+    if (!isValidAgentId(agentData.id)) {
+      return res.status(400).json({
+        error: {
+          message:
+            'id must be a valid slug (lowercase letters, numbers, hyphens, underscores)',
+          status: 400,
+          code: 'INVALID_AGENT_ID',
+        },
+      });
+    }
+
     if (agentData.status && agentData.status !== 'active') {
       return res.status(400).json({
         error: {
@@ -1577,49 +1652,85 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
     // Prepare workspace + toolkit + bootstrap BEFORE mutating OpenClaw agent config.
     // This avoids creating an agent runtime entry without a prepared workspace.
     const setupWarnings = [];
-    let agentApiKey = null;
 
     const safeAgentId = normalizeAgentIdForPath(agentData.id);
     const workspaceRoot = safeAgentId === 'main' ? '/workspace' : `/workspace-${safeAgentId}`;
     req._agentWorkspaceRoot = workspaceRoot;
+    req._agentCreateApiKeyProvisioned = false;
+    let createdApiKeyId = null;
 
     try {
-      const rawKey = generateApiKey();
-      const keyHash = hashApiKey(rawKey);
-      const keyPrefix = rawKey.slice(0, 12);
+      await writeAgentToolkit(workspaceRoot);
+    } catch (workspaceError) {
+      logger.error('Workspace bootstrap failed before agent creation', {
+        agentId: agentData.id,
+        error: workspaceError.message,
+      });
 
-      await pool.query(
-        `INSERT INTO agent_api_keys (agent_id, key_hash, key_prefix, label, created_by_user_id)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [agentData.id, keyHash, keyPrefix, 'bootstrap', req.user.id],
-      );
+      return res.status(500).json({
+        error: {
+          message: `workspace bootstrap failed before agent creation: ${workspaceError.message}`,
+          status: 500,
+          code: 'WORKSPACE_BOOTSTRAP_FAILED',
+        },
+      });
+    }
 
-      agentApiKey = rawKey;
+    try {
+      const apiKeyResult = await getOrCreateSingleAgentApiKey({
+        agentId: agentData.id,
+        createdByUserId: req.user.id,
+        label: 'bootstrap',
+      });
+
+      if (Array.isArray(apiKeyResult?.warnings) && apiKeyResult.warnings.length > 0) {
+        setupWarnings.push(...apiKeyResult.warnings);
+      }
+
+      if (apiKeyResult?.created && apiKeyResult?.apiKey) {
+        createdApiKeyId = apiKeyResult.keyId || null;
+
+        try {
+          await upsertWorkspaceFile(
+            `${workspaceRoot}/mosbot.env`,
+            buildAgentMosbotEnv({ req, agentId: agentData.id, apiKey: apiKeyResult.apiKey }),
+          );
+          req._agentCreateApiKeyProvisioned = true;
+        } catch (envWriteError) {
+          try {
+            await deleteAgentApiKeyById(createdApiKeyId);
+          } catch (cleanupError) {
+            setupWarnings.push(`failed to cleanup bootstrap API key after env write error: ${cleanupError.message}`);
+            logger.warn('Failed to cleanup bootstrap API key after env write error', {
+              agentId: agentData.id,
+              keyId: createdApiKeyId,
+              error: cleanupError.message,
+            });
+          }
+
+          return res.status(500).json({
+            error: {
+              message: `workspace bootstrap failed before agent creation: ${envWriteError.message}`,
+              status: 500,
+              code: 'WORKSPACE_BOOTSTRAP_FAILED',
+            },
+          });
+        }
+      }
     } catch (apiKeyError) {
       if (apiKeyError.code === '42P01') {
         setupWarnings.push('agent_api_keys table not found; skipped API key bootstrap');
       } else {
         setupWarnings.push(`agent API key bootstrap failed: ${apiKeyError.message}`);
       }
-      logger.warn('Failed to create bootstrap API key', {
+      logger.warn('Failed to ensure bootstrap API key', {
         agentId: agentData.id,
         error: apiKeyError.message,
         code: apiKeyError.code,
       });
     }
 
-    req._agentCreateApiKeyProvisioned = Boolean(agentApiKey);
-
     try {
-      await writeAgentToolkit(workspaceRoot);
-
-      if (agentApiKey) {
-        await upsertWorkspaceFile(
-          `${workspaceRoot}/mosbot.env`,
-          buildAgentMosbotEnv({ req, agentId: agentData.id, apiKey: agentApiKey }),
-        );
-      }
-
       await upsertWorkspaceFile(
         `${workspaceRoot}/BOOTSTRAP.md`,
         buildAgentBootstrapContent(agentData),
@@ -1781,6 +1892,17 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
       });
     }
 
+    if (!isValidAgentId(agentId)) {
+      return res.status(400).json({
+        error: {
+          message:
+            'agentId must be a valid slug (lowercase letters, numbers, hyphens, underscores)',
+          status: 400,
+          code: 'INVALID_AGENT_ID',
+        },
+      });
+    }
+
     if (req.user.role === 'agent') {
       return res.status(403).json({
         error: {
@@ -1843,6 +1965,19 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
       agentMeta.emoji = agentData.identityEmoji;
     }
 
+    let workspaceRoot;
+    try {
+      workspaceRoot = normalizeRemapAndValidateWorkspacePath(resolveAgentWorkspacePath(runtimeAgent));
+    } catch (workspacePathError) {
+      return res.status(400).json({
+        error: {
+          message: `invalid workspace path for agent "${agentId}": ${workspacePathError.message}`,
+          status: 400,
+          code: 'INVALID_WORKSPACE_PATH',
+        },
+      });
+    }
+
     // Ensure DB row exists (agent_api_keys FK depends on this).
     await pool.query(
       `INSERT INTO agents (agent_id, name, title, status, reports_to, meta, active)
@@ -1867,56 +2002,75 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
     );
 
     const setupWarnings = [];
+    let updatedMosbotEnv = false;
+    let createdApiKeyId = null;
 
-    let agentApiKey = null;
     try {
-      const rawKey = generateApiKey();
-      const keyHash = hashApiKey(rawKey);
-      const keyPrefix = rawKey.slice(0, 12);
+      await writeAgentToolkit(workspaceRoot);
+    } catch (workspaceError) {
+      return res.status(500).json({
+        error: {
+          message: `workspace re-bootstrap failed: ${workspaceError.message}`,
+          status: 500,
+          code: 'WORKSPACE_REBOOTSTRAP_FAILED',
+        },
+      });
+    }
 
-      await pool.query(
-        `INSERT INTO agent_api_keys (agent_id, key_hash, key_prefix, label, created_by_user_id)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [agentData.id, keyHash, keyPrefix, 'rebootstrap', req.user.id],
-      );
+    try {
+      const apiKeyResult = await getOrCreateSingleAgentApiKey({
+        agentId: agentData.id,
+        createdByUserId: req.user.id,
+        label: 'rebootstrap',
+      });
 
-      agentApiKey = rawKey;
+      if (Array.isArray(apiKeyResult?.warnings) && apiKeyResult.warnings.length > 0) {
+        setupWarnings.push(...apiKeyResult.warnings);
+      }
+
+      if (apiKeyResult?.created && apiKeyResult?.apiKey) {
+        createdApiKeyId = apiKeyResult.keyId || null;
+        try {
+          await upsertWorkspaceFile(
+            `${workspaceRoot}/mosbot.env`,
+            buildAgentMosbotEnv({ req, agentId: agentData.id, apiKey: apiKeyResult.apiKey }),
+          );
+          updatedMosbotEnv = true;
+        } catch (envWriteError) {
+          try {
+            await deleteAgentApiKeyById(createdApiKeyId);
+          } catch (cleanupError) {
+            setupWarnings.push(`failed to cleanup re-bootstrap API key after env write error: ${cleanupError.message}`);
+            logger.warn('Failed to cleanup re-bootstrap API key after env write error', {
+              agentId: agentData.id,
+              keyId: createdApiKeyId,
+              error: cleanupError.message,
+            });
+          }
+
+          return res.status(500).json({
+            error: {
+              message: `workspace re-bootstrap failed: ${envWriteError.message}`,
+              status: 500,
+              code: 'WORKSPACE_REBOOTSTRAP_FAILED',
+            },
+          });
+        }
+      }
     } catch (apiKeyError) {
       if (apiKeyError.code === '42P01') {
         setupWarnings.push('agent_api_keys table not found; skipped API key bootstrap');
       } else {
         setupWarnings.push(`agent API key bootstrap failed: ${apiKeyError.message}`);
       }
-      logger.warn('Failed to create re-bootstrap API key', {
+      logger.warn('Failed to ensure re-bootstrap API key', {
         agentId: agentData.id,
         error: apiKeyError.message,
         code: apiKeyError.code,
       });
     }
 
-    let workspaceRoot;
     try {
-      workspaceRoot = normalizeRemapAndValidateWorkspacePath(resolveAgentWorkspacePath(runtimeAgent));
-    } catch (workspacePathError) {
-      return res.status(400).json({
-        error: {
-          message: `invalid workspace path for agent "${agentId}": ${workspacePathError.message}`,
-          status: 400,
-          code: 'INVALID_WORKSPACE_PATH',
-        },
-      });
-    }
-
-    try {
-      await writeAgentToolkit(workspaceRoot);
-
-      if (agentApiKey) {
-        await upsertWorkspaceFile(
-          `${workspaceRoot}/mosbot.env`,
-          buildAgentMosbotEnv({ req, agentId: agentData.id, apiKey: agentApiKey }),
-        );
-      }
-
       await upsertWorkspaceFile(
         `${workspaceRoot}/BOOTSTRAP.md`,
         buildAgentBootstrapContent(agentData),
@@ -1955,7 +2109,7 @@ router.post('/agents/config/:agentId/rebootstrap', requireAuth, requireAdmin, as
           `${workspaceRoot}/tools/*`,
           `${workspaceRoot}/TOOLS.md`,
           `${workspaceRoot}/BOOTSTRAP.md`,
-          ...(agentApiKey ? [`${workspaceRoot}/mosbot.env`] : []),
+          ...(updatedMosbotEnv ? [`${workspaceRoot}/mosbot.env`] : []),
         ],
         warnings: setupWarnings,
       },

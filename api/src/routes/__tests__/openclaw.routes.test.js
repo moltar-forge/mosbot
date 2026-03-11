@@ -1111,6 +1111,23 @@ describe('OpenClaw Routes', () => {
       expect(response.status).toBe(201);
     });
 
+    it('should reject invalid agent id format', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'Invalid Agent',
+          displayName: 'Invalid Agent',
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_AGENT_ID');
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
     it('should return 409 before side effects when agent already exists in openclaw config', async () => {
       const token = getToken('admin-id', 'admin');
 
@@ -1153,6 +1170,56 @@ describe('OpenClaw Routes', () => {
 
       const nonGetCalls = global.fetch.mock.calls.filter(([, opts]) => opts?.method !== 'GET');
       expect(nonGetCalls).toHaveLength(0);
+    });
+
+    it('should keep existing active api key and skip mosbot.env rewrite', async () => {
+      const token = getToken('admin-id', 'admin');
+      const writePaths = [];
+
+      pool.query.mockImplementation((sql) => {
+        if (
+          String(sql).includes('FROM agent_api_keys') &&
+          String(sql).includes('revoked_at IS NULL')
+        ) {
+          return Promise.resolve({ rows: [{ id: 'key-existing' }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      global.fetch = jest.fn().mockImplementation(async (_url, options) => {
+        if (options?.method === 'GET') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ content: JSON.stringify({ agents: { list: [] } }) }),
+            text: async () => 'OK',
+          };
+        }
+
+        if ((options?.method === 'PUT' || options?.method === 'POST') && options?.body) {
+          const body = JSON.parse(options.body);
+          if (body?.path) writePaths.push(body.path);
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true }),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'new-agent',
+          displayName: 'New Agent',
+        });
+
+      expect(response.status).toBe(201);
+      expect(writePaths.some((p) => p.endsWith('/mosbot.env'))).toBe(false);
+      expect(response.body.data.updatedFiles.some((f) => f.endsWith('/mosbot.env'))).toBe(false);
     });
 
     it('should deny agent role from creating', async () => {
@@ -1366,6 +1433,75 @@ describe('OpenClaw Routes', () => {
 
       expect(response.status).toBe(403);
       expect(response.body.error.code).toBe('INSUFFICIENT_PERMISSIONS');
+    });
+
+    it('should reject invalid rebootstrap agent id format', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config/COO/rebootstrap')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_AGENT_ID');
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('should keep existing active api key and skip mosbot.env rewrite', async () => {
+      const token = getToken('admin-id', 'admin');
+      const writePaths = [];
+
+      pool.query.mockImplementation((sql) => {
+        if (
+          String(sql).includes('FROM agent_api_keys') &&
+          String(sql).includes('revoked_at IS NULL')
+        ) {
+          return Promise.resolve({ rows: [{ id: 'key-existing' }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      global.fetch = jest.fn().mockImplementation(async (url, options) => {
+        if (
+          options?.method === 'GET' &&
+          (String(url).includes('/files/content?path=/openclaw.json') ||
+            String(url).includes('/files/content?path=%2Fopenclaw.json'))
+        ) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              content: JSON.stringify({
+                agents: {
+                  list: [{ id: 'coo', identity: { name: 'COO', theme: 'Operations' } }],
+                },
+              }),
+            }),
+            text: async () => 'OK',
+          };
+        }
+
+        if ((options?.method === 'PUT' || options?.method === 'POST') && options?.body) {
+          const body = JSON.parse(options.body);
+          if (body?.path) writePaths.push(body.path);
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true }),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config/coo/rebootstrap')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(writePaths.some((p) => p.endsWith('/mosbot.env'))).toBe(false);
+      expect(response.body.data.updatedFiles.some((f) => f.endsWith('/mosbot.env'))).toBe(false);
     });
   });
 
