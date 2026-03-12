@@ -47,6 +47,7 @@ jest.mock('../../services/cronJobsService', () => ({
 
 jest.mock('../../services/docsLinkReconciliationService', () => ({
   ensureDocsLinkIfMissing: jest.fn().mockResolvedValue({ action: 'unchanged' }),
+  ensureProjectLinkIfMissing: jest.fn().mockResolvedValue({ action: 'unchanged' }),
 }));
 
 const request = require('supertest');
@@ -64,7 +65,10 @@ const {
 } = require('../../services/openclawGatewayClient');
 const { createCronJob } = require('../../services/cronJobsService');
 const { upsertSessionUsageBatch } = require('../../services/sessionUsageService');
-const { ensureDocsLinkIfMissing } = require('../../services/docsLinkReconciliationService');
+const {
+  ensureDocsLinkIfMissing,
+  ensureProjectLinkIfMissing,
+} = require('../../services/docsLinkReconciliationService');
 const bcrypt = require('bcrypt');
 
 // Helper to get JWT token for a user
@@ -119,8 +123,15 @@ describe('OpenClaw Routes', () => {
     upsertSessionUsageBatch.mockResolvedValue(undefined);
     ensureDocsLinkIfMissing.mockReset();
     ensureDocsLinkIfMissing.mockResolvedValue({ action: 'unchanged' });
+    ensureProjectLinkIfMissing.mockReset();
+    ensureProjectLinkIfMissing.mockResolvedValue({ action: 'unchanged' });
+    pool.query.mockReset();
     pool.query.mockResolvedValue({ rows: [] });
     pool.connect.mockReset();
+    pool.connect.mockResolvedValue({
+      query: jest.fn().mockResolvedValue({ rows: [] }),
+      release: jest.fn(),
+    });
   });
 
   describe('Path normalization and validation', () => {
@@ -735,6 +746,21 @@ describe('OpenClaw Routes', () => {
       expect(response.body.data.leadership.some((l) => l.id === 'orchestrator')).toBe(true);
       expect(response.body.data.leadership.some((l) => l.id === 'main')).toBe(true);
       expect(response.body.data.departments).toEqual([]);
+    });
+
+    it('should filter archived projects from agents/config project assignments query', async () => {
+      const token = getToken('user-id', 'user');
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/agents/config')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      const projectQueryCall = (pool.query.mock.calls || []).find((call) =>
+        String(call[0]).includes('FROM agent_project_assignments'),
+      );
+      expect(projectQueryCall).toBeDefined();
+      expect(String(projectQueryCall[0])).toContain("WHERE p.status = 'active'");
     });
 
     it('should synthesize main leadership when agents.list is empty', async () => {
@@ -2467,6 +2493,810 @@ describe('OpenClaw Routes', () => {
 
       expect(response.status).toBe(503);
       expect(response.body.error.code).toBe('HISTORY_TABLE_UNAVAILABLE');
+    });
+  });
+
+  describe('Project registry and assignments', () => {
+    beforeEach(() => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ action: 'created', state: 'linked' }),
+        text: async () => 'OK',
+      });
+    });
+
+    it('lists projects for authenticated users', async () => {
+      const token = getToken('user-id', 'user');
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: '11111111-1111-1111-1111-111111111111',
+            slug: 'alpha',
+            name: 'Alpha',
+            description: '',
+            root_path: '/projects/alpha',
+            contract_path: '/projects/alpha/agent-contract.md',
+            status: 'active',
+            assigned_agents: 1,
+          },
+        ],
+      });
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/projects')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0].slug).toBe('alpha');
+    });
+
+    it('returns 409 when creating a duplicate project slug', async () => {
+      const token = getToken('admin-id', 'admin');
+      const duplicateError = new Error('duplicate key value violates unique constraint');
+      duplicateError.code = '23505';
+      pool.query.mockRejectedValueOnce(duplicateError);
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Alpha', slug: 'alpha' });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error.code).toBe('PROJECT_EXISTS');
+    });
+
+    it('rejects project creation when name is only whitespace', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: '   ', slug: 'alpha' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('PROJECT_NAME_REQUIRED');
+    });
+
+    it('rejects project update when name is only whitespace', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: '11111111-1111-1111-1111-111111111111',
+            slug: 'alpha',
+            name: 'Alpha',
+            description: '',
+            root_path: '/projects/alpha',
+            contract_path: '/projects/alpha/agent-contract.md',
+            status: 'active',
+          },
+        ],
+      });
+
+      const response = await request(app)
+        .put('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: '   ' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('PROJECT_NAME_REQUIRED');
+    });
+
+    it('rejects project creation when contractPath is outside the project root', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'Alpha',
+          slug: 'alpha',
+          contractPath: '/openclaw.json',
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain('Project contractPath');
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects project update when contractPath is outside the project root', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: '11111111-1111-1111-1111-111111111111',
+            slug: 'alpha',
+            name: 'Alpha',
+            description: '',
+            root_path: '/projects/alpha',
+            contract_path: '/projects/alpha/agent-contract.md',
+            status: 'active',
+          },
+        ],
+      });
+
+      const response = await request(app)
+        .put('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ contractPath: '/docs/agent-contract.md' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain('Project contractPath');
+      expect(pool.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE projects'),
+        expect.any(Array),
+      );
+    });
+
+    it('does not scaffold or link archived projects during creation', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: '11111111-1111-1111-1111-111111111111',
+            slug: 'alpha',
+            name: 'Alpha',
+            description: '',
+            root_path: '/projects/alpha',
+            contract_path: '/projects/alpha/agent-contract.md',
+            status: 'archived',
+          },
+        ],
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Alpha', slug: 'alpha', status: 'archived' });
+
+      expect(response.status).toBe(201);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('reconciles links when project rootPath changes', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: '11111111-1111-1111-1111-111111111111',
+              slug: 'alpha',
+              name: 'Alpha',
+              description: '',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: '11111111-1111-1111-1111-111111111111',
+              slug: 'alpha',
+              name: 'Alpha',
+              description: '',
+              root_path: '/projects/alpha-new',
+              contract_path: '/projects/alpha-new/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ agent_id: 'cto' }],
+        });
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ action: 'created', state: 'linked' }),
+        text: async () => 'OK',
+      });
+
+      const response = await request(app)
+        .put('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ slug: 'alpha-new', rootPath: '/projects/alpha-new' });
+
+      expect(response.status).toBe(200);
+      expect(pool.query).toHaveBeenCalledWith(
+        'SELECT agent_id FROM agent_project_assignments WHERE project_id = $1',
+        ['11111111-1111-1111-1111-111111111111'],
+      );
+
+      const calledUrls = (global.fetch.mock.calls || []).map((call) => String(call[0]));
+      expect(
+        calledUrls.some((url) =>
+          url.includes('/links/project/main?targetPath=%2Fprojects%2Falpha'),
+        ),
+      ).toBe(true);
+      expect(
+        calledUrls.some((url) =>
+          url.includes('/links/project/cto?targetPath=%2Fprojects%2Falpha'),
+        ),
+      ).toBe(true);
+      expect(
+        calledUrls.some((url) =>
+          url.includes('/links/project/main?targetPath=%2Fprojects%2Falpha-new'),
+        ),
+      ).toBe(true);
+      expect(
+        calledUrls.some((url) =>
+          url.includes('/links/project/cto?targetPath=%2Fprojects%2Falpha-new'),
+        ),
+      ).toBe(true);
+      expect(ensureProjectLinkIfMissing).not.toHaveBeenCalled();
+    });
+
+    it('removes main and assigned links when project is archived', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: '11111111-1111-1111-1111-111111111111',
+              slug: 'alpha',
+              name: 'Alpha',
+              description: '',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: '11111111-1111-1111-1111-111111111111',
+              slug: 'alpha',
+              name: 'Alpha',
+              description: '',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'archived',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ agent_id: 'cto' }],
+        });
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ action: 'deleted', state: 'missing' }),
+        text: async () => 'OK',
+      });
+
+      const response = await request(app)
+        .put('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: 'archived' });
+
+      expect(response.status).toBe(200);
+      expect(pool.query).toHaveBeenCalledWith(
+        'SELECT agent_id FROM agent_project_assignments WHERE project_id = $1',
+        ['11111111-1111-1111-1111-111111111111'],
+      );
+
+      const calledUrls = (global.fetch.mock.calls || []).map((call) => String(call[0]));
+      expect(
+        calledUrls.some((url) =>
+          url.includes('/links/project/main?targetPath=%2Fprojects%2Falpha'),
+        ),
+      ).toBe(true);
+      expect(
+        calledUrls.some((url) =>
+          url.includes('/links/project/cto?targetPath=%2Fprojects%2Falpha'),
+        ),
+      ).toBe(true);
+
+      const methods = (global.fetch.mock.calls || []).map((call) => call[1]?.method);
+      expect(methods.every((method) => method === 'DELETE')).toBe(true);
+      expect(ensureProjectLinkIfMissing).not.toHaveBeenCalled();
+    });
+
+    it('repairs main project link when project rootPath remains unchanged', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: '11111111-1111-1111-1111-111111111111',
+              slug: 'alpha',
+              name: 'Alpha',
+              description: '',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: '11111111-1111-1111-1111-111111111111',
+              slug: 'alpha',
+              name: 'Alpha (Updated)',
+              description: '',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        });
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ action: 'created', state: 'linked' }),
+        text: async () => 'OK',
+      });
+
+      const response = await request(app)
+        .put('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Alpha (Updated)' });
+
+      expect(response.status).toBe(200);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/links/project/main?targetPath=%2Fprojects%2Falpha'),
+        expect.any(Object),
+      );
+      expect(ensureProjectLinkIfMissing).not.toHaveBeenCalled();
+    });
+
+    it('rejects project rootPath when it does not match slug', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Alpha', slug: 'alpha', rootPath: '/projects/beta' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain('Project rootPath');
+    });
+
+    it('rejects project update when projectId is not a UUID', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .put('/api/v1/openclaw/projects/not-a-uuid')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Alpha' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_PROJECT_ID');
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects project delete when projectId is not a UUID', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .delete('/api/v1/openclaw/projects/not-a-uuid')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_PROJECT_ID');
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects project assignment when projectId is not a UUID', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects/not-a-uuid/assign-agent')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ agentId: 'cto' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_PROJECT_ID');
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects project unassign when projectId is not a UUID', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .delete('/api/v1/openclaw/projects/not-a-uuid/assign-agent/cto')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_PROJECT_ID');
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects project rootPath when it contains extra segments', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Alpha', slug: 'alpha', rootPath: '/projects/alpha/subdir' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain('exactly /projects/<slug>');
+    });
+
+    it('assigns an agent to an active project and commits before link operations', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{ agent_id: 'cto' }],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: '11111111-1111-1111-1111-111111111111',
+              slug: 'alpha',
+              name: 'Alpha',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        });
+
+      const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
+      const release = jest.fn();
+      pool.connect.mockResolvedValueOnce({ query: clientQuery, release });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111/assign-agent')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ agentId: 'cto' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.agentId).toBe('cto');
+      expect(clientQuery).toHaveBeenCalledWith('BEGIN');
+      expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+      expect(clientQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO agent_project_assignments'),
+        ['cto', '11111111-1111-1111-1111-111111111111', 'contributor', 'admin-id'],
+      );
+      expect(ensureProjectLinkIfMissing).toHaveBeenCalledWith('main', '/projects/alpha');
+      expect(release).toHaveBeenCalled();
+      expect(release.mock.invocationCallOrder[0]).toBeLessThan(global.fetch.mock.invocationCallOrder[0]);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/links/project/cto?targetPath=%2Fprojects%2Falpha'),
+        expect.any(Object),
+      );
+    });
+
+    it('rejects assignment to non-active projects', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{ agent_id: 'cto' }],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: '11111111-1111-1111-1111-111111111111',
+              slug: 'alpha',
+              name: 'Alpha',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'archived',
+            },
+          ],
+        });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111/assign-agent')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ agentId: 'cto' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('PROJECT_NOT_ACTIVE');
+      expect(pool.connect).not.toHaveBeenCalled();
+    });
+
+    it('cleans up assignment when project link ensure fails after commit', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{ agent_id: 'cto' }],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: '11111111-1111-1111-1111-111111111111',
+              slug: 'alpha',
+              name: 'Alpha',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        });
+
+      const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
+      const release = jest.fn();
+      pool.connect.mockResolvedValueOnce({ query: clientQuery, release });
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () => 'workspace link failed',
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111/assign-agent')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ agentId: 'cto' });
+
+      expect(response.status).toBe(500);
+      expect(response.body.error.code).toBe('PROJECT_LINK_FAILED');
+      expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+      expect(clientQuery).not.toHaveBeenCalledWith('ROLLBACK');
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM agent_project_assignments'),
+        ['cto', '11111111-1111-1111-1111-111111111111'],
+      );
+    });
+
+    it('propagates workspace link status when project link ensure fails after commit', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{ agent_id: 'cto' }],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: '11111111-1111-1111-1111-111111111111',
+              slug: 'alpha',
+              name: 'Alpha',
+              root_path: '/projects/alpha',
+              contract_path: '/projects/alpha/agent-contract.md',
+              status: 'active',
+            },
+          ],
+        });
+
+      const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
+      const release = jest.fn();
+      pool.connect.mockResolvedValueOnce({ query: clientQuery, release });
+
+      const linkErr = new Error('workspace conflict');
+      linkErr.status = 409;
+      global.fetch = jest.fn().mockRejectedValueOnce(linkErr);
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111/assign-agent')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ agentId: 'cto' });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error.status).toBe(409);
+      expect(response.body.error.code).toBe('PROJECT_LINK_FAILED');
+      expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM agent_project_assignments'),
+        ['cto', '11111111-1111-1111-1111-111111111111'],
+      );
+    });
+
+    it('rejects invalid assign-agent IDs before DB writes', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111/assign-agent')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ agentId: 'Bad.Agent' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_AGENT_ID');
+      expect(pool.connect).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when assign-agent target is not a known agent', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111/assign-agent')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ agentId: 'cto' });
+
+      expect(response.status).toBe(404);
+      expect(response.body.error.code).toBe('AGENT_NOT_FOUND');
+      expect(pool.connect).not.toHaveBeenCalled();
+    });
+
+    it('returns warnings when delete project link cleanup partially fails', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{ id: '11111111-1111-1111-1111-111111111111', slug: 'alpha', root_path: '/projects/alpha' }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ agent_id: 'cto' }],
+        })
+        .mockResolvedValueOnce({ rows: [] });
+
+      global.fetch = jest.fn().mockImplementation(async (url) => {
+        if (String(url).includes('/links/project/cto?')) {
+          return {
+            ok: false,
+            status: 500,
+            text: async () => 'agent link delete failed',
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ action: 'deleted', state: 'missing' }),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .delete('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.warnings).toHaveLength(1);
+      expect(response.body.data.warnings[0]).toContain('agent cto link cleanup failed');
+    });
+
+    it('rejects unassign when agentId format is invalid before any side effects', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .delete('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111/assign-agent/Bad.Agent')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_AGENT_ID');
+      expect(pool.query).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fails unassign when link deletion fails and keeps assignment untouched', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: '11111111-1111-1111-1111-111111111111', root_path: '/projects/alpha' }],
+      });
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () => 'unlink failed',
+      });
+
+      const response = await request(app)
+        .delete('/api/v1/openclaw/projects/11111111-1111-1111-1111-111111111111/assign-agent/cto')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(500);
+      expect(response.body.error.code).toBe('PROJECT_LINK_DELETE_FAILED');
+      expect(pool.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM agent_project_assignments'),
+        expect.any(Array),
+      );
+    });
+  });
+
+  describe('POST /api/v1/openclaw/agents/config/:agentId/rebootstrap', () => {
+    it('revokes duplicate active API keys during rebootstrap', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      pool.query.mockImplementation(async (sql) => {
+        if (sql.includes('SELECT id') && sql.includes('FROM agent_api_keys')) {
+          return { rows: [{ id: 'active-key-id' }, { id: 'stale-key-id' }] };
+        }
+        if (sql.includes('UPDATE agent_api_keys') && sql.includes('ANY')) {
+          return { rows: [] };
+        }
+        return { rows: [] };
+      });
+
+      global.fetch = jest.fn().mockImplementation(async (_url, options) => {
+        if (options?.method === 'GET') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              content: JSON.stringify({
+                agents: {
+                  list: [
+                    {
+                      id: 'cto',
+                      identity: { name: 'CTO', theme: 'Build systems', emoji: '🛠️' },
+                      model: { primary: 'openrouter/anthropic/claude-sonnet-4.5' },
+                    },
+                  ],
+                },
+              }),
+            }),
+            text: async () => 'OK',
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ created: true }),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config/cto/rebootstrap')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE id = ANY'),
+        [['stale-key-id']],
+      );
+    });
+
+    it('deletes the newly-created key when BOOTSTRAP write fails', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      pool.query.mockImplementation(async (sql) => {
+        if (sql.includes('SELECT id') && sql.includes('FROM agent_api_keys')) {
+          return { rows: [] };
+        }
+        if (sql.includes('INSERT INTO agent_api_keys')) {
+          return { rows: [{ id: 'new-key-id' }] };
+        }
+        if (sql.includes('DELETE FROM agent_api_keys')) {
+          return { rows: [] };
+        }
+        return { rows: [] };
+      });
+
+      global.fetch = jest.fn().mockImplementation(async (_url, options) => {
+        if (options?.method === 'GET') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              content: JSON.stringify({
+                agents: { list: [{ id: 'cto', identity: { name: 'CTO' } }] },
+              }),
+            }),
+            text: async () => 'OK',
+          };
+        }
+        let bodyPath = '';
+        try {
+          const parsed = JSON.parse(options?.body || '{}');
+          bodyPath = String(parsed.path || '');
+        } catch (_err) {
+          bodyPath = '';
+        }
+        if (bodyPath.endsWith('/BOOTSTRAP.md')) {
+          return {
+            ok: false,
+            status: 500,
+            text: async () => 'workspace write failed',
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ created: true }),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config/cto/rebootstrap')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(500);
+      expect(pool.query).toHaveBeenCalledWith(
+        'DELETE FROM agent_api_keys WHERE id = $1',
+        ['new-key-id'],
+      );
     });
   });
 

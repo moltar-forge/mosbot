@@ -1,3 +1,4 @@
+const { URLSearchParams } = require('url');
 const config = require('../config');
 const logger = require('../utils/logger');
 
@@ -235,40 +236,58 @@ async function putFileContent(path, content, encoding = 'utf8') {
 
 /**
  * Get workspace link state for a type/agent target
- * @param {string} type - Link type (currently "docs")
+ * @param {string} type - Link type ("docs" or "project")
  * @param {string} agentId - Agent ID or "main"
+ * @param {Object} options - Optional query args
+ * @param {string} [options.targetPath] - Required for type="project"
  * @returns {Promise<Object>} Link state payload
  */
-async function getWorkspaceLink(type, agentId) {
+async function getWorkspaceLink(type, agentId, options = {}) {
+  const query = new URLSearchParams();
+  if (options.targetPath) query.set('targetPath', options.targetPath);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+
   return makeOpenClawRequest(
     'GET',
-    `/links/${encodeURIComponent(type)}/${encodeURIComponent(agentId)}`,
+    `/links/${encodeURIComponent(type)}/${encodeURIComponent(agentId)}${suffix}`,
   );
 }
 
 /**
  * Ensure workspace link exists for a type/agent target
- * @param {string} type - Link type (currently "docs")
+ * @param {string} type - Link type ("docs" or "project")
  * @param {string} agentId - Agent ID or "main"
+ * @param {Object} options - Optional query args
+ * @param {string} [options.targetPath] - Required for type="project"
  * @returns {Promise<Object>} Link ensure payload
  */
-async function ensureWorkspaceLink(type, agentId) {
+async function ensureWorkspaceLink(type, agentId, options = {}) {
+  const query = new URLSearchParams();
+  if (options.targetPath) query.set('targetPath', options.targetPath);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+
   return makeOpenClawRequest(
     'PUT',
-    `/links/${encodeURIComponent(type)}/${encodeURIComponent(agentId)}`,
+    `/links/${encodeURIComponent(type)}/${encodeURIComponent(agentId)}${suffix}`,
   );
 }
 
 /**
  * Delete managed workspace link for a type/agent target
- * @param {string} type - Link type (currently "docs")
+ * @param {string} type - Link type ("docs" or "project")
  * @param {string} agentId - Agent ID or "main"
+ * @param {Object} options - Optional query args
+ * @param {string} [options.targetPath] - Required for type="project"
  * @returns {Promise<Object>} Link delete payload
  */
-async function deleteWorkspaceLink(type, agentId) {
+async function deleteWorkspaceLink(type, agentId, options = {}) {
+  const query = new URLSearchParams();
+  if (options.targetPath) query.set('targetPath', options.targetPath);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+
   return makeOpenClawRequest(
     'DELETE',
-    `/links/${encodeURIComponent(type)}/${encodeURIComponent(agentId)}`,
+    `/links/${encodeURIComponent(type)}/${encodeURIComponent(agentId)}${suffix}`,
   );
 }
 

@@ -34,6 +34,9 @@ For application-level changes, see the changelogs in the respective repositories
   subagentsRuntimeService), and utilities (configParser, jwt, logger)
 - `.claude/` project rules and configuration (CLAUDE.md + rules for architecture, contributing,
   openclaw, security, testing)
+- Project registry + assignment API (create/update/list/delete projects, assign/unassign agents)
+- Project link lifecycle in workspace service (`type=project`, `targetPath=/projects/<slug>`)
+- Startup/project-operation reconciliation now maintains project links (including main workspace)
 
 #### Changed
 
@@ -77,6 +80,8 @@ For application-level changes, see the changelogs in the respective repositories
 - `.gitignore` updated to exclude additional generated files
 - Dashboard docs now consistently refer to the **Agents** page (legacy Org Chart wording removed)
 - Workspace docs clarified that dashboard page loads do not trigger docs-link write operations
+- Projects page upgraded from file browser-only to project registry + agent assignment UI
+- Agents page now shows project badges and re-bootstrap action guidance
 - Updated Agents/Workspaces docs to reflect current create/re-bootstrap UX and in-progress
   visibility behavior
 

@@ -42,6 +42,23 @@ docs/                    ← shared documentation
 projects/                ← shared project files
 ```
 
+With project assignment enabled, agents also get per-project links inside their own workspace:
+
+```text
+workspace-cc-api/
+└── projects/
+    ├── chaos-codex -> ../../projects/chaos-codex
+    └── chaos-lab   -> ../../projects/chaos-lab
+```
+
+Main workspace also receives project links:
+
+```text
+workspace/
+└── projects/
+    └── <project-slug> -> ../../projects/<project-slug>
+```
+
 The `tools/*`, `TOOLS.md`, and `BOOTSTRAP.md` files are seeded by MosBot during agent create and
 re-bootstrap flows.
 

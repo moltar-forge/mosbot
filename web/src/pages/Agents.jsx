@@ -273,10 +273,10 @@ export default function Agents() {
         <div
           className={`bg-gradient-to-br ${bgColor} border-2 ${borderColor} rounded-xl ${large ? 'p-7' : 'p-5'} shadow-lg hover:shadow-xl transition-all h-full`}
         >
-          <div className="flex items-start justify-between gap-3 mb-3">
-            <div className="flex-1 min-w-0">
-              {leader.title && (
-                <div className="flex items-center gap-2 mb-2">
+          <div className="mb-3">
+            <div className="flex items-start justify-between gap-2 mb-2">
+              {leader.title ? (
+                <div className="flex items-center gap-2">
                   <div className="p-1.5 bg-dark-800/50 rounded">
                     <UserGroupIcon className="w-4 h-4 text-dark-300" />
                   </div>
@@ -284,46 +284,66 @@ export default function Agents() {
                     {leader.title}
                   </span>
                 </div>
+              ) : (
+                <div />
               )}
-              <h3 className={`${large ? 'text-xl' : 'text-lg'} font-bold text-dark-50 mb-1`}>
-                {leader.emoji && <span className="mr-2">{leader.emoji}</span>}
-                {leader.displayName || leader.label}
-              </h3>
+              <div className="flex items-center gap-2">
+                {leader.isDefault && (
+                  <span className="px-2 py-0.5 bg-primary-600/20 text-primary-300 border border-primary-500/30 rounded text-[10px] font-semibold uppercase tracking-wide">
+                    Default
+                  </span>
+                )}
+                {canEdit && (
+                  <>
+                    <button
+                      onClick={() => handleRebootstrapAgent(leader.id)}
+                      disabled={Boolean(rebootstrappingByAgentId[leader.id])}
+                      aria-label={`Re-bootstrap ${leader.displayName || leader.label}`}
+                      aria-busy={Boolean(rebootstrappingByAgentId[leader.id])}
+                      className={`transition-opacity h-[21px] px-1.5 bg-dark-800/70 hover:bg-dark-700 rounded border border-dark-600 hover:border-dark-500 flex items-center justify-center disabled:opacity-50 ${
+                        rebootstrappingByAgentId[leader.id]
+                          ? 'opacity-100'
+                          : 'opacity-0 group-hover:opacity-100'
+                      }`}
+                      title="Re-bootstrap agent"
+                    >
+                      <ArrowPathIcon
+                        aria-hidden="true"
+                        className={`w-3 h-3 text-dark-300 ${
+                          rebootstrappingByAgentId[leader.id] ? 'animate-spin' : ''
+                        }`}
+                      />
+                    </button>
+                    <button
+                      onClick={() => handleEditAgent(leader.id)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity h-[21px] px-1.5 bg-dark-800/70 hover:bg-dark-700 rounded border border-dark-600 hover:border-dark-500 flex items-center justify-center"
+                      title="Edit agent"
+                    >
+                      <PencilIcon className="w-3 h-3 text-dark-300" />
+                    </button>
+                  </>
+                )}
+                <StatusBadge status={status} />
+              </div>
             </div>
-            <div className="flex items-center gap-2 ml-auto">
-              {leader.isDefault && (
-                <span className="px-2 py-0.5 bg-primary-600/20 text-primary-300 border border-primary-500/30 rounded text-[10px] font-semibold uppercase tracking-wide">
-                  Default
-                </span>
-              )}
-              {canEdit && (
-                <>
-                  <button
-                    onClick={() => handleRebootstrapAgent(leader.id)}
-                    disabled={Boolean(rebootstrappingByAgentId[leader.id])}
-                    aria-label={`Re-bootstrap ${leader.displayName || leader.label}`}
-                    aria-busy={Boolean(rebootstrappingByAgentId[leader.id])}
-                    className={`transition-opacity h-[21px] px-1.5 bg-dark-800/70 hover:bg-dark-700 rounded border border-dark-600 hover:border-dark-500 flex items-center justify-center disabled:opacity-50 ${
-                      rebootstrappingByAgentId[leader.id] ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                    }`}
-                    title="Re-bootstrap agent"
+
+            <h3 className={`${large ? 'text-xl' : 'text-lg'} font-bold text-dark-50 mb-1`}>
+              {leader.emoji && <span className="mr-2">{leader.emoji}</span>}
+              {leader.displayName || leader.label}
+            </h3>
+
+            {Array.isArray(leader.projects) && leader.projects.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1">
+                {leader.projects.map((p) => (
+                  <span
+                    key={`${leader.id}-${p.id}`}
+                    className="px-2 py-0.5 bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 rounded text-[10px] font-semibold uppercase tracking-wide"
                   >
-                    <ArrowPathIcon
-                      aria-hidden="true"
-                      className={`w-3 h-3 text-dark-300 ${rebootstrappingByAgentId[leader.id] ? 'animate-spin' : ''}`}
-                    />
-                  </button>
-                  <button
-                    onClick={() => handleEditAgent(leader.id)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity h-[21px] px-1.5 bg-dark-800/70 hover:bg-dark-700 rounded border border-dark-600 hover:border-dark-500 flex items-center justify-center"
-                    title="Edit agent"
-                  >
-                    <PencilIcon className="w-3 h-3 text-dark-300" />
-                  </button>
-                </>
-              )}
-              <StatusBadge status={status} />
-            </div>
+                    {p.slug}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <p className={`${large ? 'text-sm' : 'text-xs'} text-dark-300 leading-relaxed mb-3`}>
             {leader.description}

@@ -282,6 +282,111 @@ describe("Typed docs link API", () => {
     expect(res.body.error).toBe("unlink failed");
   });
 
+  it("GET /links/project/main requires targetPath to be /projects/<slug>", async () => {
+    const noTarget = await request(app).get("/links/project/main");
+    expect(noTarget.status).toBe(400);
+    expect(noTarget.body.code).toBe("INVALID_PROJECT_TARGET_PATH");
+
+    const badTarget = await request(app).get("/links/project/main?targetPath=/docs");
+    expect(badTarget.status).toBe(400);
+    expect(badTarget.body.code).toBe("INVALID_PROJECT_TARGET_PATH");
+
+    const nestedTarget = await request(app).get(
+      "/links/project/main?targetPath=/projects/chaos-codex/subdir",
+    );
+    expect(nestedTarget.status).toBe(400);
+    expect(nestedTarget.body.code).toBe("INVALID_PROJECT_TARGET_PATH");
+
+    const traversalTarget = await request(app).get(
+      "/links/project/main?targetPath=/projects/chaos-codex/../other",
+    );
+    expect(traversalTarget.status).toBe(400);
+    expect(traversalTarget.body.code).toBe("INVALID_PROJECT_TARGET_PATH");
+  });
+
+  it("GET /links/project/main rejects invalid project slug in target path", async () => {
+    const res = await request(app).get(
+      "/links/project/main?targetPath=/projects/Bad.Slug",
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("INVALID_PROJECT_TARGET_PATH");
+  });
+
+  it("GET /links/project/main reports missing with project link virtual path", async () => {
+    const res = await request(app).get(
+      "/links/project/main?targetPath=/projects/chaos-codex",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      type: "project",
+      agentId: "main",
+      workspaceVirtualPath: "/workspace",
+      linkVirtualPath: "/workspace/projects/chaos-codex",
+      targetVirtualPath: "/projects/chaos-codex",
+      state: "missing",
+    });
+  });
+
+  it("PUT /links/project/cto creates nested project symlink", async () => {
+    const res = await request(app).put(
+      "/links/project/cto?targetPath=/projects/chaos-codex",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.action).toBe("created");
+    expect(res.body.state).toBe("linked");
+
+    const linkPath = path.join(configRoot, "workspace-cto", "projects", "chaos-codex");
+    const target = await fs.readlink(linkPath);
+    expect(target).toBe("../../projects/chaos-codex");
+  });
+
+  it("PUT /links/project/cto self-heals wrong symlink target", async () => {
+    await fs.mkdir(path.join(configRoot, "workspace-cto", "projects"), {
+      recursive: true,
+    });
+    await fs.mkdir(path.join(configRoot, "projects", "elsewhere"), { recursive: true });
+    await fs.symlink(
+      "../../projects/elsewhere",
+      path.join(configRoot, "workspace-cto", "projects", "chaos-codex"),
+    );
+
+    const res = await request(app).put(
+      "/links/project/cto?targetPath=/projects/chaos-codex",
+    );
+    expect(res.status).toBe(200);
+    expect(["created", "unchanged"]).toContain(res.body.action);
+
+    const target = await fs.readlink(
+      path.join(configRoot, "workspace-cto", "projects", "chaos-codex"),
+    );
+    expect(target).toBe("../../projects/chaos-codex");
+  });
+
+  it("PUT /links/project/cto returns 409 when self-heal unlink fails", async () => {
+    await fs.mkdir(path.join(configRoot, "workspace-cto", "projects"), {
+      recursive: true,
+    });
+    await fs.mkdir(path.join(configRoot, "projects", "elsewhere"), { recursive: true });
+    const badLink = path.join(configRoot, "workspace-cto", "projects", "chaos-codex");
+    await fs.symlink("../../projects/elsewhere", badLink);
+
+    const originalUnlink = fsPromises.unlink.bind(fsPromises);
+    jest.spyOn(fsPromises, "unlink").mockImplementation(async (targetPath, ...args) => {
+      if (String(targetPath) === badLink) {
+        const error = new Error("unlink denied");
+        error.code = "EACCES";
+        throw error;
+      }
+      return originalUnlink(targetPath, ...args);
+    });
+
+    const res = await request(app).put(
+      "/links/project/cto?targetPath=/projects/chaos-codex",
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("LINK_CONFLICT");
+  });
+
   it("legacy /symlinks/ensure endpoint is removed", async () => {
     const res = await request(app).post("/symlinks/ensure");
     expect(res.status).toBe(404);

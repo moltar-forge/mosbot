@@ -72,6 +72,7 @@ const sidebars = {
         'features/task-management',
         'features/agents',
         'features/workspaces',
+        'features/projects',
         'features/standups',
         'features/scheduler',
       ],

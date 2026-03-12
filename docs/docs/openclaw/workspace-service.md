@@ -134,15 +134,25 @@ per-agent endpoints:
 
 Current contract:
 
-- `type` supports `docs` only
+- `type` supports:
+  - `docs`
+  - `project` (requires query param `targetPath=/projects/<slug>`)
 - `agentId=main` maps to `MAIN_WORKSPACE_DIR`
 - Other `agentId` values map to `workspace-<agentId>`
 - Invalid `type` returns `400 LINK_TYPE_UNSUPPORTED`
 - Invalid `agentId` returns `400 INVALID_AGENT_ID`
+- Invalid `project` target path returns `400 INVALID_PROJECT_TARGET_PATH`
 - Link conflicts return `409 LINK_CONFLICT`
 
-MosBot API reconciles docs links server-side (startup + agent create/update) and only writes when
-missing. Dashboard page loads do not trigger link writes.
+Project links are created as:
+
+```text
+/workspace-<agentId>/projects/<slug> -> ../../projects/<slug>
+/workspace/projects/<slug>           -> ../../projects/<slug>
+```
+
+MosBot API reconciles links server-side on startup and during agent/project operations. Dashboard
+page loads do not trigger direct link writes.
 
 ## API endpoints (via MosBot API)
 

@@ -8,12 +8,19 @@ const logger = require('../utils/logger');
 const path = require('path');
 const pool = require('../db/pool');
 const { requireAdmin, requireManageUsers } = require('./auth');
-const { makeOpenClawRequest } = require('../services/openclawWorkspaceClient');
+const {
+  makeOpenClawRequest,
+  ensureWorkspaceLink,
+  deleteWorkspaceLink,
+} = require('../services/openclawWorkspaceClient');
 const { estimateCostFromTokens } = require('../services/modelPricingService');
 const { recordActivityLogEventSafe } = require('../services/activityLogService');
 const { parseOpenClawConfig } = require('../utils/configParser');
 const { getJwtSecret } = require('../utils/jwt');
-const { ensureDocsLinkIfMissing } = require('../services/docsLinkReconciliationService');
+const {
+  ensureDocsLinkIfMissing,
+  ensureProjectLinkIfMissing,
+} = require('../services/docsLinkReconciliationService');
 const { gatewayWsRpc, invokeTool } = require('../services/openclawGatewayClient');
 
 const BUILTIN_OPENCLAW_REMAP_PREFIXES = [
@@ -26,6 +33,7 @@ const MAIN_WORKSPACE_REMAP_PREFIXES = new Set([
   '/home/node/.openclaw/workspace',
   '/~/.openclaw/workspace',
 ]);
+const AGENT_ID_INPUT_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 // Auth middleware - require valid JWT
 const requireAuth = (req, res, next) => {
@@ -67,9 +75,14 @@ function generateApiKey() {
 }
 
 const AGENT_ID_REGEX = /^[a-z0-9_-]+$/;
+const PROJECT_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isValidAgentId(agentId) {
   return typeof agentId === 'string' && AGENT_ID_REGEX.test(agentId);
+}
+
+function isValidProjectId(projectId) {
+  return typeof projectId === 'string' && PROJECT_ID_REGEX.test(projectId);
 }
 
 async function getOrCreateSingleAgentApiKey({ agentId, createdByUserId, label }) {
@@ -690,6 +703,63 @@ function normalizeAgentIdForPath(agentId) {
     .replace(/[^a-z0-9_-]/g, '-');
 }
 
+function normalizeProjectSlug(input) {
+  return String(input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/^[^a-z0-9]+/, '');
+}
+
+function normalizeProjectRootPath(inputPath, slug) {
+  const normalizedSlug = normalizeProjectSlug(slug);
+  const normalized = normalizeAndValidateWorkspacePath(inputPath || `/projects/${normalizedSlug}`);
+  const expected = `/projects/${normalizedSlug}`;
+
+  if (normalized !== expected) {
+    const err = new Error('Project rootPath must be exactly /projects/<slug>');
+    err.status = 400;
+    err.code = 'INVALID_PROJECT_ROOT_PATH';
+    throw err;
+  }
+
+  return normalized;
+}
+
+function normalizeProjectContractPath(inputPath, rootPath) {
+  const normalized = normalizeAndValidateWorkspacePath(inputPath || `${rootPath}/agent-contract.md`);
+  if (!normalized.startsWith(`${rootPath}/`)) {
+    const err = new Error('Project contractPath must be under project rootPath');
+    err.status = 400;
+    err.code = 'INVALID_PROJECT_CONTRACT_PATH';
+    throw err;
+  }
+
+  return normalized;
+}
+
+async function ensureProjectLink(agentId, projectRootPath) {
+  return ensureWorkspaceLink('project', agentId, { targetPath: projectRootPath });
+}
+
+async function deleteProjectLink(agentId, projectRootPath) {
+  return deleteWorkspaceLink('project', agentId, { targetPath: projectRootPath });
+}
+
+async function getAssignedProjectsForAgent(agentId) {
+  const result = await pool.query(
+    `SELECT p.id, p.slug, p.name, p.root_path, p.contract_path
+       FROM agent_project_assignments apa
+       JOIN projects p ON p.id = apa.project_id
+      WHERE apa.agent_id = $1
+        AND p.status = 'active'
+      ORDER BY p.slug ASC`,
+    [agentId],
+  );
+  return result.rows || [];
+}
+
 function normalizeAndValidateWorkspacePath(inputPath) {
   const raw = typeof inputPath === 'string' && inputPath.trim() ? inputPath.trim() : '/';
   const asPosix = raw.replace(/\\/g, '/');
@@ -1297,6 +1367,518 @@ function getNextPurgeTime() {
   return new Date(nextPurge.getTime() - sgOffset * 60 * 1000).toISOString();
 }
 
+// GET /api/v1/openclaw/projects
+// List project registry and assignment counts (admin/owner/agent read)
+router.get('/projects', requireAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT p.id, p.slug, p.name, p.description, p.root_path, p.contract_path, p.status,
+              p.created_at, p.updated_at,
+              COUNT(apa.agent_id)::int AS assigned_agents
+         FROM projects p
+         LEFT JOIN agent_project_assignments apa ON apa.project_id = p.id
+        GROUP BY p.id
+        ORDER BY p.slug ASC`,
+    );
+
+    res.json({ data: result.rows || [] });
+  } catch (error) {
+    if (error.code === '42P01') {
+      return res.json({ data: [] });
+    }
+    next(error);
+  }
+});
+
+// POST /api/v1/openclaw/projects
+// Create project registry entry (admin/owner only)
+router.post('/projects', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const slug = normalizeProjectSlug(body.slug || body.name);
+
+    if (!slug) {
+      return res.status(400).json({
+        error: { message: 'slug (or name) is required', status: 400, code: 'PROJECT_SLUG_REQUIRED' },
+      });
+    }
+
+    const name = String(body.name || slug).trim();
+    if (!name) {
+      return res.status(400).json({
+        error: { message: 'name must not be empty', status: 400, code: 'PROJECT_NAME_REQUIRED' },
+      });
+    }
+    const rootPath = normalizeProjectRootPath(body.rootPath, slug);
+    const contractPath = normalizeProjectContractPath(body.contractPath, rootPath);
+
+    const result = await pool.query(
+      `INSERT INTO projects (slug, name, description, root_path, contract_path, status, created_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, slug, name, description, root_path, contract_path, status, created_at, updated_at`,
+      [
+        slug,
+        name,
+        body.description || '',
+        rootPath,
+        contractPath,
+        body.status === 'archived' ? 'archived' : 'active',
+        req.user.id,
+      ],
+    );
+
+    // Only active projects should be scaffolded and linked into workspaces.
+    if (result.rows[0]?.status === 'active') {
+      try {
+        await upsertWorkspaceFile(`${rootPath}/.keep`, '');
+        const defaultContract = `# Agent Contract — ${name}\n\n- Branch naming: feat/cc-<scope> | fix/cc-<scope>\n- Handoff must include: changed files, tests+results, risks, assumptions\n- Done: local tests pass; regenerate API types/contracts when touched\n`;
+        await upsertWorkspaceFile(contractPath, defaultContract);
+
+        // Main should always have links to all project roots.
+        await ensureProjectLink('main', rootPath);
+      } catch (workspaceErr) {
+        logger.warn('Project root scaffold failed (non-fatal)', {
+          slug,
+          error: workspaceErr.message,
+        });
+      }
+    }
+
+    res.status(201).json({ data: result.rows[0] });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({
+        error: { message: 'Project slug already exists', status: 409, code: 'PROJECT_EXISTS' },
+      });
+    }
+    next(error);
+  }
+});
+
+// PUT /api/v1/openclaw/projects/:projectId
+// Update project metadata (admin/owner only)
+router.put('/projects/:projectId', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const body = req.body || {};
+
+    if (!isValidProjectId(projectId)) {
+      return res.status(400).json({
+        error: { message: 'Invalid projectId format', status: 400, code: 'INVALID_PROJECT_ID' },
+      });
+    }
+
+    const currentResult = await pool.query('SELECT * FROM projects WHERE id = $1', [projectId]);
+    const current = currentResult.rows[0];
+    if (!current) {
+      return res.status(404).json({
+        error: { message: 'Project not found', status: 404, code: 'PROJECT_NOT_FOUND' },
+      });
+    }
+
+    const slug = body.slug ? normalizeProjectSlug(body.slug) : current.slug;
+    const name = body.name ? String(body.name).trim() : current.name;
+    if (body.name !== undefined && !name) {
+      return res.status(400).json({
+        error: { message: 'name must not be empty', status: 400, code: 'PROJECT_NAME_REQUIRED' },
+      });
+    }
+    const rootPath = normalizeProjectRootPath(body.rootPath || current.root_path, slug);
+    const contractPath = body.contractPath
+      ? normalizeProjectContractPath(body.contractPath, rootPath)
+      : body.rootPath || body.slug
+        ? normalizeProjectContractPath(null, rootPath)
+        : current.contract_path;
+
+    const result = await pool.query(
+      `UPDATE projects
+          SET slug = $2,
+              name = $3,
+              description = $4,
+              root_path = $5,
+              contract_path = $6,
+              status = $7,
+              updated_at = NOW()
+        WHERE id = $1
+      RETURNING id, slug, name, description, root_path, contract_path, status, created_at, updated_at`,
+      [
+        projectId,
+        slug,
+        name,
+        body.description ?? current.description,
+        rootPath,
+        contractPath,
+        body.status === 'archived' ? 'archived' : body.status === 'active' ? 'active' : current.status,
+      ],
+    );
+
+    const oldRootPath = current.root_path;
+    const projectRootChanged = oldRootPath !== rootPath;
+    const oldStatus = current.status;
+    const newStatus = result.rows[0]?.status || current.status;
+    const archivedNow = newStatus === 'archived';
+    const justArchived = oldStatus !== 'archived' && archivedNow;
+    const needsAgentAssignments = projectRootChanged || justArchived;
+
+    let assignedAgentIds = [];
+    if (needsAgentAssignments) {
+      let assignmentRows = { rows: [] };
+      try {
+        assignmentRows = await pool.query(
+          'SELECT agent_id FROM agent_project_assignments WHERE project_id = $1',
+          [projectId],
+        );
+      } catch (assignmentErr) {
+        logger.warn('Failed to load project assignments after project root update (non-fatal)', {
+          projectId,
+          error: assignmentErr.message,
+        });
+      }
+
+      assignedAgentIds = (assignmentRows.rows || [])
+        .map((row) => row.agent_id)
+        .filter(Boolean);
+    }
+
+    if (justArchived) {
+      const pathsToCleanup = [...new Set([oldRootPath, rootPath].filter(Boolean))];
+      const agentsToCleanup = ['main', ...assignedAgentIds];
+
+      for (const cleanupPath of pathsToCleanup) {
+        for (const targetAgentId of agentsToCleanup) {
+          try {
+            await deleteProjectLink(targetAgentId, cleanupPath);
+          } catch (cleanupErr) {
+            logger.warn('Failed to remove project link while archiving project (non-fatal)', {
+              projectId,
+              targetAgentId,
+              cleanupPath,
+              error: cleanupErr.message,
+            });
+          }
+        }
+      }
+    } else if (projectRootChanged) {
+      const agentsToReconcile = ['main', ...assignedAgentIds];
+
+      for (const targetAgentId of agentsToReconcile) {
+        try {
+          await deleteProjectLink(targetAgentId, oldRootPath);
+        } catch (cleanupErr) {
+          logger.warn('Failed to remove old project link after project root update (non-fatal)', {
+            projectId,
+            targetAgentId,
+            oldRootPath,
+            error: cleanupErr.message,
+          });
+        }
+      }
+
+      for (const targetAgentId of agentsToReconcile) {
+        try {
+          await ensureProjectLink(targetAgentId, rootPath);
+        } catch (linkErr) {
+          logger.warn('Failed to ensure new project link after project root update (non-fatal)', {
+            projectId,
+            targetAgentId,
+            rootPath,
+            error: linkErr.message,
+          });
+        }
+      }
+    } else {
+      try {
+        await ensureProjectLink('main', rootPath);
+      } catch (linkErr) {
+        logger.warn('Failed to ensure main project link after project update (non-fatal)', {
+          projectId,
+          rootPath,
+          error: linkErr.message,
+        });
+      }
+    }
+
+    res.json({ data: result.rows[0] });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({
+        error: { message: 'Project slug already exists', status: 409, code: 'PROJECT_EXISTS' },
+      });
+    }
+    next(error);
+  }
+});
+
+// DELETE /api/v1/openclaw/projects/:projectId
+// Delete project registry entry and cleanup project links
+router.delete('/projects/:projectId', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+
+    if (!isValidProjectId(projectId)) {
+      return res.status(400).json({
+        error: { message: 'Invalid projectId format', status: 400, code: 'INVALID_PROJECT_ID' },
+      });
+    }
+
+    const projectResult = await pool.query(
+      'SELECT id, slug, root_path FROM projects WHERE id = $1',
+      [projectId],
+    );
+    const project = projectResult.rows[0];
+    if (!project) {
+      return res.status(404).json({
+        error: { message: 'Project not found', status: 404, code: 'PROJECT_NOT_FOUND' },
+      });
+    }
+
+    const assignmentRows = await pool.query(
+      'SELECT agent_id FROM agent_project_assignments WHERE project_id = $1',
+      [project.id],
+    );
+
+    const warnings = [];
+
+    // Remove per-agent project links (best effort)
+    for (const row of assignmentRows.rows || []) {
+      try {
+        await deleteProjectLink(row.agent_id, project.root_path);
+      } catch (linkErr) {
+        warnings.push(`agent ${row.agent_id} link cleanup failed: ${linkErr.message}`);
+      }
+    }
+
+    // Remove main project link too (best effort)
+    try {
+      await deleteProjectLink('main', project.root_path);
+    } catch (mainLinkErr) {
+      warnings.push(`main link cleanup failed: ${mainLinkErr.message}`);
+    }
+
+    await pool.query('DELETE FROM projects WHERE id = $1', [project.id]);
+
+    res.json({
+      data: {
+        id: project.id,
+        slug: project.slug,
+        removedAssignments: (assignmentRows.rows || []).length,
+        warnings,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/v1/openclaw/projects/:projectId/assign-agent
+// Assign one agent to a project and ensure workspace /projects/<slug> symlink
+router.post('/projects/:projectId/assign-agent', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const { agentId, role } = req.body || {};
+
+    if (!isValidProjectId(projectId)) {
+      return res.status(400).json({
+        error: { message: 'Invalid projectId format', status: 400, code: 'INVALID_PROJECT_ID' },
+      });
+    }
+
+    if (!agentId) {
+      return res.status(400).json({
+        error: { message: 'agentId is required', status: 400, code: 'AGENT_ID_REQUIRED' },
+      });
+    }
+
+    const normalizedAgentId = String(agentId).trim();
+    if (!AGENT_ID_INPUT_PATTERN.test(normalizedAgentId)) {
+      return res.status(400).json({
+        error: { message: 'Invalid agentId format', status: 400, code: 'INVALID_AGENT_ID' },
+      });
+    }
+
+    const agentResult = await pool.query('SELECT agent_id FROM agents WHERE agent_id = $1', [
+      normalizedAgentId,
+    ]);
+    if (!agentResult.rows[0]) {
+      return res.status(404).json({
+        error: { message: 'Agent not found', status: 404, code: 'AGENT_NOT_FOUND' },
+      });
+    }
+
+    const projectResult = await pool.query(
+      'SELECT id, slug, name, root_path, contract_path, status FROM projects WHERE id = $1',
+      [projectId],
+    );
+    const project = projectResult.rows[0];
+    if (!project) {
+      return res.status(404).json({
+        error: { message: 'Project not found', status: 404, code: 'PROJECT_NOT_FOUND' },
+      });
+    }
+
+    if (project.status !== 'active') {
+      return res.status(400).json({
+        error: {
+          message: 'Cannot assign agent to a non-active project',
+          status: 400,
+          code: 'PROJECT_NOT_ACTIVE',
+        },
+      });
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      await client.query(
+        `INSERT INTO agent_project_assignments (agent_id, project_id, role, assigned_by_user_id)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (agent_id, project_id)
+         DO UPDATE SET role = EXCLUDED.role,
+                       assigned_by_user_id = EXCLUDED.assigned_by_user_id,
+                       updated_at = NOW()`,
+        [normalizedAgentId, project.id, role || 'contributor', req.user.id],
+      );
+
+      await client.query('COMMIT');
+    } catch (assignError) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        logger.error('Failed to rollback assign-agent transaction', {
+          agentId: normalizedAgentId,
+          projectId: project.id,
+          error: rollbackErr.message,
+        });
+      }
+      throw assignError;
+    } finally {
+      client.release();
+    }
+
+    try {
+      await ensureProjectLinkIfMissing('main', project.root_path);
+      await ensureProjectLink(normalizedAgentId, project.root_path);
+    } catch (linkErr) {
+      // Compensate committed assignment if link setup fails after transaction commit.
+      let cleanupFailed = false;
+      try {
+        await pool.query('DELETE FROM agent_project_assignments WHERE agent_id = $1 AND project_id = $2', [
+          normalizedAgentId,
+          project.id,
+        ]);
+      } catch (cleanupErr) {
+        cleanupFailed = true;
+        logger.error('Failed to cleanup assignment after project link setup failure', {
+          agentId: normalizedAgentId,
+          projectId: project.id,
+          error: cleanupErr.message,
+        });
+      }
+
+      const status =
+        linkErr && typeof linkErr.status === 'number' && linkErr.status >= 400 && linkErr.status <= 599
+          ? linkErr.status
+          : 500;
+
+      return res.status(status).json({
+        error: {
+          message: cleanupFailed
+            ? `Failed to assign agent to project due to link setup failure, and cleanup also failed: ${linkErr.message}`
+            : `Failed to assign agent to project due to link setup failure: ${linkErr.message}`,
+          status,
+          code: 'PROJECT_LINK_FAILED',
+        },
+      });
+    }
+
+    res.json({
+      data: {
+        agentId: normalizedAgentId,
+        project: {
+          id: project.id,
+          slug: project.slug,
+          name: project.name,
+          rootPath: project.root_path,
+          contractPath: project.contract_path,
+        },
+        message: 'Agent assigned to project',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE /api/v1/openclaw/projects/:projectId/assign-agent/:agentId
+// Unassign agent and remove /projects/<slug> symlink for the assignment
+router.delete(
+  '/projects/:projectId/assign-agent/:agentId',
+  requireAuth,
+  requireAdmin,
+  async (req, res, next) => {
+    try {
+      const { projectId, agentId } = req.params;
+      const normalizedAgentId = String(agentId || '').trim();
+
+      if (!isValidProjectId(projectId)) {
+        return res.status(400).json({
+          error: { message: 'Invalid projectId format', status: 400, code: 'INVALID_PROJECT_ID' },
+        });
+      }
+      if (!normalizedAgentId) {
+        return res.status(400).json({
+          error: { message: 'agentId is required', status: 400, code: 'AGENT_ID_REQUIRED' },
+        });
+      }
+      if (!AGENT_ID_INPUT_PATTERN.test(normalizedAgentId)) {
+        return res.status(400).json({
+          error: { message: 'Invalid agentId format', status: 400, code: 'INVALID_AGENT_ID' },
+        });
+      }
+
+      const projectResult = await pool.query(
+        'SELECT id, root_path FROM projects WHERE id = $1',
+        [projectId],
+      );
+      const project = projectResult.rows[0];
+      if (!project) {
+        return res.status(404).json({
+          error: { message: 'Project not found', status: 404, code: 'PROJECT_NOT_FOUND' },
+        });
+      }
+
+      try {
+        await deleteProjectLink(normalizedAgentId, project.root_path);
+      } catch (linkErr) {
+        logger.error('Failed to delete project link before unassign', {
+          projectId,
+          agentId: normalizedAgentId,
+          error: linkErr.message,
+        });
+
+        return res.status(500).json({
+          error: {
+            message: `Failed to remove project link before unassigning agent: ${linkErr.message}`,
+            status: 500,
+            code: 'PROJECT_LINK_DELETE_FAILED',
+          },
+        });
+      }
+
+      await pool.query('DELETE FROM agent_project_assignments WHERE agent_id = $1 AND project_id = $2', [
+        normalizedAgentId,
+        project.id,
+      ]);
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 // GET /api/v1/openclaw/agents
 // Get configured agents from OpenClaw config file (auto-discovery)
 router.get('/agents', requireAuth, async (req, res, next) => {
@@ -1487,6 +2069,35 @@ router.get('/agents/config', requireAuth, async (req, res, next) => {
 
     const dbByAgentId = new Map(dbRows.map((r) => [r.agent_id, r]));
 
+    let projectsByAgentId = new Map();
+    try {
+      const projectRows = await pool.query(
+        `SELECT apa.agent_id, p.id AS project_id, p.slug, p.name, p.root_path, p.contract_path
+           FROM agent_project_assignments apa
+           JOIN projects p ON p.id = apa.project_id
+          WHERE p.status = 'active'
+          ORDER BY p.slug ASC`,
+      );
+      for (const row of projectRows.rows || []) {
+        if (!projectsByAgentId.has(row.agent_id)) {
+          projectsByAgentId.set(row.agent_id, []);
+        }
+        projectsByAgentId.get(row.agent_id).push({
+          id: row.project_id,
+          slug: row.slug,
+          name: row.name,
+          rootPath: row.root_path,
+          contractPath: row.contract_path,
+        });
+      }
+    } catch (projectErr) {
+      if (projectErr.code !== '42P01') {
+        logger.warn('Failed to read project assignments for agents/config', {
+          error: projectErr.message,
+        });
+      }
+    }
+
     const leadership = [];
     for (const [agentId, discovered] of discoveredMap.entries()) {
       const row = dbByAgentId.get(agentId);
@@ -1502,6 +2113,7 @@ router.get('/agents/config', requireAuth, async (req, res, next) => {
         reportsTo: row?.reports_to || null,
         isDefault: Boolean(discovered.isDefault),
         model: discovered.model || null,
+        projects: projectsByAgentId.get(agentId) || [],
       });
     }
 
@@ -1522,6 +2134,7 @@ router.get('/agents/config', requireAuth, async (req, res, next) => {
         reportsTo: row.reports_to || null,
         isDefault: false,
         model: null,
+        projects: projectsByAgentId.get(row.agent_id) || [],
       });
     }
 
@@ -2005,6 +2618,22 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
 
       await ensureDocsLinkIfMissing(agentData.id);
 
+      // If agent is already project-assigned, ensure /projects/<slug> links exist.
+      try {
+        const assignedProjects = await getAssignedProjectsForAgent(agentData.id);
+        for (const assignedProject of assignedProjects) {
+          if (assignedProject?.root_path) {
+            await ensureProjectLink(agentData.id, assignedProject.root_path);
+          }
+        }
+      } catch (projectLinkErr) {
+        setupWarnings.push(`project link ensure failed: ${projectLinkErr.message}`);
+        logger.warn('Failed to ensure project link on agent create (non-fatal)', {
+          agentId: agentData.id,
+          error: projectLinkErr.message,
+        });
+      }
+
       // Keep DB agent registry aligned immediately after runtime config mutation.
       try {
         const { reconcileAgentsFromOpenClaw } = require('../services/agentReconciliationService');
@@ -2121,7 +2750,6 @@ router.post(
         model: agentsDefaults.model || {},
       };
     }
-
     if (!runtimeAgent) {
       return res.status(404).json({
         error: {
@@ -2139,12 +2767,12 @@ router.post(
 
     const agentData = {
       id: agentId,
-      displayName: runtimeAgent?.identity?.name || agentId,
-      title: runtimeAgent?.identity?.name || agentId,
-      description: runtimeAgent?.identity?.theme || '',
-      identityName: runtimeAgent?.identity?.name || agentId,
-      identityTheme: runtimeAgent?.identity?.theme || '',
-      identityEmoji: hasExplicitIdentityEmoji ? runtimeAgent?.identity?.emoji : undefined,
+      displayName: runtimeIdentity?.name || agentId,
+      title: runtimeIdentity?.name || agentId,
+      description: runtimeIdentity?.theme || '',
+      identityName: runtimeIdentity?.name || agentId,
+      identityTheme: runtimeIdentity?.theme || '',
+      identityEmoji: hasExplicitIdentityEmoji ? runtimeIdentity?.emoji : undefined,
       modelPrimary: runtimeAgent?.model?.primary || null,
       modelFallback1: runtimeAgent?.model?.fallbacks?.[0] || null,
       modelFallback2: runtimeAgent?.model?.fallbacks?.[1] || null,
@@ -2366,6 +2994,21 @@ router.post(
           status: 500,
           code: 'WORKSPACE_REBOOTSTRAP_FAILED',
         },
+      });
+    }
+
+    try {
+      const assignedProjects = await getAssignedProjectsForAgent(agentData.id);
+      for (const assignedProject of assignedProjects) {
+        if (assignedProject?.root_path) {
+          await ensureProjectLink(agentData.id, assignedProject.root_path);
+        }
+      }
+    } catch (projectLinkErr) {
+      setupWarnings.push(`project link ensure failed: ${projectLinkErr.message}`);
+      logger.warn('Failed to ensure project link on re-bootstrap (non-fatal)', {
+        agentId: agentData.id,
+        error: projectLinkErr.message,
       });
     }
 

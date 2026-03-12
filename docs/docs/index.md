@@ -38,8 +38,8 @@ research, product work, software development, or business operations.
 - **[Skills](./skills/overview)** — create and manage agent skills
 - **[openclaw.json Reference](./configuration/openclaw-json)** — complete configuration reference
   with annotated sample
-- **[Features](./features/task-management)** — task management, agent monitoring, agents page, and
-  more
+- **[Features](./features/task-management)** — task management, agent monitoring, agents page,
+  projects, and more
 - **[Deployment](./deployment/docker)** — Docker and Kubernetes deployment guides
 - **[Troubleshooting](./troubleshooting/common-issues)** — common issues and FAQ
 - **[Known Issues](./known-issues)** — current limitations and workarounds

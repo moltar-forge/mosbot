@@ -27,6 +27,7 @@ Each agent card shows:
 - Role description (typically from `identity.theme`)
 - Current status badge
 - Model information
+- Assigned project badges (when project assignment is configured)
 
 ## Status badges
 
@@ -56,6 +57,15 @@ MosBot provisions:
 - `<workspace>/TOOLS.md`
 - `<workspace>/BOOTSTRAP.md`
 - `<workspace>/mosbot.env` (only when a new API key is created)
+
+## Re-bootstrap action
+
+Each editable agent card includes a **Re-bootstrap** action (circular arrows icon).
+
+Use this when onboarding drifted or when an agent was created outside MosBot. Re-bootstrap re-seeds
+workspace toolkit/bootstrap files and triggers bootstrap execution for that agent.
+
+## Custom hierarchy with agents.json
 
 Create flow behavior:
 
