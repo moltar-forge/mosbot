@@ -802,97 +802,105 @@ async function buildAgentProjectOnboardingContext(agentId) {
     return createDefaultProjectOnboarding();
   }
 
-  const projectResults = await Promise.all(
-    assignedProjects.map(async (project) => {
-      const rootPath = project?.root_path || null;
-      const contractPathRaw = project?.contract_path || null;
-      const projectRef = project?.slug || project?.id || 'unknown';
-      const projectBase = {
-        id: project?.id || null,
-        slug: project?.slug || null,
-        name: project?.name || null,
-        rootPath,
-      };
+  const projectResults = [];
 
-      if (!contractPathRaw) {
-        return {
-          project: {
-            ...projectBase,
-            contractPath: null,
-            contractStatus: 'missing',
-          },
-          warnings: [`project ${projectRef} has no contract path configured`],
-        };
-      }
+  for (const project of assignedProjects) {
+    const rootPath = project?.root_path || null;
+    const contractPathRaw = project?.contract_path || null;
+    const projectRef = project?.slug || project?.id || 'unknown';
+    const projectBase = {
+      id: project?.id || null,
+      slug: project?.slug || null,
+      name: project?.name || null,
+      rootPath,
+    };
 
-      let contractPath = null;
+    if (!contractPathRaw) {
+      projectResults.push({
+        project: {
+          ...projectBase,
+          contractPath: null,
+          contractStatus: 'missing',
+        },
+        warnings: [`project ${projectRef} has no contract path configured`],
+      });
+      continue;
+    }
+
+    let contractPath = null;
+    try {
+      contractPath = normalizeAndValidateWorkspacePath(contractPathRaw);
+    } catch (_normalizeError) {
+      projectResults.push({
+        project: {
+          ...projectBase,
+          contractPath: contractPathRaw,
+          contractStatus: 'unknown',
+        },
+        warnings: [`project ${projectRef} has invalid contract path (${contractPathRaw})`],
+      });
+      continue;
+    }
+
+    if (rootPath) {
+      let normalizedRootPath = rootPath;
       try {
-        contractPath = normalizeAndValidateWorkspacePath(contractPathRaw);
-      } catch (normalizeError) {
-        return {
-          project: {
-            ...projectBase,
-            contractPath: contractPathRaw,
-            contractStatus: 'unknown',
-          },
-          warnings: [
-            `project ${projectRef} has invalid contract path (${contractPathRaw}): ${normalizeError.message}`,
-          ],
-        };
-      }
-
-      if (rootPath) {
-        let normalizedRootPath = rootPath;
-        try {
-          normalizedRootPath = normalizeAndValidateWorkspacePath(rootPath);
-        } catch (normalizeRootError) {
-          return {
-            project: {
-              ...projectBase,
-              contractPath,
-              contractStatus: 'unknown',
-            },
-            warnings: [
-              `project ${projectRef} has invalid root path (${rootPath}): ${normalizeRootError.message}`,
-            ],
-          };
-        }
-
-        if (!contractPath.startsWith(`${normalizedRootPath}/`)) {
-          return {
-            project: {
-              ...projectBase,
-              rootPath: normalizedRootPath,
-              contractPath,
-              contractStatus: 'unknown',
-            },
-            warnings: [`project ${projectRef} contract path is outside project root: ${contractPath}`],
-          };
-        }
-      }
-
-      try {
-        const exists = await workspaceFileExists(contractPath);
-        return {
-          project: {
-            ...projectBase,
-            contractPath,
-            contractStatus: exists ? 'present' : 'missing',
-          },
-          warnings: exists ? [] : [`project contract missing: ${contractPath}`],
-        };
-      } catch (error) {
-        return {
+        normalizedRootPath = normalizeAndValidateWorkspacePath(rootPath);
+      } catch (_normalizeRootError) {
+        projectResults.push({
           project: {
             ...projectBase,
             contractPath,
             contractStatus: 'unknown',
           },
-          warnings: [`project contract check failed (${projectRef}): ${error.message}`],
-        };
+          warnings: [`project ${projectRef} has invalid root path (${rootPath})`],
+        });
+        continue;
       }
-    }),
-  );
+
+      if (!contractPath.startsWith(`${normalizedRootPath}/`)) {
+        projectResults.push({
+          project: {
+            ...projectBase,
+            rootPath: normalizedRootPath,
+            contractPath,
+            contractStatus: 'unknown',
+          },
+          warnings: [`project ${projectRef} contract path is outside project root: ${contractPath}`],
+        });
+        continue;
+      }
+    }
+
+    try {
+      const exists = await workspaceFileExists(contractPath);
+      projectResults.push({
+        project: {
+          ...projectBase,
+          contractPath,
+          contractStatus: exists ? 'present' : 'missing',
+        },
+        warnings: exists ? [] : [`project contract missing: ${contractPath}`],
+      });
+    } catch (error) {
+      logger.warn('Project contract check failed during onboarding context build', {
+        agentId,
+        projectRef,
+        contractPath,
+        error: error?.message,
+        code: error?.code,
+        status: error?.status,
+      });
+      projectResults.push({
+        project: {
+          ...projectBase,
+          contractPath,
+          contractStatus: 'unknown',
+        },
+        warnings: [`project contract check failed (${projectRef})`],
+      });
+    }
+  }
 
   const projects = projectResults.map((result) => result.project);
   const warnings = projectResults.flatMap((result) => result.warnings || []);
