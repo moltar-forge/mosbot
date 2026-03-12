@@ -37,6 +37,8 @@ const MAIN_WORKSPACE_REMAP_PREFIXES = new Set([
   '/~/.openclaw/workspace',
 ]);
 const AGENT_ID_INPUT_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
+const PROJECT_LINK_HEALTH_DEFAULT_LIMIT = 200;
+const PROJECT_LINK_HEALTH_MAX_LIMIT = 500;
 
 // Auth middleware - require valid JWT
 const requireAuth = (req, res, next) => {
@@ -891,6 +893,25 @@ function expandProjectAgentTargets(projects, agentIdFilter = '') {
   return targets;
 }
 
+function parseProjectLinkHealthLimit(rawLimit) {
+  if (rawLimit === undefined || rawLimit === null || rawLimit === '') {
+    return { value: PROJECT_LINK_HEALTH_DEFAULT_LIMIT };
+  }
+
+  const parsed = Number(rawLimit);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > PROJECT_LINK_HEALTH_MAX_LIMIT) {
+    return {
+      error: {
+        message: `limit must be an integer between 1 and ${PROJECT_LINK_HEALTH_MAX_LIMIT}`,
+        status: 400,
+        code: 'INVALID_LIMIT',
+      },
+    };
+  }
+
+  return { value: parsed };
+}
+
 function createDefaultProjectOnboarding() {
   return {
     hasAssignedProject: false,
@@ -1292,6 +1313,13 @@ router.get('/projects/link-health', requireAuth, requireAdmin, async (req, res, 
   try {
     const projectIdFilter = req.query.projectId ? String(req.query.projectId).trim() : '';
     const agentIdFilter = req.query.agentId ? String(req.query.agentId).trim() : '';
+    const parsedLimit = parseProjectLinkHealthLimit(req.query.limit);
+
+    if (parsedLimit.error) {
+      return res.status(400).json({ error: parsedLimit.error });
+    }
+
+    const limit = parsedLimit.value;
 
     if (projectIdFilter && !isValidProjectId(projectIdFilter)) {
       return res.status(400).json({
@@ -1316,7 +1344,8 @@ router.get('/projects/link-health', requireAuth, requireAdmin, async (req, res, 
     }
 
     const tasks = expandProjectAgentTargets(projects, agentIdFilter);
-    const checks = await mapWithConcurrency(tasks, 5, async (task) => {
+    const limitedTasks = tasks.slice(0, limit);
+    const checks = await mapWithConcurrency(limitedTasks, 5, async (task) => {
       try {
         const linkState = await makeOpenClawRequest(
           'GET',
@@ -1343,6 +1372,12 @@ router.get('/projects/link-health', requireAuth, requireAdmin, async (req, res, 
       }
     });
 
+    checks.sort((a, b) => {
+      const slugCmp = String(a.slug || '').localeCompare(String(b.slug || ''));
+      if (slugCmp !== 0) return slugCmp;
+      return String(a.agentId || '').localeCompare(String(b.agentId || ''));
+    });
+
     res.json({ data: checks });
   } catch (error) {
     next(error);
@@ -1356,6 +1391,13 @@ router.post('/projects/link-health/repair', requireAuth, requireAdmin, async (re
     const body = req.body || {};
     const projectIdFilter = body.projectId ? String(body.projectId).trim() : '';
     const agentIdFilter = body.agentId ? String(body.agentId).trim() : '';
+    const parsedLimit = parseProjectLinkHealthLimit(body.limit);
+
+    if (parsedLimit.error) {
+      return res.status(400).json({ error: parsedLimit.error });
+    }
+
+    const limit = parsedLimit.value;
 
     if (projectIdFilter && !isValidProjectId(projectIdFilter)) {
       return res.status(400).json({
@@ -1391,7 +1433,8 @@ router.post('/projects/link-health/repair', requireAuth, requireAdmin, async (re
     }
 
     const tasks = expandProjectAgentTargets(projects, agentIdFilter);
-    const results = await mapWithConcurrency(tasks, 5, async (task) => {
+    const limitedTasks = tasks.slice(0, limit);
+    const results = await mapWithConcurrency(limitedTasks, 5, async (task) => {
       const reconcile = await ensureProjectLinkIfMissing(task.agentId, task.rootPath);
       const action = reconcile?.action || 'unknown';
       return {
@@ -1408,6 +1451,12 @@ router.post('/projects/link-health/repair', requireAuth, requireAdmin, async (re
             }
           : {}),
       };
+    });
+
+    results.sort((a, b) => {
+      const slugCmp = String(a.slug || '').localeCompare(String(b.slug || ''));
+      if (slugCmp !== 0) return slugCmp;
+      return String(a.agentId || '').localeCompare(String(b.agentId || ''));
     });
 
     const summary = {

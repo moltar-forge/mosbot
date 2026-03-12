@@ -3003,6 +3003,43 @@ describe('OpenClaw Routes', () => {
       );
     });
 
+    it('rejects invalid link-health limit values', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/projects/link-health?limit=0')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_LIMIT');
+    });
+
+    it('applies repair limit when provided', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: '11111111-1111-1111-1111-111111111111',
+            slug: 'alpha',
+            name: 'Alpha',
+            root_path: '/projects/alpha',
+            agent_id: 'cto',
+          },
+        ],
+      });
+
+      ensureProjectLinkIfMissing.mockResolvedValue({ action: 'unchanged', state: 'linked' });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects/link-health/repair')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ limit: 1 });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.attempted).toBe(1);
+      expect(ensureProjectLinkIfMissing).toHaveBeenCalledTimes(1);
+    });
+
     it('repairs project links and returns summary', async () => {
       const token = getToken('admin-id', 'admin');
       pool.query.mockResolvedValueOnce({
