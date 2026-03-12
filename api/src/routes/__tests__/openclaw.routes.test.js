@@ -1017,6 +1017,14 @@ describe('OpenClaw Routes', () => {
 
       expect(response.status).toBe(201);
       expect(response.body.data).toBeDefined();
+      expect(response.body.data.projectOnboarding).toEqual(
+        expect.objectContaining({
+          hasAssignedProject: false,
+          projects: [],
+          missingContracts: [],
+          unknownContracts: [],
+        }),
+      );
       expect(ensureDocsLinkIfMissing).toHaveBeenCalledWith('new-agent');
     });
 
@@ -1484,6 +1492,7 @@ describe('OpenClaw Routes', () => {
           hasAssignedProject: false,
           projects: [],
           missingContracts: [],
+          unknownContracts: [],
         }),
       );
 
@@ -1804,7 +1813,8 @@ describe('OpenClaw Routes', () => {
               contractStatus: 'unknown',
             }),
           ]),
-          missingContracts: expect.arrayContaining([
+          missingContracts: [],
+          unknownContracts: expect.arrayContaining([
             expect.objectContaining({
               slug: 'gamma',
               contractPath: '/docs/not-allowed.md',

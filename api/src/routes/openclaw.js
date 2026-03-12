@@ -582,6 +582,9 @@ function buildAgentBootstrapContent(agentData = {}) {
     missingContracts: Array.isArray(agentData?.projectOnboarding?.missingContracts)
       ? agentData.projectOnboarding.missingContracts
       : [],
+    unknownContracts: Array.isArray(agentData?.projectOnboarding?.unknownContracts)
+      ? agentData.projectOnboarding.unknownContracts
+      : [],
   };
 
   const projectScopeSection = projectOnboarding.hasAssignedProject
@@ -792,6 +795,7 @@ function createDefaultProjectOnboarding() {
     checkedAt: new Date().toISOString(),
     projects: [],
     missingContracts: [],
+    unknownContracts: [],
     warnings: [],
   };
 }
@@ -921,7 +925,15 @@ async function buildAgentProjectOnboardingContext(agentId) {
     checkedAt: new Date().toISOString(),
     projects,
     missingContracts: projects
-      .filter((project) => project.contractStatus === 'missing' || project.contractStatus === 'unknown')
+      .filter((project) => project.contractStatus === 'missing')
+      .map((project) => ({
+        id: project.id,
+        slug: project.slug,
+        contractPath: project.contractPath,
+        contractStatus: project.contractStatus,
+      })),
+    unknownContracts: projects
+      .filter((project) => project.contractStatus === 'unknown')
       .map((project) => ({
         id: project.id,
         slug: project.slug,
