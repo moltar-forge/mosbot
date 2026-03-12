@@ -105,7 +105,9 @@ export default function ProjectDetail() {
 
   const availableAgents = useMemo(() => {
     const assigned = new Set(project?.assigned_agent_ids || []);
-    return (agents || []).filter((agent) => agent.id && agent.id !== 'archived' && !assigned.has(agent.id));
+    return (agents || []).filter(
+      (agent) => agent.id && agent.id !== 'archived' && agent.id !== 'main' && !assigned.has(agent.id),
+    );
   }, [agents, project]);
 
   const handleSave = async () => {

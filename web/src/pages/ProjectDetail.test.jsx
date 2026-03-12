@@ -43,8 +43,8 @@ describe('ProjectDetail', () => {
         root_path: '/projects/chaos-codex',
         contract_path: '/projects/chaos-codex/agent-contract.md',
         status: 'active',
-        assigned_agents: 3,
-        assigned_agent_ids: ['main', 'cc-api', 'cc-web'],
+        assigned_agents: 2,
+        assigned_agent_ids: ['cc-api', 'cc-web'],
       },
     ]);
 
@@ -52,6 +52,7 @@ describe('ProjectDetail', () => {
       { id: 'main', name: 'main', icon: '🦞' },
       { id: 'cc-api', name: 'Chaos Codex API Engineer', icon: '⚙️' },
       { id: 'cc-web', name: 'Chaos Codex Web Engineer', icon: '🖥️' },
+      { id: 'cc-architect', name: 'Chaos Codex Architect', icon: '🧭' },
     ]);
   });
 
@@ -70,7 +71,26 @@ describe('ProjectDetail', () => {
 
     expect(screen.getByText('Chaos Codex API Engineer')).toBeInTheDocument();
     expect(screen.getByText('Chaos Codex Web Engineer')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /remove/i })).toHaveLength(3);
+    expect(screen.queryByText('Chaos Codex Architect')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /remove/i })).toHaveLength(2);
+  });
+
+  it('excludes main from the assignment dropdown', async () => {
+    render(
+      <MemoryRouter initialEntries={['/projects/chaos-codex']}>
+        <Routes>
+          <Route path="/projects/:slug" element={<ProjectDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Assign agent' })).toBeInTheDocument();
+    });
+
+    const options = Array.from(screen.getAllByRole('option')).map((option) => option.textContent);
+    expect(options).toContain('🧭 cc-architect');
+    expect(options).not.toContain('🦞 main');
   });
 
   it('renders workspace explorer on files route', async () => {
