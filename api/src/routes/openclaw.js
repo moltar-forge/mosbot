@@ -573,6 +573,29 @@ function buildAgentBootstrapContent(agentData = {}) {
     heartbeatModel: agentData.heartbeatModel || '',
   };
 
+  const projectOnboarding = {
+    hasAssignedProject: agentData?.projectOnboarding?.hasAssignedProject === true,
+    checkedAt: agentData?.projectOnboarding?.checkedAt || null,
+    projects: Array.isArray(agentData?.projectOnboarding?.projects)
+      ? agentData.projectOnboarding.projects
+      : [],
+    missingContracts: Array.isArray(agentData?.projectOnboarding?.missingContracts)
+      ? agentData.projectOnboarding.missingContracts
+      : [],
+  };
+
+  const projectScopeSection = projectOnboarding.hasAssignedProject
+    ? `\n## Project scope snapshot\n\n\`\`\`json\n${JSON.stringify(projectOnboarding, null, 2)}\n\`\`\`\n\nRead assigned project contracts before taking work. If a contract is marked \`missing\` or \`unknown\`, call it out in your first task update and continue with conservative defaults.\n`
+    : '';
+
+  const projectChecklistStep = projectOnboarding.hasAssignedProject
+    ? '5. Review assigned project context from **Project scope snapshot** and read each available contract before taking work.\n'
+    : '';
+
+  const queueStepNumber = projectOnboarding.hasAssignedProject ? 6 : 5;
+  const statusStepNumber = projectOnboarding.hasAssignedProject ? 7 : 6;
+  const deleteStepNumber = projectOnboarding.hasAssignedProject ? 8 : 7;
+
   return `# BOOTSTRAP.md
 
 ${introLine}
@@ -581,7 +604,7 @@ ${introLine}
 
 \`\`\`json
 ${JSON.stringify(profile, null, 2)}
-\`\`\`
+\`\`\`${projectScopeSection}
 
 ## First-run mission
 
@@ -598,11 +621,11 @@ ${JSON.stringify(profile, null, 2)}
    - \`USER.md\`: who you're helping and how to work with them
    - \`AGENTS.md\`: operating rules, workspace conventions, safety reminders
 4. Confirm \`mosbot.env\` exists in workspace root.
-5. Pull your queue:
+${projectChecklistStep}${queueStepNumber}. Pull your queue:
    - \`bash ./tools/mosbot-task list --status "TO DO"\`
-6. If at least one task exists, post a brief status comment on your first task: setup complete + assumptions.
+${statusStepNumber}. If at least one task exists, post a brief status comment on your first task: setup complete + assumptions.
    - If no task exists, explicitly note that and continue.
-7. Delete this \`BOOTSTRAP.md\` after setup is complete (even when no tasks exist).
+${deleteStepNumber}. Delete this \`BOOTSTRAP.md\` after setup is complete (even when no tasks exist).
 
 ## Guardrails
 
@@ -761,6 +784,77 @@ async function getAssignedProjectsForAgent(agentId) {
     [agentId],
   );
   return result.rows || [];
+}
+
+async function buildAgentProjectOnboardingContext(agentId) {
+  const assignedProjects = await getAssignedProjectsForAgent(agentId);
+  if (!Array.isArray(assignedProjects) || assignedProjects.length === 0) {
+    return {
+      hasAssignedProject: false,
+      checkedAt: new Date().toISOString(),
+      projects: [],
+      missingContracts: [],
+      warnings: [],
+    };
+  }
+
+  const warnings = [];
+  const projects = await Promise.all(
+    assignedProjects.map(async (project) => {
+      const rootPath = project?.root_path || null;
+      const contractPath = project?.contract_path || null;
+
+      if (!contractPath) {
+        warnings.push(`project ${project?.slug || project?.id || 'unknown'} has no contract path configured`);
+        return {
+          id: project?.id || null,
+          slug: project?.slug || null,
+          name: project?.name || null,
+          rootPath,
+          contractPath,
+          contractStatus: 'missing',
+        };
+      }
+
+      try {
+        const exists = await workspaceFileExists(contractPath);
+        if (!exists) {
+          warnings.push(`project contract missing: ${contractPath}`);
+        }
+        return {
+          id: project?.id || null,
+          slug: project?.slug || null,
+          name: project?.name || null,
+          rootPath,
+          contractPath,
+          contractStatus: exists ? 'present' : 'missing',
+        };
+      } catch (error) {
+        warnings.push(
+          `project contract check failed (${project?.slug || project?.id || contractPath}): ${error.message}`,
+        );
+        return {
+          id: project?.id || null,
+          slug: project?.slug || null,
+          name: project?.name || null,
+          rootPath,
+          contractPath,
+          contractStatus: 'unknown',
+        };
+      }
+    }),
+  );
+
+  return {
+    hasAssignedProject: projects.length > 0,
+    checkedAt: new Date().toISOString(),
+    projects,
+    missingContracts: projects
+      .filter((project) => project.contractStatus !== 'present')
+      .map((project) => project.contractPath)
+      .filter(Boolean),
+    warnings,
+  };
 }
 
 function normalizeAndValidateWorkspacePath(inputPath) {
@@ -2126,10 +2220,31 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
       });
     }
 
+    let projectOnboarding = {
+      hasAssignedProject: false,
+      checkedAt: new Date().toISOString(),
+      projects: [],
+      missingContracts: [],
+      warnings: [],
+    };
+
+    try {
+      projectOnboarding = await buildAgentProjectOnboardingContext(agentData.id);
+      if (Array.isArray(projectOnboarding?.warnings) && projectOnboarding.warnings.length > 0) {
+        setupWarnings.push(...projectOnboarding.warnings);
+      }
+    } catch (projectContextError) {
+      setupWarnings.push(`project onboarding context failed: ${projectContextError.message}`);
+      logger.warn('Failed to build project onboarding context for bootstrap', {
+        agentId: agentData.id,
+        error: projectContextError.message,
+      });
+    }
+
     try {
       await upsertWorkspaceFile(
         `${workspaceRoot}/BOOTSTRAP.md`,
-        buildAgentBootstrapContent(agentData),
+        buildAgentBootstrapContent({ ...agentData, projectOnboarding }),
       );
     } catch (workspaceError) {
       await cleanupProvisionedApiKeyArtifacts({
@@ -2292,7 +2407,7 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
       severity: 'info',
       actor_user_id: req.user.id,
       agent_id: agentData.id,
-      meta: { agentData },
+      meta: { agentData, projectOnboarding },
     });
 
     const workspaceRootForResponse = req._agentWorkspaceRoot || '/workspace-<agent>';
@@ -2314,6 +2429,7 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
         created: true,
         updatedFiles,
         warnings: req._agentCreateWarnings || [],
+        projectOnboarding,
       },
     });
   } catch (error) {
@@ -2587,10 +2703,31 @@ router.post(
       });
     }
 
+    let projectOnboarding = {
+      hasAssignedProject: false,
+      checkedAt: new Date().toISOString(),
+      projects: [],
+      missingContracts: [],
+      warnings: [],
+    };
+
+    try {
+      projectOnboarding = await buildAgentProjectOnboardingContext(agentData.id);
+      if (Array.isArray(projectOnboarding?.warnings) && projectOnboarding.warnings.length > 0) {
+        setupWarnings.push(...projectOnboarding.warnings);
+      }
+    } catch (projectContextError) {
+      setupWarnings.push(`project onboarding context failed: ${projectContextError.message}`);
+      logger.warn('Failed to build project onboarding context for re-bootstrap', {
+        agentId: agentData.id,
+        error: projectContextError.message,
+      });
+    }
+
     try {
       await upsertWorkspaceFile(
         `${workspaceRoot}/BOOTSTRAP.md`,
-        buildAgentBootstrapContent({ ...agentData, flow: 're-bootstrap' }),
+        buildAgentBootstrapContent({ ...agentData, flow: 're-bootstrap', projectOnboarding }),
       );
     } catch (workspaceError) {
       await cleanupProvisionedApiKeyArtifacts({
@@ -2673,6 +2810,7 @@ router.post(
         workspaceRoot,
         updatedFiles,
         warnings: setupWarnings,
+        projectOnboarding,
       },
     });
 
@@ -2682,6 +2820,7 @@ router.post(
         message: 'Agent re-bootstrap triggered',
         updatedFiles,
         warnings: setupWarnings,
+        projectOnboarding,
       },
     });
   } catch (error) {

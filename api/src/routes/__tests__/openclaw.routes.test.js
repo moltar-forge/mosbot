@@ -1478,6 +1478,14 @@ describe('OpenClaw Routes', () => {
       expect(bootstrapContent).toContain('re-bootstrap');
       expect(bootstrapContent).toContain('Agent profile (re-bootstrap snapshot)');
       expect(bootstrapContent).not.toContain('Agent profile (from create form)');
+      expect(bootstrapContent).not.toContain('Project scope snapshot');
+      expect(response.body.data.projectOnboarding).toEqual(
+        expect.objectContaining({
+          hasAssignedProject: false,
+          projects: [],
+          missingContracts: [],
+        }),
+      );
 
       const agentsUpsertCall = pool.query.mock.calls.find(([sql]) =>
         String(sql).includes('INSERT INTO agents (agent_id, name, title, status, reports_to, meta, active)'),
@@ -1522,6 +1530,108 @@ describe('OpenClaw Routes', () => {
         expect.objectContaining({
           sessionKey: 'main',
         }),
+      );
+    });
+
+    it('includes project onboarding context in rebootstrap when assigned projects exist', async () => {
+      const token = getToken('admin-id', 'admin');
+      let bootstrapContent = '';
+
+      pool.query.mockImplementation((sql) => {
+        if (
+          String(sql).includes('FROM agent_project_assignments apa') &&
+          String(sql).includes('WHERE apa.agent_id = $1')
+        ) {
+          return Promise.resolve({
+            rows: [
+              {
+                id: 'proj-1',
+                slug: 'alpha',
+                name: 'Alpha',
+                root_path: '/projects/alpha',
+                contract_path: '/projects/alpha/agent-contract.md',
+              },
+            ],
+          });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      global.fetch = jest.fn().mockImplementation(async (url, options) => {
+        if (
+          options?.method === 'GET' &&
+          (String(url).includes('/files/content?path=/openclaw.json') ||
+            String(url).includes('/files/content?path=%2Fopenclaw.json'))
+        ) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              content: JSON.stringify({
+                agents: {
+                  list: [{ id: 'coo', identity: { name: 'COO', theme: 'Operations' } }],
+                },
+              }),
+            }),
+            text: async () => 'OK',
+          };
+        }
+
+        if (
+          options?.method === 'GET' &&
+          (String(url).includes('/files/content?path=%2Fprojects%2Falpha%2Fagent-contract.md') ||
+            String(url).includes('/files/content?path=/projects/alpha/agent-contract.md'))
+        ) {
+          return {
+            ok: false,
+            status: 404,
+            text: async () => 'not found',
+          };
+        }
+
+        if ((options?.method === 'PUT' || options?.method === 'POST') && String(url).endsWith('/files')) {
+          const body = JSON.parse(options.body || '{}');
+          if (body.path === '/workspace-coo/BOOTSTRAP.md') {
+            bootstrapContent = body.content || '';
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ ok: true }),
+            text: async () => 'OK',
+          };
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true }),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config/coo/rebootstrap')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(bootstrapContent).toContain('Project scope snapshot');
+      expect(bootstrapContent).toContain('/projects/alpha/agent-contract.md');
+      expect(response.body.data.projectOnboarding).toEqual(
+        expect.objectContaining({
+          hasAssignedProject: true,
+          projects: expect.arrayContaining([
+            expect.objectContaining({
+              slug: 'alpha',
+              contractPath: '/projects/alpha/agent-contract.md',
+              contractStatus: 'missing',
+            }),
+          ]),
+          missingContracts: ['/projects/alpha/agent-contract.md'],
+        }),
+      );
+      expect((response.body.data.warnings || []).some((w) => w.includes('project contract missing'))).toBe(
+        true,
       );
     });
 
