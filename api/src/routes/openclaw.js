@@ -1221,6 +1221,198 @@ router.get('/projects', requireAuth, async (req, res, next) => {
   }
 });
 
+// GET /api/v1/openclaw/projects/link-health
+// Inspect current project-link states for main + assigned agents.
+router.get('/projects/link-health', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const projectIdFilter = req.query.projectId ? String(req.query.projectId).trim() : '';
+    const agentIdFilter = req.query.agentId ? String(req.query.agentId).trim() : '';
+
+    if (projectIdFilter && !isValidProjectId(projectIdFilter)) {
+      return res.status(400).json({
+        error: { message: 'Invalid projectId format', status: 400, code: 'INVALID_PROJECT_ID' },
+      });
+    }
+
+    if (agentIdFilter && !AGENT_ID_INPUT_PATTERN.test(agentIdFilter)) {
+      return res.status(400).json({
+        error: { message: 'Invalid agentId format', status: 400, code: 'INVALID_AGENT_ID' },
+      });
+    }
+
+    let rowsResult;
+    try {
+      rowsResult = await pool.query(
+        `SELECT p.id, p.slug, p.name, p.root_path, apa.agent_id
+           FROM projects p
+           LEFT JOIN agent_project_assignments apa ON apa.project_id = p.id
+          WHERE p.status = 'active'
+            AND ($1::uuid IS NULL OR p.id = $1)
+          ORDER BY p.slug ASC, apa.agent_id ASC`,
+        [projectIdFilter || null],
+      );
+    } catch (error) {
+      if (error.code === '42P01') {
+        return res.json({ data: [] });
+      }
+      throw error;
+    }
+
+    const projectMap = new Map();
+    for (const row of rowsResult.rows || []) {
+      if (!projectMap.has(row.id)) {
+        projectMap.set(row.id, {
+          projectId: row.id,
+          slug: row.slug,
+          name: row.name,
+          rootPath: row.root_path,
+          assignedAgents: new Set(),
+        });
+      }
+      if (row.agent_id) {
+        projectMap.get(row.id).assignedAgents.add(row.agent_id);
+      }
+    }
+
+    const checks = [];
+    for (const project of projectMap.values()) {
+      const targets = new Set(['main', ...project.assignedAgents]);
+      for (const targetAgentId of targets) {
+        if (agentIdFilter && targetAgentId !== agentIdFilter) continue;
+
+        try {
+          const linkState = await makeOpenClawRequest(
+            'GET',
+            `/links/project/${encodeURIComponent(targetAgentId)}?targetPath=${encodeURIComponent(project.rootPath)}`,
+          );
+          checks.push({
+            projectId: project.projectId,
+            slug: project.slug,
+            rootPath: project.rootPath,
+            agentId: targetAgentId,
+            state: linkState?.state || 'unknown',
+            conflict: linkState?.conflict || null,
+          });
+        } catch (linkError) {
+          checks.push({
+            projectId: project.projectId,
+            slug: project.slug,
+            rootPath: project.rootPath,
+            agentId: targetAgentId,
+            state: 'error',
+            errorCode: linkError?.code || null,
+            status: linkError?.status || null,
+          });
+        }
+      }
+    }
+
+    res.json({ data: checks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/v1/openclaw/projects/link-health/repair
+// Reconcile project links for main + assigned agents.
+router.post('/projects/link-health/repair', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const projectIdFilter = body.projectId ? String(body.projectId).trim() : '';
+    const agentIdFilter = body.agentId ? String(body.agentId).trim() : '';
+
+    if (projectIdFilter && !isValidProjectId(projectIdFilter)) {
+      return res.status(400).json({
+        error: { message: 'Invalid projectId format', status: 400, code: 'INVALID_PROJECT_ID' },
+      });
+    }
+
+    if (agentIdFilter && !AGENT_ID_INPUT_PATTERN.test(agentIdFilter)) {
+      return res.status(400).json({
+        error: { message: 'Invalid agentId format', status: 400, code: 'INVALID_AGENT_ID' },
+      });
+    }
+
+    let rowsResult;
+    try {
+      rowsResult = await pool.query(
+        `SELECT p.id, p.slug, p.name, p.root_path, apa.agent_id
+           FROM projects p
+           LEFT JOIN agent_project_assignments apa ON apa.project_id = p.id
+          WHERE p.status = 'active'
+            AND ($1::uuid IS NULL OR p.id = $1)
+          ORDER BY p.slug ASC, apa.agent_id ASC`,
+        [projectIdFilter || null],
+      );
+    } catch (error) {
+      if (error.code === '42P01') {
+        return res.json({
+          data: { attempted: 0, repaired: 0, unchanged: 0, conflicts: 0, failed: 0, results: [] },
+        });
+      }
+      throw error;
+    }
+
+    const projectMap = new Map();
+    for (const row of rowsResult.rows || []) {
+      if (!projectMap.has(row.id)) {
+        projectMap.set(row.id, {
+          projectId: row.id,
+          slug: row.slug,
+          name: row.name,
+          rootPath: row.root_path,
+          assignedAgents: new Set(),
+        });
+      }
+      if (row.agent_id) {
+        projectMap.get(row.id).assignedAgents.add(row.agent_id);
+      }
+    }
+
+    const results = [];
+    for (const project of projectMap.values()) {
+      const targets = new Set(['main', ...project.assignedAgents]);
+      for (const targetAgentId of targets) {
+        if (agentIdFilter && targetAgentId !== agentIdFilter) continue;
+
+        try {
+          const reconcile = await ensureProjectLinkIfMissing(targetAgentId, project.rootPath);
+          results.push({
+            projectId: project.projectId,
+            slug: project.slug,
+            rootPath: project.rootPath,
+            agentId: targetAgentId,
+            action: reconcile?.action || 'unknown',
+            state: reconcile?.state || null,
+          });
+        } catch (reconcileError) {
+          results.push({
+            projectId: project.projectId,
+            slug: project.slug,
+            rootPath: project.rootPath,
+            agentId: targetAgentId,
+            action: 'error',
+            status: reconcileError?.status || null,
+            errorCode: reconcileError?.code || null,
+          });
+        }
+      }
+    }
+
+    const summary = {
+      attempted: results.length,
+      repaired: results.filter((item) => item.action === 'repaired' || item.action === 'created').length,
+      unchanged: results.filter((item) => item.action === 'unchanged').length,
+      conflicts: results.filter((item) => item.action === 'conflict').length,
+      failed: results.filter((item) => item.action === 'error').length,
+    };
+
+    res.json({ data: { ...summary, results } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // POST /api/v1/openclaw/projects
 // Create project registry entry (admin/owner only)
 router.post('/projects', requireAuth, requireAdmin, async (req, res, next) => {
