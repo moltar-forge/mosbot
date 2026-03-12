@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Projects from './Projects';
 
@@ -92,6 +92,40 @@ describe('Projects', () => {
 
     fireEvent.change(screen.getByPlaceholderText('my-proj'), { target: { value: 'custom_project-v2' } });
     expect(screen.getByDisplayValue('custom_project-v2')).toBeInTheDocument();
+  });
+
+  it('dismisses the create form when editing a project', async () => {
+    getProjects.mockResolvedValue([
+      {
+        id: 'p1',
+        slug: 'project-alpha',
+        name: 'Project Alpha',
+        description: 'Sample project description',
+        root_path: '/projects/project-alpha',
+        status: 'active',
+        assigned_agents: 3,
+        updated_at: '2026-03-12T19:00:00.000Z',
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <Projects />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'New Project' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'New Project' }));
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+
+    const projectCard = screen.getByText('Project Alpha').closest('div.bg-dark-800');
+    fireEvent.click(within(projectCard).getByRole('button', { name: 'Edit' }));
+
+    expect(screen.queryByText('Create project')).not.toBeInTheDocument();
+    expect(screen.getByText('Edit project-alpha')).toBeInTheDocument();
   });
 
   it('archives a project from the registry', async () => {

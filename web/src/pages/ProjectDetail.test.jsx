@@ -56,6 +56,23 @@ describe('ProjectDetail', () => {
     ]);
   });
 
+  it('does not render a separate agents tab', async () => {
+    render(
+      <MemoryRouter initialEntries={['/projects/project-alpha']}>
+        <Routes>
+          <Route path="/projects/:slug" element={<ProjectDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Overview' })).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('button', { name: 'Files' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Agents' })).not.toBeInTheDocument();
+  });
+
   it('renders assigned agents in overview', async () => {
     render(
       <MemoryRouter initialEntries={['/projects/project-alpha']}>

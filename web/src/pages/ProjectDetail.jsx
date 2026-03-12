@@ -63,9 +63,8 @@ export default function ProjectDetail() {
 
   const activeTab = useMemo(() => {
     if (location.pathname.includes('/files')) return 'files';
-    if (location.hash === '#agents') return 'agents';
     return 'overview';
-  }, [location.pathname, location.hash]);
+  }, [location.pathname]);
 
   const loadProject = useCallback(async () => {
     setIsLoading(true);
@@ -252,9 +251,6 @@ export default function ProjectDetail() {
             </TabButton>
             <TabButton active={activeTab === 'files'} onClick={() => navigate(`/projects/${project.slug}/files`)}>
               Files
-            </TabButton>
-            <TabButton active={activeTab === 'agents'} onClick={() => navigate(`/projects/${project.slug}#agents`)}>
-              Agents
             </TabButton>
           </div>
 

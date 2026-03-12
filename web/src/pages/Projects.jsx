@@ -435,7 +435,10 @@ export default function Projects() {
                 <ProjectCard
                   key={project.id}
                   project={project}
-                  onEdit={setEditingProject}
+                  onEdit={(selectedProject) => {
+                    setShowCreateForm(false);
+                    setEditingProject(selectedProject);
+                  }}
                   onDelete={handleDeleteProject}
                   onToggleArchive={handleToggleArchiveProject}
                   isAdmin={isAdmin()}
@@ -463,7 +466,10 @@ export default function Projects() {
                 <ProjectCard
                   key={project.id}
                   project={project}
-                  onEdit={setEditingProject}
+                  onEdit={(selectedProject) => {
+                    setShowCreateForm(false);
+                    setEditingProject(selectedProject);
+                  }}
                   onDelete={handleDeleteProject}
                   onToggleArchive={handleToggleArchiveProject}
                   isAdmin={isAdmin()}
