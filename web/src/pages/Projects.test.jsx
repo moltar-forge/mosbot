@@ -29,10 +29,10 @@ describe('Projects', () => {
     getProjects.mockResolvedValue([
       {
         id: 'p1',
-        slug: 'chaos-codex',
-        name: 'Chaos Codex',
-        description: 'BRP companion app',
-        root_path: '/projects/chaos-codex',
+        slug: 'project-alpha',
+        name: 'Project Alpha',
+        description: 'Sample project description',
+        root_path: '/projects/project-alpha',
         status: 'active',
         assigned_agents: 3,
         updated_at: '2026-03-12T19:00:00.000Z',
@@ -59,10 +59,10 @@ describe('Projects', () => {
       expect(screen.getByText('Project Registry')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('Chaos Codex')).toBeInTheDocument();
+    expect(screen.getByText('Project Alpha')).toBeInTheDocument();
     expect(screen.getByText('Old Project')).toBeInTheDocument();
     const openLinks = screen.getAllByRole('link', { name: /open project/i });
-    expect(openLinks[0]).toHaveAttribute('href', '/projects/chaos-codex');
+    expect(openLinks[0]).toHaveAttribute('href', '/projects/project-alpha');
     expect(screen.getByText('Active projects')).toBeInTheDocument();
     expect(screen.getByText('Archived projects')).toBeInTheDocument();
     expect(screen.getByText('Total assigned agents')).toBeInTheDocument();
@@ -90,18 +90,18 @@ describe('Projects', () => {
     expect(screen.getByDisplayValue('My Proj')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('my-proj')).toHaveValue('');
 
-    fireEvent.change(screen.getByPlaceholderText('my-proj'), { target: { value: 'chaos-codex_api' } });
-    expect(screen.getByDisplayValue('chaos-codex_api')).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('my-proj'), { target: { value: 'custom_project-v2' } });
+    expect(screen.getByDisplayValue('custom_project-v2')).toBeInTheDocument();
   });
 
   it('archives a project from the registry', async () => {
     getProjects.mockResolvedValue([
       {
         id: 'p1',
-        slug: 'chaos-codex',
-        name: 'Chaos Codex',
-        description: 'BRP companion app',
-        root_path: '/projects/chaos-codex',
+        slug: 'project-alpha',
+        name: 'Project Alpha',
+        description: 'Sample project description',
+        root_path: '/projects/project-alpha',
         status: 'active',
         assigned_agents: 3,
         updated_at: '2026-03-12T19:00:00.000Z',

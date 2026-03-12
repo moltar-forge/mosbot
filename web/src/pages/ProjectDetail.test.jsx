@@ -37,28 +37,28 @@ describe('ProjectDetail', () => {
     getProjects.mockResolvedValue([
       {
         id: 'p1',
-        slug: 'chaos-codex',
-        name: 'Chaos Codex',
-        description: 'BRP companion app',
-        root_path: '/projects/chaos-codex',
-        contract_path: '/projects/chaos-codex/agent-contract.md',
+        slug: 'project-alpha',
+        name: 'Project Alpha',
+        description: 'Sample project description',
+        root_path: '/projects/project-alpha',
+        contract_path: '/projects/project-alpha/agent-contract.md',
         status: 'active',
         assigned_agents: 2,
-        assigned_agent_ids: ['cc-api', 'cc-web'],
+        assigned_agent_ids: ['api-agent', 'web-agent'],
       },
     ]);
 
     getAgents.mockResolvedValue([
       { id: 'main', name: 'main', icon: '🦞' },
-      { id: 'cc-api', name: 'Chaos Codex API Engineer', icon: '⚙️' },
-      { id: 'cc-web', name: 'Chaos Codex Web Engineer', icon: '🖥️' },
-      { id: 'cc-architect', name: 'Chaos Codex Architect', icon: '🧭' },
+      { id: 'api-agent', name: 'API Agent', icon: '⚙️' },
+      { id: 'web-agent', name: 'Web Agent', icon: '🖥️' },
+      { id: 'architect-agent', name: 'Architect Agent', icon: '🧭' },
     ]);
   });
 
   it('renders assigned agents in overview', async () => {
     render(
-      <MemoryRouter initialEntries={['/projects/chaos-codex']}>
+      <MemoryRouter initialEntries={['/projects/project-alpha']}>
         <Routes>
           <Route path="/projects/:slug" element={<ProjectDetail />} />
         </Routes>
@@ -69,15 +69,15 @@ describe('ProjectDetail', () => {
       expect(screen.getByText('Assigned agents')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('Chaos Codex API Engineer')).toBeInTheDocument();
-    expect(screen.getByText('Chaos Codex Web Engineer')).toBeInTheDocument();
-    expect(screen.queryByText('Chaos Codex Architect')).not.toBeInTheDocument();
+    expect(screen.getByText('API Agent')).toBeInTheDocument();
+    expect(screen.getByText('Web Agent')).toBeInTheDocument();
+    expect(screen.queryByText('Architect Agent')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /remove/i })).toHaveLength(2);
   });
 
   it('excludes main from the assignment dropdown', async () => {
     render(
-      <MemoryRouter initialEntries={['/projects/chaos-codex']}>
+      <MemoryRouter initialEntries={['/projects/project-alpha']}>
         <Routes>
           <Route path="/projects/:slug" element={<ProjectDetail />} />
         </Routes>
@@ -89,7 +89,7 @@ describe('ProjectDetail', () => {
     });
 
     const options = Array.from(screen.getAllByRole('option')).map((option) => option.textContent);
-    expect(options).toContain('🧭 cc-architect');
+    expect(options).toContain('🧭 architect-agent');
     expect(options).not.toContain('🦞 main');
   });
 
@@ -97,7 +97,7 @@ describe('ProjectDetail', () => {
     updateProject.mockResolvedValue({ status: 'archived' });
 
     render(
-      <MemoryRouter initialEntries={['/projects/chaos-codex']}>
+      <MemoryRouter initialEntries={['/projects/project-alpha']}>
         <Routes>
           <Route path="/projects/:slug" element={<ProjectDetail />} />
         </Routes>
@@ -113,14 +113,14 @@ describe('ProjectDetail', () => {
     await waitFor(() => {
       expect(updateProject).toHaveBeenCalledWith(
         'p1',
-        expect.objectContaining({ status: 'archived', rootPath: '/projects/chaos-codex' }),
+        expect.objectContaining({ status: 'archived', rootPath: '/projects/project-alpha' }),
       );
     });
   });
 
   it('renders workspace explorer on files route', async () => {
     render(
-      <MemoryRouter initialEntries={['/projects/chaos-codex/files']}>
+      <MemoryRouter initialEntries={['/projects/project-alpha/files']}>
         <Routes>
           <Route path="/projects/:slug/files/*" element={<ProjectDetail />} />
         </Routes>
@@ -132,7 +132,7 @@ describe('ProjectDetail', () => {
     });
 
     expect(screen.getByTestId('workspace-explorer')).toHaveTextContent(
-      'explorer:/projects/chaos-codex/files:/projects/chaos-codex',
+      'explorer:/projects/project-alpha/files:/projects/project-alpha',
     );
   });
 });
