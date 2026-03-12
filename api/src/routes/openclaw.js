@@ -227,9 +227,43 @@ async function upsertWorkspaceFile(path, content, encoding = 'utf8') {
   }
 }
 
-async function workspaceFileExists(path) {
+async function workspaceFileExists(filePath) {
+  const normalizedFilePath = normalizeAndValidateWorkspacePath(filePath);
+  const parentPath = path.posix.dirname(normalizedFilePath);
+  const fileName = path.posix.basename(normalizedFilePath);
+
   try {
-    await makeOpenClawRequest('GET', `/files/content?path=${encodeURIComponent(path)}`);
+    const listing = await makeOpenClawRequest('GET', `/files?path=${encodeURIComponent(parentPath)}`);
+    const files = Array.isArray(listing?.files) ? listing.files : [];
+    const existsInListing = files.some((entry) => {
+      if (!entry) return false;
+      if (entry.name === fileName) return true;
+      if (typeof entry.path === 'string') {
+        try {
+          return normalizeAndValidateWorkspacePath(entry.path) === normalizedFilePath;
+        } catch (_normalizeErr) {
+          return false;
+        }
+      }
+      return false;
+    });
+
+    if (existsInListing) {
+      return true;
+    }
+  } catch (error) {
+    if (error?.status === 404) {
+      return false;
+    }
+
+    // Fall back to content read for compatibility with older workspace service behavior.
+    if (error?.status && ![400, 405, 422].includes(error.status)) {
+      throw error;
+    }
+  }
+
+  try {
+    await makeOpenClawRequest('GET', `/files/content?path=${encodeURIComponent(normalizedFilePath)}`);
     return true;
   } catch (error) {
     if (error?.status === 404) {
@@ -584,6 +618,9 @@ function buildAgentBootstrapContent(agentData = {}) {
       : [],
     unknownContracts: Array.isArray(agentData?.projectOnboarding?.unknownContracts)
       ? agentData.projectOnboarding.unknownContracts
+      : [],
+    warnings: Array.isArray(agentData?.projectOnboarding?.warnings)
+      ? agentData.projectOnboarding.warnings
       : [],
   };
 
