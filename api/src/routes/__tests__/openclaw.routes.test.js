@@ -1627,11 +1627,194 @@ describe('OpenClaw Routes', () => {
               contractStatus: 'missing',
             }),
           ]),
-          missingContracts: ['/projects/alpha/agent-contract.md'],
+          missingContracts: expect.arrayContaining([
+            expect.objectContaining({
+              slug: 'alpha',
+              contractPath: '/projects/alpha/agent-contract.md',
+              contractStatus: 'missing',
+            }),
+          ]),
+          warnings: expect.arrayContaining([
+            expect.stringContaining('project contract missing: /projects/alpha/agent-contract.md'),
+          ]),
         }),
       );
       expect((response.body.data.warnings || []).some((w) => w.includes('project contract missing'))).toBe(
-        true,
+        false,
+      );
+    });
+
+    it('marks unconfigured project contract paths as missing in onboarding context', async () => {
+      const token = getToken('admin-id', 'admin');
+      let bootstrapContent = '';
+
+      pool.query.mockImplementation((sql) => {
+        if (
+          String(sql).includes('FROM agent_project_assignments apa') &&
+          String(sql).includes('WHERE apa.agent_id = $1')
+        ) {
+          return Promise.resolve({
+            rows: [
+              {
+                id: 'proj-2',
+                slug: 'beta',
+                name: 'Beta',
+                root_path: '/projects/beta',
+                contract_path: null,
+              },
+            ],
+          });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      global.fetch = jest.fn().mockImplementation(async (url, options) => {
+        if (
+          options?.method === 'GET' &&
+          (String(url).includes('/files/content?path=/openclaw.json') ||
+            String(url).includes('/files/content?path=%2Fopenclaw.json'))
+        ) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              content: JSON.stringify({
+                agents: {
+                  list: [{ id: 'coo', identity: { name: 'COO', theme: 'Operations' } }],
+                },
+              }),
+            }),
+            text: async () => 'OK',
+          };
+        }
+
+        if ((options?.method === 'PUT' || options?.method === 'POST') && String(url).endsWith('/files')) {
+          const body = JSON.parse(options.body || '{}');
+          if (body.path === '/workspace-coo/BOOTSTRAP.md') {
+            bootstrapContent = body.content || '';
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ ok: true }),
+            text: async () => 'OK',
+          };
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true }),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config/coo/rebootstrap')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(bootstrapContent).toContain('Project scope snapshot');
+      expect(response.body.data.projectOnboarding).toEqual(
+        expect.objectContaining({
+          hasAssignedProject: true,
+          projects: expect.arrayContaining([
+            expect.objectContaining({
+              slug: 'beta',
+              contractPath: null,
+              contractStatus: 'missing',
+            }),
+          ]),
+          missingContracts: expect.arrayContaining([
+            expect.objectContaining({
+              slug: 'beta',
+              contractPath: null,
+              contractStatus: 'missing',
+            }),
+          ]),
+          warnings: expect.arrayContaining([
+            expect.stringContaining('project beta has no contract path configured'),
+          ]),
+        }),
+      );
+    });
+
+    it('marks out-of-root contract paths as unknown in onboarding context', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      pool.query.mockImplementation((sql) => {
+        if (
+          String(sql).includes('FROM agent_project_assignments apa') &&
+          String(sql).includes('WHERE apa.agent_id = $1')
+        ) {
+          return Promise.resolve({
+            rows: [
+              {
+                id: 'proj-3',
+                slug: 'gamma',
+                name: 'Gamma',
+                root_path: '/projects/gamma',
+                contract_path: '/docs/not-allowed.md',
+              },
+            ],
+          });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      global.fetch = jest.fn().mockImplementation(async (url, options) => {
+        if (
+          options?.method === 'GET' &&
+          (String(url).includes('/files/content?path=/openclaw.json') ||
+            String(url).includes('/files/content?path=%2Fopenclaw.json'))
+        ) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              content: JSON.stringify({
+                agents: {
+                  list: [{ id: 'coo', identity: { name: 'COO', theme: 'Operations' } }],
+                },
+              }),
+            }),
+            text: async () => 'OK',
+          };
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true }),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config/coo/rebootstrap')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.projectOnboarding).toEqual(
+        expect.objectContaining({
+          projects: expect.arrayContaining([
+            expect.objectContaining({
+              slug: 'gamma',
+              contractPath: '/docs/not-allowed.md',
+              contractStatus: 'unknown',
+            }),
+          ]),
+          missingContracts: expect.arrayContaining([
+            expect.objectContaining({
+              slug: 'gamma',
+              contractPath: '/docs/not-allowed.md',
+              contractStatus: 'unknown',
+            }),
+          ]),
+          warnings: expect.arrayContaining([
+            expect.stringContaining('contract path is outside project root'),
+          ]),
+        }),
       );
     });
 

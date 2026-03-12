@@ -802,18 +802,69 @@ async function buildAgentProjectOnboardingContext(agentId) {
   const projects = await Promise.all(
     assignedProjects.map(async (project) => {
       const rootPath = project?.root_path || null;
-      const contractPath = project?.contract_path || null;
+      const contractPathRaw = project?.contract_path || null;
+      const projectRef = project?.slug || project?.id || 'unknown';
 
-      if (!contractPath) {
-        warnings.push(`project ${project?.slug || project?.id || 'unknown'} has no contract path configured`);
+      if (!contractPathRaw) {
+        warnings.push(`project ${projectRef} has no contract path configured`);
         return {
           id: project?.id || null,
           slug: project?.slug || null,
           name: project?.name || null,
           rootPath,
-          contractPath,
+          contractPath: null,
           contractStatus: 'missing',
         };
+      }
+
+      let contractPath = null;
+      try {
+        contractPath = normalizeAndValidateWorkspacePath(contractPathRaw);
+      } catch (normalizeError) {
+        warnings.push(
+          `project ${projectRef} has invalid contract path (${contractPathRaw}): ${normalizeError.message}`,
+        );
+        return {
+          id: project?.id || null,
+          slug: project?.slug || null,
+          name: project?.name || null,
+          rootPath,
+          contractPath: contractPathRaw,
+          contractStatus: 'unknown',
+        };
+      }
+
+      if (rootPath) {
+        let normalizedRootPath = rootPath;
+        try {
+          normalizedRootPath = normalizeAndValidateWorkspacePath(rootPath);
+        } catch (normalizeRootError) {
+          warnings.push(
+            `project ${projectRef} has invalid root path (${rootPath}): ${normalizeRootError.message}`,
+          );
+          return {
+            id: project?.id || null,
+            slug: project?.slug || null,
+            name: project?.name || null,
+            rootPath,
+            contractPath,
+            contractStatus: 'unknown',
+          };
+        }
+
+        if (!contractPath.startsWith(`${normalizedRootPath}/`)) {
+          warnings.push(
+            `project ${projectRef} contract path is outside project root: ${contractPath}`,
+          );
+          return {
+            id: project?.id || null,
+            slug: project?.slug || null,
+            name: project?.name || null,
+            rootPath: normalizedRootPath,
+            contractPath,
+            contractStatus: 'unknown',
+          };
+        }
       }
 
       try {
@@ -830,9 +881,7 @@ async function buildAgentProjectOnboardingContext(agentId) {
           contractStatus: exists ? 'present' : 'missing',
         };
       } catch (error) {
-        warnings.push(
-          `project contract check failed (${project?.slug || project?.id || contractPath}): ${error.message}`,
-        );
+        warnings.push(`project contract check failed (${projectRef}): ${error.message}`);
         return {
           id: project?.id || null,
           slug: project?.slug || null,
@@ -850,9 +899,13 @@ async function buildAgentProjectOnboardingContext(agentId) {
     checkedAt: new Date().toISOString(),
     projects,
     missingContracts: projects
-      .filter((project) => project.contractStatus !== 'present')
-      .map((project) => project.contractPath)
-      .filter(Boolean),
+      .filter((project) => project.contractStatus === 'missing' || project.contractStatus === 'unknown')
+      .map((project) => ({
+        id: project.id,
+        slug: project.slug,
+        contractPath: project.contractPath,
+        contractStatus: project.contractStatus,
+      })),
     warnings,
   };
 }
@@ -2230,9 +2283,6 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
 
     try {
       projectOnboarding = await buildAgentProjectOnboardingContext(agentData.id);
-      if (Array.isArray(projectOnboarding?.warnings) && projectOnboarding.warnings.length > 0) {
-        setupWarnings.push(...projectOnboarding.warnings);
-      }
     } catch (projectContextError) {
       setupWarnings.push(`project onboarding context failed: ${projectContextError.message}`);
       logger.warn('Failed to build project onboarding context for bootstrap', {
@@ -2713,9 +2763,6 @@ router.post(
 
     try {
       projectOnboarding = await buildAgentProjectOnboardingContext(agentData.id);
-      if (Array.isArray(projectOnboarding?.warnings) && projectOnboarding.warnings.length > 0) {
-        setupWarnings.push(...projectOnboarding.warnings);
-      }
     } catch (projectContextError) {
       setupWarnings.push(`project onboarding context failed: ${projectContextError.message}`);
       logger.warn('Failed to build project onboarding context for re-bootstrap', {
