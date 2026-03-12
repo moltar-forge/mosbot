@@ -82,9 +82,9 @@ describe('Projects', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'New Project' }));
-    fireEvent.change(screen.getByPlaceholderText('Chaos Codex'), { target: { value: 'Chaos Codex API' } });
+    fireEvent.change(screen.getByPlaceholderText('My Project'), { target: { value: 'My Proj' } });
 
-    expect(screen.getByPlaceholderText('chaos-codex')).toHaveValue('chaos-codex-api');
+    expect(screen.getByPlaceholderText('chaos-codex')).toHaveValue('my-proj');
 
     fireEvent.change(screen.getByPlaceholderText('chaos-codex'), { target: { value: 'chaos-codex_api' } });
     expect(screen.getByPlaceholderText('chaos-codex')).toHaveValue('chaos-codex_api');

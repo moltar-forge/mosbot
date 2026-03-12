@@ -91,7 +91,7 @@ function ProjectForm({
             value={form.name}
             onChange={(e) => handleChange('name', e.target.value)}
             className="input-field mt-1 w-full"
-            placeholder="Chaos Codex"
+            placeholder="My Project"
             required
           />
         </div>
