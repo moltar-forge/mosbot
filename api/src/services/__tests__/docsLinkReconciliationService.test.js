@@ -75,14 +75,14 @@ describe('docsLinkReconciliationService', () => {
     });
     ensureWorkspaceLink.mockResolvedValueOnce({ action: 'created' });
 
-    const result = await ensureProjectLinkIfMissing('cto', '/projects/chaos-codex');
+    const result = await ensureProjectLinkIfMissing('cto', '/projects/project-alpha');
 
     expect(result).toEqual({ agentId: 'cto', action: 'repaired', state: 'linked' });
     expect(getWorkspaceLink).toHaveBeenCalledWith('project', 'cto', {
-      targetPath: '/projects/chaos-codex',
+      targetPath: '/projects/project-alpha',
     });
     expect(ensureWorkspaceLink).toHaveBeenCalledWith('project', 'cto', {
-      targetPath: '/projects/chaos-codex',
+      targetPath: '/projects/project-alpha',
     });
   });
 
@@ -123,12 +123,12 @@ describe('docsLinkReconciliationService', () => {
     const ids = collectAgentIdsFromOpenClawConfig(
       JSON.stringify({
         agents: {
-          list: [{ id: 'main' }, { id: 'clawboard-worker' }, { id: 'cto' }, { id: 'cto' }],
+          list: [{ id: 'main' }, { id: 'worker-agent' }, { id: 'cto' }, { id: 'cto' }],
         },
       }),
     );
 
-    expect(ids).toEqual(['clawboard-worker', 'cto']);
+    expect(ids).toEqual(['worker-agent', 'cto']);
   });
 
   it('collectAgentIdsFromOpenClawConfig returns [] on parse errors', () => {
@@ -144,26 +144,26 @@ describe('docsLinkReconciliationService', () => {
     getFileContent.mockResolvedValueOnce(
       JSON.stringify({
         agents: {
-          list: [{ id: 'main' }, { id: 'clawboard-worker' }, { id: 'cto' }],
+          list: [{ id: 'main' }, { id: 'worker-agent' }, { id: 'cto' }],
         },
       }),
     );
     getWorkspaceLink
       .mockResolvedValueOnce({ state: 'missing' }) // main
-      .mockResolvedValueOnce({ state: 'missing' }) // clawboard-worker
+      .mockResolvedValueOnce({ state: 'missing' }) // worker-agent
       .mockResolvedValueOnce({ state: 'linked' }); // cto
     ensureWorkspaceLink
       .mockResolvedValueOnce({ action: 'created' }) // main
-      .mockResolvedValueOnce({ action: 'created' }); // clawboard-worker
+      .mockResolvedValueOnce({ action: 'created' }); // worker-agent
 
     const result = await reconcileDocsLinksOnStartup();
 
     expect(getWorkspaceLink).toHaveBeenNthCalledWith(1, 'docs', 'main', {});
-    expect(getWorkspaceLink).toHaveBeenNthCalledWith(2, 'docs', 'clawboard-worker', {});
+    expect(getWorkspaceLink).toHaveBeenNthCalledWith(2, 'docs', 'worker-agent', {});
     expect(getWorkspaceLink).toHaveBeenNthCalledWith(3, 'docs', 'cto', {});
     expect(result.main).toEqual({ agentId: 'main', action: 'created', state: 'linked' });
     expect(result.agents).toEqual([
-      { agentId: 'clawboard-worker', action: 'created', state: 'linked' },
+      { agentId: 'worker-agent', action: 'created', state: 'linked' },
       { agentId: 'cto', action: 'unchanged', state: 'linked' },
     ]);
     expect(result.projectLinks).toEqual({ results: [] });
@@ -195,28 +195,28 @@ describe('docsLinkReconciliationService', () => {
 
     getWorkspaceLink
       .mockResolvedValueOnce({ state: 'linked' }) // docs/main
-      .mockResolvedValueOnce({ state: 'missing' }) // project/main:/projects/chaos-codex
-      .mockResolvedValueOnce({ state: 'linked' }); // project/main:/projects/chaos-lab
+      .mockResolvedValueOnce({ state: 'missing' }) // project/main:/projects/project-alpha
+      .mockResolvedValueOnce({ state: 'linked' }); // project/main:/projects/project-beta
 
     pool.query.mockResolvedValueOnce({
       rows: [
-        { agent_id: 'cc-api', root_path: '/projects/chaos-codex' },
-        { agent_id: 'cc-web', root_path: '/projects/chaos-lab' },
+        { agent_id: 'api-agent', root_path: '/projects/project-alpha' },
+        { agent_id: 'web-agent', root_path: '/projects/project-beta' },
       ],
     });
 
     const result = await reconcileDocsLinksOnStartup();
 
     expect(getWorkspaceLink).toHaveBeenCalledWith('project', 'main', {
-      targetPath: '/projects/chaos-codex',
+      targetPath: '/projects/project-alpha',
     });
     expect(getWorkspaceLink).toHaveBeenCalledWith('project', 'main', {
-      targetPath: '/projects/chaos-lab',
+      targetPath: '/projects/project-beta',
     });
     expect(result.projectLinks.results).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ agentId: 'main', projectRootPath: '/projects/chaos-codex' }),
-        expect.objectContaining({ agentId: 'main', projectRootPath: '/projects/chaos-lab' }),
+        expect.objectContaining({ agentId: 'main', projectRootPath: '/projects/project-alpha' }),
+        expect.objectContaining({ agentId: 'main', projectRootPath: '/projects/project-beta' }),
       ]),
     );
   });

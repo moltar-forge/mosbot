@@ -45,10 +45,10 @@ projects/                ← shared project files
 With project assignment enabled, agents also get per-project links inside their own workspace:
 
 ```text
-workspace-cc-api/
+workspace-api-agent/
 └── projects/
-    ├── chaos-codex -> ../../projects/chaos-codex
-    └── chaos-lab   -> ../../projects/chaos-lab
+    ├── project-alpha -> ../../projects/project-alpha
+    └── project-beta  -> ../../projects/project-beta
 ```
 
 Main workspace also receives project links:

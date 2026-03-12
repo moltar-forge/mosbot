@@ -1,42 +1,235 @@
-import { useParams } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { Link } from 'react-router-dom';
+import {
+  PlusIcon,
+  PencilSquareIcon,
+  FolderOpenIcon,
+  ArchiveBoxIcon,
+  TrashIcon,
+} from '@heroicons/react/24/outline';
 import Header from '../components/Header';
-import WorkspaceExplorer from '../components/WorkspaceExplorer';
-import { createProject, assignAgentToProject, deleteProject, getProjects } from '../api/client';
-import { useAgentStore } from '../stores/agentStore';
-import { useWorkspaceStore } from '../stores/workspaceStore';
+import { createProject, getProjects, updateProject, deleteProject } from '../api/client';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
+import { normalizeProjectSlug } from '../utils/projectSlug';
 
-const AGENT_ID = 'projects';
-const ROOT_PATH = '/projects';
+const EMPTY_FORM = {
+  name: '',
+  slug: '',
+  description: '',
+  status: 'active',
+};
+
+function ProjectForm({
+  title,
+  submitLabel,
+  initialValues = EMPTY_FORM,
+  isSaving = false,
+  onSubmit,
+  onCancel = null,
+}) {
+  const [form, setForm] = useState(initialValues);
+
+  useEffect(() => {
+    setForm(initialValues);
+  }, [initialValues]);
+
+  const derivedSlug = normalizeProjectSlug(form.name);
+  const effectiveSlug = normalizeProjectSlug(form.slug || derivedSlug);
+
+  const handleChange = (field, value) => {
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === 'slug') {
+        next.slug = normalizeProjectSlug(value);
+      }
+      return next;
+    });
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    await onSubmit({
+      name: form.name.trim(),
+      slug: effectiveSlug,
+      description: form.description.trim(),
+      status: form.status,
+    });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-dark-800 border border-dark-700 rounded-lg p-4 space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold text-dark-100">{title}</h2>
+          <p className="text-xs text-dark-400 mt-1">
+            Slug controls the workspace path at{' '}
+            <code className="text-dark-300">/projects/&lt;slug&gt;</code>.
+          </p>
+        </div>
+
+        {onCancel && (
+          <button type="button" className="btn-secondary" onClick={onCancel}>
+            Cancel
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="text-[11px] uppercase tracking-wide text-dark-500">Name</label>
+          <input
+            value={form.name}
+            onChange={(e) => handleChange('name', e.target.value)}
+            className="input-field mt-1 w-full"
+            placeholder="My Project"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="text-[11px] uppercase tracking-wide text-dark-500">Slug</label>
+          <input
+            value={form.slug}
+            onChange={(e) => handleChange('slug', e.target.value)}
+            className="input-field mt-1 w-full"
+            placeholder={derivedSlug || 'my-project'}
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="text-[11px] uppercase tracking-wide text-dark-500">Description</label>
+        <textarea
+          value={form.description}
+          onChange={(e) => handleChange('description', e.target.value)}
+          className="input-field mt-1 w-full min-h-[96px]"
+          placeholder="What the project is, why it exists, who it serves."
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+        <div>
+          <label className="text-[11px] uppercase tracking-wide text-dark-500">Status</label>
+          <select
+            value={form.status}
+            onChange={(e) => handleChange('status', e.target.value)}
+            className="input-field mt-1 w-full"
+          >
+            <option value="active">Active</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
+
+        <div className="text-xs text-dark-400">
+          Root path:{' '}
+          <code className="text-dark-300">/projects/{effectiveSlug || 'project-slug'}</code>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 justify-end">
+        <button type="submit" className="btn-primary disabled:opacity-50" disabled={isSaving}>
+          {isSaving ? 'Saving…' : submitLabel}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ProjectCard({ project, onEdit, onDelete, onToggleArchive, isAdmin, isDeleting, isTogglingArchive }) {
+  const statusClass =
+    project.status === 'archived'
+      ? 'bg-yellow-900/40 text-yellow-300 border-yellow-700/60'
+      : 'bg-green-900/30 text-green-300 border-green-700/60';
+
+  return (
+    <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-sm font-semibold text-dark-100 truncate">{project.name}</h2>
+            <span className={`text-[10px] px-2 py-1 rounded border ${statusClass}`}>
+              {project.status}
+            </span>
+          </div>
+          <p className="text-xs text-dark-400 mt-1">/{project.slug}</p>
+          {project.description ? (
+            <p className="text-xs text-dark-300 mt-2 line-clamp-3">{project.description}</p>
+          ) : (
+            <p className="text-xs text-dark-500 mt-2">No description yet.</p>
+          )}
+        </div>
+      </div>
+
+      <dl className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+        <div>
+          <dt className="text-dark-500">Root path</dt>
+          <dd className="text-dark-200 mt-1 break-all">{project.root_path}</dd>
+        </div>
+        <div>
+          <dt className="text-dark-500">Assigned agents</dt>
+          <dd className="text-dark-200 mt-1">{project.assigned_agents ?? 0}</dd>
+        </div>
+        <div>
+          <dt className="text-dark-500">Updated</dt>
+          <dd className="text-dark-200 mt-1">{project.updated_at || '—'}</dd>
+        </div>
+      </dl>
+
+      <div className="flex flex-wrap items-center gap-2 justify-between">
+        <Link to={`/projects/${project.slug}`} className="btn-primary inline-flex items-center gap-2">
+          <FolderOpenIcon className="w-4 h-4" />
+          Open project
+        </Link>
+
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="btn-secondary inline-flex items-center gap-2" onClick={() => onEdit(project)}>
+              <PencilSquareIcon className="w-4 h-4" />
+              Edit
+            </button>
+            <button
+              className="btn-secondary inline-flex items-center gap-2 disabled:opacity-50"
+              onClick={() => onToggleArchive(project)}
+              disabled={isTogglingArchive}
+            >
+              <ArchiveBoxIcon className="w-4 h-4" />
+              {isTogglingArchive
+                ? project.status === 'archived'
+                  ? 'Restoring…'
+                  : 'Archiving…'
+                : project.status === 'archived'
+                  ? 'Restore'
+                  : 'Archive'}
+            </button>
+            <button
+              className="btn-danger inline-flex items-center gap-2 disabled:opacity-50"
+              onClick={() => onDelete(project)}
+              disabled={isDeleting}
+            >
+              <TrashIcon className="w-4 h-4" />
+              {isDeleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function Projects() {
-  const { '*': filePathParam } = useParams();
-  const { agents, fetchAgents } = useAgentStore();
-  const { createDirectory, setWorkspaceRootPath } = useWorkspaceStore();
   const { isAdmin } = useAuthStore();
   const { showToast } = useToastStore();
-
-  const [isEnsuring, setIsEnsuring] = useState(false);
-  const [ensureComplete, setEnsureComplete] = useState(false);
 
   const [projects, setProjects] = useState([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [projectsError, setProjectsError] = useState(null);
 
-  const [isCreatingProject, setIsCreatingProject] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectSlug, setNewProjectSlug] = useState('');
-
-  const [assignments, setAssignments] = useState({}); // { [projectId]: agentId }
-  const [assigningProjectId, setAssigningProjectId] = useState(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingProject, setEditingProject] = useState(null);
+  const [isSavingProject, setIsSavingProject] = useState(false);
   const [deletingProjectId, setDeletingProjectId] = useState(null);
-
-  useEffect(() => {
-    fetchAgents();
-  }, [fetchAgents]);
+  const [togglingArchiveProjectId, setTogglingArchiveProjectId] = useState(null);
 
   const loadProjects = useCallback(async () => {
     setIsLoadingProjects(true);
@@ -56,77 +249,81 @@ export default function Projects() {
     loadProjects();
   }, [loadProjects]);
 
-  useEffect(() => {
-    const ensureDir = async () => {
-      if (isEnsuring || ensureComplete) return;
-      setIsEnsuring(true);
-      setWorkspaceRootPath(ROOT_PATH);
-      try {
-        if (isAdmin()) {
-          await createDirectory({ path: '/', agentId: AGENT_ID });
-        }
-      } catch {
-        // Directory likely already exists (409) — that's fine
-      } finally {
-        setIsEnsuring(false);
-        setEnsureComplete(true);
-      }
-    };
-    ensureDir();
-  }, [createDirectory, setWorkspaceRootPath, isAdmin, isEnsuring, ensureComplete]);
+  const { activeProjects, archivedProjects } = useMemo(() => {
+    const active = [];
+    const archived = [];
+    projects.forEach((project) => {
+      if (project.status === 'archived') archived.push(project);
+      else active.push(project);
+    });
+    return { activeProjects: active, archivedProjects: archived };
+  }, [projects]);
 
-  const availableAgents = useMemo(
-    () => (Array.isArray(agents) ? agents.filter((a) => a.id && a.id !== 'archived') : []),
-    [agents],
-  );
-
-  const handleCreateProject = async () => {
-    if (!isAdmin()) return;
-
-    setIsCreatingProject(true);
+  const handleCreateProject = async (payload) => {
+    setIsSavingProject(true);
     try {
-      const payload = {
-        name: newProjectName || undefined,
-        slug: newProjectSlug || undefined,
-      };
       await createProject(payload);
-      setNewProjectName('');
-      setNewProjectSlug('');
       showToast('Project created', 'success');
+      setShowCreateForm(false);
       await loadProjects();
     } catch (err) {
       showToast(err?.response?.data?.error?.message || err.message || 'Failed to create project', 'error');
     } finally {
-      setIsCreatingProject(false);
+      setIsSavingProject(false);
     }
   };
 
-  const handleAssign = async (projectId) => {
-    if (!isAdmin()) return;
+  const handleUpdateProject = async (payload) => {
+    if (!editingProject?.id) return;
 
-    const agentId = assignments[projectId];
-    if (!agentId) {
-      showToast('Select an agent to assign', 'error');
-      return;
-    }
-
-    setAssigningProjectId(projectId);
+    setIsSavingProject(true);
     try {
-      await assignAgentToProject(projectId, { agentId });
-      showToast(`Assigned ${agentId}`, 'success');
+      await updateProject(editingProject.id, {
+        ...payload,
+        rootPath: `/projects/${payload.slug}`,
+      });
+      showToast(`Updated ${payload.slug}`, 'success');
+      setEditingProject(null);
       await loadProjects();
     } catch (err) {
-      showToast(err?.response?.data?.error?.message || err.message || 'Failed to assign agent', 'error');
+      showToast(err?.response?.data?.error?.message || err.message || 'Failed to update project', 'error');
     } finally {
-      setAssigningProjectId(null);
+      setIsSavingProject(false);
+    }
+  };
+
+  const handleToggleArchiveProject = async (project) => {
+    if (!project?.id) return;
+
+    const nextStatus = project.status === 'archived' ? 'active' : 'archived';
+    setTogglingArchiveProjectId(project.id);
+    try {
+      await updateProject(project.id, {
+        name: project.name,
+        slug: project.slug,
+        description: project.description || '',
+        status: nextStatus,
+        rootPath: project.root_path,
+      });
+      showToast(
+        nextStatus === 'archived' ? `Archived ${project.slug}` : `Restored ${project.slug}`,
+        'success',
+      );
+      if (editingProject?.id === project.id) {
+        setEditingProject((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+      }
+      await loadProjects();
+    } catch (err) {
+      showToast(err?.response?.data?.error?.message || err.message || 'Failed to update project status', 'error');
+    } finally {
+      setTogglingArchiveProjectId(null);
     }
   };
 
   const handleDeleteProject = async (project) => {
-    if (!isAdmin() || !project?.id) return;
-
+    if (!project?.id) return;
     const confirmed = window.confirm(
-      `Delete project "${project.slug}"? This removes project assignments and project links for assigned agents.`,
+      `Delete project "${project.slug}"? This removes assignments and workspace links.`,
     );
     if (!confirmed) return;
 
@@ -134,6 +331,9 @@ export default function Projects() {
     try {
       await deleteProject(project.id);
       showToast(`Deleted project ${project.slug}`, 'success');
+      if (editingProject?.id === project.id) {
+        setEditingProject(null);
+      }
       await loadProjects();
     } catch (err) {
       showToast(err?.response?.data?.error?.message || err.message || 'Failed to delete project', 'error');
@@ -144,140 +344,136 @@ export default function Projects() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Projects" subtitle="Project registry + shared project workspace" />
+      <Header title="Projects" subtitle="Registry first. Project detail and files live one level down." />
 
-      <div className="flex-1 flex flex-col p-3 md:p-6 overflow-hidden gap-4">
+      <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-4">
         <div className="bg-dark-800 border border-dark-700 rounded-lg p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-sm font-semibold text-dark-100">Registry</h2>
-              <p className="text-xs text-dark-400">
-                Projects live under <code className="text-dark-300">/projects/*</code> and are mounted
-                into agent workspaces at{' '}
-                <code className="text-dark-300">/workspace-&lt;agentId&gt;/projects/&lt;slug&gt;</code>.
+              <h2 className="text-sm font-semibold text-dark-100">Project Registry</h2>
+              <p className="text-xs text-dark-400 mt-1 max-w-3xl">
+                Use this page to manage project records. Open a project to handle files, agent assignment,
+                and project-specific actions.
               </p>
             </div>
 
             {isAdmin() && (
-              <div className="flex items-end gap-2">
-                <div>
-                  <label className="text-[10px] text-dark-500">Name</label>
-                  <input
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    className="input-field mt-1 w-48"
-                    placeholder="My Project"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] text-dark-500">Slug</label>
-                  <input
-                    value={newProjectSlug}
-                    onChange={(e) => setNewProjectSlug(e.target.value)}
-                    className="input-field mt-1 w-44"
-                    placeholder="project-slug"
-                  />
-                </div>
-                <button
-                  onClick={handleCreateProject}
-                  disabled={isCreatingProject}
-                  className="btn-primary flex items-center gap-2 disabled:opacity-50"
-                >
-                  <PlusIcon className="w-4 h-4" />
-                  {isCreatingProject ? 'Creating…' : 'Create'}
-                </button>
-              </div>
+              <button
+                className="btn-primary inline-flex items-center gap-2"
+                onClick={() => {
+                  setEditingProject(null);
+                  setShowCreateForm((prev) => !prev);
+                }}
+              >
+                <PlusIcon className="w-4 h-4" />
+                {showCreateForm ? 'Close' : 'New Project'}
+              </button>
             )}
           </div>
 
-          {projectsError && <p className="text-xs text-red-400 mt-2">{projectsError}</p>}
-
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-            {isLoadingProjects && <p className="text-xs text-dark-400">Loading projects…</p>}
-
-            {!isLoadingProjects && projects.length === 0 && (
-              <p className="text-xs text-dark-400">No projects yet.</p>
-            )}
-
-            {projects.map((p) => (
-              <div key={p.id} className="bg-dark-900 border border-dark-700 rounded-lg p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-dark-100 truncate">
-                      {p.name} <span className="text-dark-400">({p.slug})</span>
-                    </p>
-                    <p className="text-xs text-dark-500 mt-1">
-                      Root: <code className="text-dark-300">{p.root_path}</code>
-                    </p>
-                    <p className="text-xs text-dark-500 mt-1">
-                      Assigned agents: <span className="text-dark-300">{p.assigned_agents}</span>
-                    </p>
-                  </div>
-
-                  {isAdmin() && (
-                    <div className="flex items-end gap-2">
-                      <select
-                        className="input-field"
-                        value={assignments[p.id] || ''}
-                        onChange={(e) =>
-                          setAssignments((prev) => ({ ...prev, [p.id]: e.target.value }))
-                        }
-                      >
-                        <option value="">Assign agent…</option>
-                        {availableAgents.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.icon || '🤖'} {a.id}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        className="btn-secondary disabled:opacity-50"
-                        onClick={() => handleAssign(p.id)}
-                        disabled={assigningProjectId === p.id}
-                      >
-                        {assigningProjectId === p.id ? 'Assigning…' : 'Assign'}
-                      </button>
-                      <button
-                        className="btn-danger disabled:opacity-50 flex items-center gap-1"
-                        onClick={() => handleDeleteProject(p)}
-                        disabled={deletingProjectId === p.id}
-                        title="Delete project"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                        {deletingProjectId === p.id ? 'Deleting…' : 'Delete'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-hidden">
-          {ensureComplete ? (
-            <WorkspaceExplorer
-              agentId={AGENT_ID}
-              agent={{
-                id: AGENT_ID,
-                name: 'Projects',
-                workspaceRootPath: ROOT_PATH,
-                icon: '📁',
-              }}
-              initialFilePath={filePathParam || null}
-              routeBase="/projects"
-              showAgentSelector={false}
-              workspaceRootPath={ROOT_PATH}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <div className="inline-block w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4" />
-                <p className="text-dark-400">Setting up projects space...</p>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+            <div className="bg-dark-900 rounded-lg border border-dark-700 p-3">
+              <div className="text-dark-500">Active</div>
+              <div className="text-lg font-semibold text-dark-100 mt-1">{activeProjects.length}</div>
+            </div>
+            <div className="bg-dark-900 rounded-lg border border-dark-700 p-3">
+              <div className="text-dark-500">Archived</div>
+              <div className="text-lg font-semibold text-dark-100 mt-1">{archivedProjects.length}</div>
+            </div>
+            <div className="bg-dark-900 rounded-lg border border-dark-700 p-3">
+              <div className="text-dark-500">Total assigned agents</div>
+              <div className="text-lg font-semibold text-dark-100 mt-1">
+                {projects.reduce((sum, project) => sum + (project.assigned_agents || 0), 0)}
               </div>
             </div>
-          )}
+          </div>
         </div>
+
+        {isAdmin() && showCreateForm && (
+          <ProjectForm
+            title="Create project"
+            submitLabel="Create project"
+            isSaving={isSavingProject}
+            onSubmit={handleCreateProject}
+            onCancel={() => setShowCreateForm(false)}
+          />
+        )}
+
+        {isAdmin() && editingProject && (
+          <ProjectForm
+            title={`Edit ${editingProject.slug}`}
+            submitLabel="Save changes"
+            isSaving={isSavingProject}
+            initialValues={{
+              name: editingProject.name || '',
+              slug: editingProject.slug || '',
+              description: editingProject.description || '',
+              status: editingProject.status || 'active',
+            }}
+            onSubmit={handleUpdateProject}
+            onCancel={() => setEditingProject(null)}
+          />
+        )}
+
+        {projectsError && <div className="text-sm text-red-400">{projectsError}</div>}
+
+        <section className="space-y-3">
+          <div className="flex items-center gap-2 text-dark-300">
+            <FolderOpenIcon className="w-5 h-5" />
+            <h2 className="text-sm font-semibold">Active projects</h2>
+          </div>
+
+          {isLoadingProjects ? (
+            <div className="text-sm text-dark-400">Loading projects…</div>
+          ) : activeProjects.length === 0 ? (
+            <div className="bg-dark-800 border border-dark-700 rounded-lg p-6 text-sm text-dark-400">
+              No active projects yet.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {activeProjects.map((project) => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  onEdit={setEditingProject}
+                  onDelete={handleDeleteProject}
+                  onToggleArchive={handleToggleArchiveProject}
+                  isAdmin={isAdmin()}
+                  isDeleting={deletingProjectId === project.id}
+                  isTogglingArchive={togglingArchiveProjectId === project.id}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-center gap-2 text-dark-300">
+            <ArchiveBoxIcon className="w-5 h-5" />
+            <h2 className="text-sm font-semibold">Archived projects</h2>
+          </div>
+
+          {archivedProjects.length === 0 ? (
+            <div className="bg-dark-800 border border-dark-700 rounded-lg p-6 text-sm text-dark-400">
+              No archived projects.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {archivedProjects.map((project) => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  onEdit={setEditingProject}
+                  onDelete={handleDeleteProject}
+                  onToggleArchive={handleToggleArchiveProject}
+                  isAdmin={isAdmin()}
+                  isDeleting={deletingProjectId === project.id}
+                  isTogglingArchive={togglingArchiveProjectId === project.id}
+                />
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

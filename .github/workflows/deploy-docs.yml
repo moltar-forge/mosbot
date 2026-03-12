@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   deploy:
-    if: github.repository == 'moltar-forge/mosbot'
+    if: github.repository == 'ByMosDev/mosbot-os'
     runs-on: ubuntu-latest
 
     steps:
