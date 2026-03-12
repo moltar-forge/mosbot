@@ -93,7 +93,7 @@ describe('ProjectDetail', () => {
     expect(options).not.toContain('🦞 main');
   });
 
-  it('archives a project from the detail page', async () => {
+  it('archives a project from the detail page without persisting dirty form edits', async () => {
     updateProject.mockResolvedValue({ status: 'archived' });
 
     render(
@@ -108,12 +108,22 @@ describe('ProjectDetail', () => {
       expect(screen.getByRole('button', { name: 'Archive project' })).toBeInTheDocument();
     });
 
+    fireEvent.change(screen.getByDisplayValue('Project Alpha'), {
+      target: { value: 'Unsaved Project Name' },
+    });
+
     fireEvent.click(screen.getByRole('button', { name: 'Archive project' }));
 
     await waitFor(() => {
       expect(updateProject).toHaveBeenCalledWith(
         'p1',
-        expect.objectContaining({ status: 'archived', rootPath: '/projects/project-alpha' }),
+        expect.objectContaining({
+          name: 'Project Alpha',
+          slug: 'project-alpha',
+          description: 'Sample project description',
+          status: 'archived',
+          rootPath: '/projects/project-alpha',
+        }),
       );
     });
   });

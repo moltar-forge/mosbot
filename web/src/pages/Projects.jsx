@@ -11,6 +11,7 @@ import Header from '../components/Header';
 import { createProject, getProjects, updateProject, deleteProject } from '../api/client';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
+import { normalizeProjectSlug } from '../utils/projectSlug';
 
 const EMPTY_FORM = {
   name: '',
@@ -18,16 +19,6 @@ const EMPTY_FORM = {
   description: '',
   status: 'active',
 };
-
-function normalizeSlug(value) {
-  return String(value || '')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/_+/g, '_')
-    .replace(/-+/g, '-')
-    .replace(/^[-_]+|[-_]+$/g, '');
-}
 
 function ProjectForm({
   title,
@@ -43,14 +34,14 @@ function ProjectForm({
     setForm(initialValues);
   }, [initialValues]);
 
-  const derivedSlug = normalizeSlug(form.name);
-  const effectiveSlug = normalizeSlug(form.slug || derivedSlug);
+  const derivedSlug = normalizeProjectSlug(form.name);
+  const effectiveSlug = normalizeProjectSlug(form.slug || derivedSlug);
 
   const handleChange = (field, value) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
       if (field === 'slug') {
-        next.slug = normalizeSlug(value);
+        next.slug = normalizeProjectSlug(value);
       }
       return next;
     });

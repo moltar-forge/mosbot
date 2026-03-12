@@ -19,16 +19,7 @@ import {
 } from '../api/client';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
-
-function normalizeSlug(value) {
-  return String(value || '')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/_+/g, '_')
-    .replace(/-+/g, '-')
-    .replace(/^[-_]+|[-_]+$/g, '');
-}
+import { normalizeProjectSlug } from '../utils/projectSlug';
 
 function TabButton({ active, onClick, children }) {
   return (
@@ -125,7 +116,7 @@ export default function ProjectDetail() {
     if (!project?.id) return;
     setIsSaving(true);
     try {
-      const normalizedSlug = normalizeSlug(editForm.slug);
+      const normalizedSlug = normalizeProjectSlug(editForm.slug);
 
       const updated = await updateProject(project.id, {
         name: editForm.name.trim(),
@@ -184,9 +175,9 @@ export default function ProjectDetail() {
     setIsTogglingArchive(true);
     try {
       await updateProject(project.id, {
-        name: editForm.name.trim(),
-        slug: normalizeSlug(editForm.slug),
-        description: editForm.description.trim(),
+        name: project.name,
+        slug: project.slug,
+        description: project.description || '',
         status: nextStatus,
         rootPath: project.root_path,
       });
@@ -331,7 +322,7 @@ export default function ProjectDetail() {
                   Root path:{' '}
                   <code className="text-dark-300">
                     /projects/
-                    {normalizeSlug(editForm.slug) || 'project-slug'}
+                    {normalizeProjectSlug(editForm.slug) || 'project-slug'}
                   </code>
                 </div>
               </div>
