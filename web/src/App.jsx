@@ -11,6 +11,7 @@ import Agents from './pages/Agents';
 import Workspace from './pages/Workspace';
 import Docs from './pages/Docs';
 import Projects from './pages/Projects';
+import ProjectDetail from './pages/ProjectDetail';
 import Skills from './pages/Skills';
 // import Subagents from './pages/Subagents'; // Hidden: Task Manager + Agents page cover this; re-enable if needed
 import CronJobs from './pages/CronJobs';
@@ -94,10 +95,26 @@ function App() {
               }
             />
             <Route
-              path="/projects/*"
+              path="/projects"
               element={
                 <Layout>
                   <Projects />
+                </Layout>
+              }
+            />
+            <Route
+              path="/projects/:slug"
+              element={
+                <Layout>
+                  <ProjectDetail />
+                </Layout>
+              }
+            />
+            <Route
+              path="/projects/:slug/files/*"
+              element={
+                <Layout>
+                  <ProjectDetail />
                 </Layout>
               }
             />

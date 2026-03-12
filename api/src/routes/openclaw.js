@@ -983,7 +983,11 @@ router.get('/projects', requireAuth, async (req, res, next) => {
     const result = await pool.query(
       `SELECT p.id, p.slug, p.name, p.description, p.root_path, p.contract_path, p.status,
               p.created_at, p.updated_at,
-              COUNT(apa.agent_id)::int AS assigned_agents
+              COUNT(apa.agent_id)::int AS assigned_agents,
+              COALESCE(
+                ARRAY_AGG(apa.agent_id ORDER BY apa.agent_id) FILTER (WHERE apa.agent_id IS NOT NULL),
+                ARRAY[]::text[]
+              ) AS assigned_agent_ids
          FROM projects p
          LEFT JOIN agent_project_assignments apa ON apa.project_id = p.id
         GROUP BY p.id
