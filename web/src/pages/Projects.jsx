@@ -43,12 +43,12 @@ function ProjectForm({
     setForm(initialValues);
   }, [initialValues]);
 
+  const derivedSlug = normalizeSlug(form.name);
+  const effectiveSlug = normalizeSlug(form.slug || derivedSlug);
+
   const handleChange = (field, value) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
-      if (field === 'name' && !prev.slug) {
-        next.slug = normalizeSlug(value);
-      }
       if (field === 'slug') {
         next.slug = normalizeSlug(value);
       }
@@ -60,7 +60,7 @@ function ProjectForm({
     event.preventDefault();
     await onSubmit({
       name: form.name.trim(),
-      slug: normalizeSlug(form.slug || form.name),
+      slug: effectiveSlug,
       description: form.description.trim(),
       status: form.status,
     });
@@ -102,8 +102,7 @@ function ProjectForm({
             value={form.slug}
             onChange={(e) => handleChange('slug', e.target.value)}
             className="input-field mt-1 w-full"
-            placeholder="chaos-codex"
-            required
+            placeholder={derivedSlug || 'my-project'}
           />
         </div>
       </div>
@@ -133,7 +132,7 @@ function ProjectForm({
 
         <div className="text-xs text-dark-400">
           Root path:{' '}
-          <code className="text-dark-300">/projects/{normalizeSlug(form.slug || form.name) || 'project-slug'}</code>
+          <code className="text-dark-300">/projects/{effectiveSlug || 'project-slug'}</code>
         </div>
       </div>
 

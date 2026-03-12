@@ -68,7 +68,7 @@ describe('Projects', () => {
     expect(screen.getByText('Total assigned agents')).toBeInTheDocument();
   });
 
-  it('defaults create-project slug to kebab-case and still allows underscores', async () => {
+  it('shows a derived kebab-case slug placeholder until the user overrides it', async () => {
     getProjects.mockResolvedValue([]);
 
     render(
@@ -82,12 +82,16 @@ describe('Projects', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'New Project' }));
-    fireEvent.change(screen.getByPlaceholderText('My Project'), { target: { value: 'My Proj' } });
 
-    expect(screen.getByPlaceholderText('chaos-codex')).toHaveValue('my-proj');
+    const nameInput = screen.getByPlaceholderText('My Project');
 
-    fireEvent.change(screen.getByPlaceholderText('chaos-codex'), { target: { value: 'chaos-codex_api' } });
-    expect(screen.getByPlaceholderText('chaos-codex')).toHaveValue('chaos-codex_api');
+    fireEvent.change(nameInput, { target: { value: 'My Proj' } });
+
+    expect(screen.getByDisplayValue('My Proj')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('my-proj')).toHaveValue('');
+
+    fireEvent.change(screen.getByPlaceholderText('my-proj'), { target: { value: 'chaos-codex_api' } });
+    expect(screen.getByDisplayValue('chaos-codex_api')).toBeInTheDocument();
   });
 
   it('archives a project from the registry', async () => {
