@@ -1,6 +1,6 @@
 # Architecture
 
-MosBot Dashboard is the UI layer of MosBot OS. See the full system architecture in [mosbot-api/docs/architecture.md](https://github.com/moltar-forge/mosbot/tree/main/api/blob/main/docs/architecture.md).
+MosBot Dashboard is the UI layer of MosBot OS. See the full system architecture in [mosbot-api/docs/architecture.md](https://github.com/ByMosDev/mosbot-os/tree/main/api/blob/main/docs/architecture.md).
 
 ## Dashboard internals
 

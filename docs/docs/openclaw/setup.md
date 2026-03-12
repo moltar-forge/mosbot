@@ -45,7 +45,7 @@ services:
       - '18789:18789'
 
   mosbot-workspace:
-    image: ghcr.io/moltar-forge/mosbot-workspace-server:latest
+    image: ghcr.io/bymosdev/mosbot-workspace-server:latest
     environment:
       WORKSPACE_SERVICE_TOKEN: your-secure-token
       CONFIG_ROOT: /openclaw-config
@@ -92,7 +92,7 @@ docker run -d \
   -e MAIN_WORKSPACE_DIR=workspace \
   -v /path/to/openclaw/config:/openclaw-config \
   -p 18780:18780 \
-  ghcr.io/moltar-forge/mosbot-workspace-server:latest
+  ghcr.io/bymosdev/mosbot-workspace-server:latest
 ```
 
 ## Migration from old workspace env model

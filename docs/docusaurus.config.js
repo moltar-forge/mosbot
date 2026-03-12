@@ -8,10 +8,10 @@ const config = {
   tagline: 'A self-hosted operating system for AI agent work',
   favicon: 'img/favicon.ico',
 
-  url: 'https://moltar-forge.github.io',
+  url: 'https://bymosdev.github.io',
   baseUrl: '/mosbot/',
 
-  organizationName: 'moltar-forge',
+  organizationName: 'ByMosDev',
   projectName: 'mosbot',
   trailingSlash: false,
 
@@ -36,7 +36,7 @@ const config = {
         docs: {
           sidebarPath: require.resolve('./sidebars.js'),
           routeBasePath: '/',
-          editUrl: 'https://github.com/moltar-forge/mosbot/tree/main/docs/',
+          editUrl: 'https://github.com/ByMosDev/mosbot-os/tree/main/docs/',
         },
         blog: false,
         theme: {
@@ -112,17 +112,17 @@ const config = {
             label: 'Known Issues',
           },
           {
-            href: 'https://github.com/moltar-forge/mosbot/tree/main/api',
+            href: 'https://github.com/ByMosDev/mosbot-os/tree/main/api',
             label: 'API',
             position: 'right',
           },
           {
-            href: 'https://github.com/moltar-forge/mosbot/tree/main/web',
+            href: 'https://github.com/ByMosDev/mosbot-os/tree/main/web',
             label: 'Web',
             position: 'right',
           },
           {
-            href: 'https://github.com/moltar-forge/mosbot',
+            href: 'https://github.com/ByMosDev/mosbot-os',
             label: 'GitHub',
             position: 'right',
           },
@@ -145,15 +145,15 @@ const config = {
             items: [
               {
                 label: 'api',
-                href: 'https://github.com/moltar-forge/mosbot/tree/main/api',
+                href: 'https://github.com/ByMosDev/mosbot-os/tree/main/api',
               },
               {
                 label: 'web',
-                href: 'https://github.com/moltar-forge/mosbot/tree/main/web',
+                href: 'https://github.com/ByMosDev/mosbot-os/tree/main/web',
               },
               {
                 label: 'workspace-server',
-                href: 'https://github.com/moltar-forge/mosbot/tree/main/workspace-server',
+                href: 'https://github.com/ByMosDev/mosbot-os/tree/main/workspace-server',
               },
             ],
           },

@@ -4,7 +4,7 @@
 
 Please report security vulnerabilities privately via GitHub Security Advisories in this repository:
 
-- https://github.com/moltar-forge/mosbot/security/advisories/new
+- https://github.com/ByMosDev/mosbot-os/security/advisories/new
 
 Do not open public issues for suspected vulnerabilities.
 

@@ -99,9 +99,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 First push. Initial project setup and open source release of MosBot Dashboard.
 
-[Unreleased]: https://github.com/moltar-forge/mosbot/compare/web-v0.1.4...HEAD
-[0.1.4]: https://github.com/moltar-forge/mosbot/compare/web-v0.1.3...web-v0.1.4
-[0.1.3]: https://github.com/moltar-forge/mosbot/compare/web-v0.1.2...web-v0.1.3
-[0.1.2]: https://github.com/moltar-forge/mosbot/compare/web-v0.1.1...web-v0.1.2
-[0.1.1]: https://github.com/moltar-forge/mosbot/compare/web-v0.1.0...web-v0.1.1
-[0.1.0]: https://github.com/moltar-forge/mosbot/releases/tag/web-v0.1.0
+[Unreleased]: https://github.com/ByMosDev/mosbot-os/compare/web-v0.1.4...HEAD
+[0.1.4]: https://github.com/ByMosDev/mosbot-os/compare/web-v0.1.3...web-v0.1.4
+[0.1.3]: https://github.com/ByMosDev/mosbot-os/compare/web-v0.1.2...web-v0.1.3
+[0.1.2]: https://github.com/ByMosDev/mosbot-os/compare/web-v0.1.1...web-v0.1.2
+[0.1.1]: https://github.com/ByMosDev/mosbot-os/compare/web-v0.1.0...web-v0.1.1
+[0.1.0]: https://github.com/ByMosDev/mosbot-os/releases/tag/web-v0.1.0

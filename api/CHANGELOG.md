@@ -71,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 First push. Initial project setup and open source release of MosBot API.
 
-[Unreleased]: https://github.com/moltar-forge/mosbot/compare/api-v0.1.2...HEAD
-[0.1.2]: https://github.com/moltar-forge/mosbot/compare/api-v0.1.1...api-v0.1.2
-[0.1.1]: https://github.com/moltar-forge/mosbot/compare/api-v0.1.0...api-v0.1.1
-[0.1.0]: https://github.com/moltar-forge/mosbot/releases/tag/api-v0.1.0
+[Unreleased]: https://github.com/ByMosDev/mosbot-os/compare/api-v0.1.2...HEAD
+[0.1.2]: https://github.com/ByMosDev/mosbot-os/compare/api-v0.1.1...api-v0.1.2
+[0.1.1]: https://github.com/ByMosDev/mosbot-os/compare/api-v0.1.0...api-v0.1.1
+[0.1.0]: https://github.com/ByMosDev/mosbot-os/releases/tag/api-v0.1.0

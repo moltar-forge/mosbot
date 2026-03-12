@@ -63,7 +63,7 @@ This repo. Covers the backend service, database, OpenClaw integration, and deplo
 
 The dashboard is a separate repo. Its docs cover the UI, features, and frontend deployment.
 
-See: [`docs/dashboard.md`](dashboard.md) for the full index, or go directly to the [mosbot-dashboard repository](https://github.com/moltar-forge/mosbot/tree/main/web).
+See: [`docs/dashboard.md`](dashboard.md) for the full index, or go directly to the [mosbot-dashboard repository](https://github.com/ByMosDev/mosbot-os/tree/main/web).
 
 ---
 

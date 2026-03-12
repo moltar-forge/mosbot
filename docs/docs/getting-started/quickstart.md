@@ -10,7 +10,7 @@ Get MosBot OS running in under 10 minutes with the monorepo layout.
 ## Step 1: Clone the repository
 
 ```bash
-git clone https://github.com/moltar-forge/mosbot.git
+git clone https://github.com/ByMosDev/mosbot-os.git
 cd mosbot
 ```
 

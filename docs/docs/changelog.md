@@ -12,8 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 For application-level changes, see the changelogs in the respective repositories:
 
-- [api CHANGELOG](https://github.com/moltar-forge/mosbot/blob/main/api/CHANGELOG.md)
-- [web CHANGELOG](https://github.com/moltar-forge/mosbot/blob/main/web/CHANGELOG.md)
+- [api CHANGELOG](https://github.com/ByMosDev/mosbot-os/blob/main/api/CHANGELOG.md)
+- [web CHANGELOG](https://github.com/ByMosDev/mosbot-os/blob/main/web/CHANGELOG.md)
 
 ---
 
@@ -91,7 +91,7 @@ For application-level changes, see the changelogs in the respective repositories
 
 ### mosbot-dashboard
 
-#### [0.1.4] — [Release](https://github.com/moltar-forge/mosbot/releases/tag/web-v0.1.4)
+#### [0.1.4] — [Release](https://github.com/ByMosDev/mosbot-os/releases/tag/web-v0.1.4)
 
 ##### Added
 
@@ -120,17 +120,17 @@ For application-level changes, see the changelogs in the respective repositories
 
 ### mosbot-api
 
-#### [0.1.2] — [Release](https://github.com/moltar-forge/mosbot/releases/tag/api-v0.1.2)
+#### [0.1.2] — [Release](https://github.com/ByMosDev/mosbot-os/releases/tag/api-v0.1.2)
 
 ##### Changed
 
 - Updated workspace paths: `/shared/docs` → `/docs` and `/shared/projects` → `/projects`
 - Updated README and documentation to reference new documentation site
-  (moltar-forge.github.io/mosbot)
+  (bymosdev.github.io/mosbot-os)
 - Added backward compatibility for legacy `/shared/projects` paths in activity feed
 - Updated API documentation to reflect new workspace path structure
 
-#### [0.1.1] — [Release](https://github.com/moltar-forge/mosbot/releases/tag/api-v0.1.1)
+#### [0.1.1] — [Release](https://github.com/ByMosDev/mosbot-os/releases/tag/api-v0.1.1)
 
 ##### Added
 
@@ -144,16 +144,16 @@ For application-level changes, see the changelogs in the respective repositories
 
 ### mosbot-dashboard
 
-#### [0.1.3] — [Release](https://github.com/moltar-forge/mosbot/releases/tag/web-v0.1.3)
+#### [0.1.3] — [Release](https://github.com/ByMosDev/mosbot-os/releases/tag/web-v0.1.3)
 
 ##### Changed
 
 - Updated workspace paths: `/shared/docs` → `/docs` and `/shared/projects` → `/projects`
 - Updated README and documentation to reference new documentation site
-  (moltar-forge.github.io/mosbot)
+  (bymosdev.github.io/mosbot-os)
 - Added backward compatibility for legacy `/shared/projects` paths in Log page
 
-#### [0.1.2] — [Release](https://github.com/moltar-forge/mosbot/releases/tag/web-v0.1.2)
+#### [0.1.2] — [Release](https://github.com/ByMosDev/mosbot-os/releases/tag/web-v0.1.2)
 
 ##### Added
 
@@ -163,7 +163,7 @@ For application-level changes, see the changelogs in the respective repositories
 
 - Updated .gitignore to include .env.bak file
 
-#### [0.1.1] — [Release](https://github.com/moltar-forge/mosbot/releases/tag/web-v0.1.1)
+#### [0.1.1] — [Release](https://github.com/ByMosDev/mosbot-os/releases/tag/web-v0.1.1)
 
 ##### Changed
 
@@ -179,12 +179,12 @@ For application-level changes, see the changelogs in the respective repositories
 
 ### mosbot-api
 
-#### [0.1.0] — [Release](https://github.com/moltar-forge/mosbot/releases/tag/api-v0.1.0)
+#### [0.1.0] — [Release](https://github.com/ByMosDev/mosbot-os/releases/tag/api-v0.1.0)
 
 First push. Initial project setup and open source release of MosBot API.
 
 ### mosbot-dashboard
 
-#### [0.1.0] — [Release](https://github.com/moltar-forge/mosbot/releases/tag/web-v0.1.0)
+#### [0.1.0] — [Release](https://github.com/ByMosDev/mosbot-os/releases/tag/web-v0.1.0)
 
 First push. Initial project setup and open source release of MosBot Dashboard.

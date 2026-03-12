@@ -5,12 +5,12 @@
   "main": "server.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/moltar-forge/mosbot.git"
+    "url": "https://github.com/ByMosDev/mosbot-os.git"
   },
   "bugs": {
-    "url": "https://github.com/moltar-forge/mosbot/issues"
+    "url": "https://github.com/ByMosDev/mosbot-os/issues"
   },
-  "homepage": "https://github.com/moltar-forge/mosbot/tree/main/workspace-server#readme",
+  "homepage": "https://github.com/ByMosDev/mosbot-os/tree/main/workspace-server#readme",
   "scripts": {
     "start": "node server.js",
     "format": "prettier --write .",

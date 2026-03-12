@@ -161,4 +161,4 @@ If you can't resolve an issue:
 
 1. Check the [FAQ](./faq)
 2. Review API logs: `docker compose logs api --tail=100`
-3. Check the [GitHub issues](https://github.com/moltar-forge/mosbot/issues) for known problems
+3. Check the [GitHub issues](https://github.com/ByMosDev/mosbot-os/issues) for known problems

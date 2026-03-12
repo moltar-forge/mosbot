@@ -190,7 +190,7 @@ See [OpenClaw on Kubernetes](../openclaw/kubernetes) for the full guide.
 
 ```bash
 # Update the image tag in your deployment
-kubectl set image deployment/mosbot-api api=ghcr.io/moltar-forge/mosbot-api:v1.2.3 -n mosbot
+kubectl set image deployment/mosbot-api api=ghcr.io/bymosdev/mosbot-api:v1.2.3 -n mosbot
 
 # Or apply updated manifests
 kubectl apply -k k8s/base

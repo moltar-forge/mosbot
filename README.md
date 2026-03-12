@@ -45,7 +45,7 @@ Key features: Agent Monitor, Task Board (kanban), Workspaces, Skills, Standups, 
 ### Full-stack harness (recommended for first run)
 
 ```bash
-git clone https://github.com/moltar-forge/mosbot.git
+git clone https://github.com/ByMosDev/mosbot-os.git
 cd mosbot
 npm install
 make harness.setup   # Interactive first-time setup — generates docker/.env

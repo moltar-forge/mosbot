@@ -1,6 +1,6 @@
 # MosBot Dashboard — Documentation
 
-The dashboard docs live in the [mosbot-dashboard repository](https://github.com/moltar-forge/mosbot/tree/main/web) alongside the code they describe.
+The dashboard docs live in the [mosbot-dashboard repository](https://github.com/ByMosDev/mosbot-os/tree/main/web) alongside the code they describe.
 
 > **Note:** A dedicated `mosbot-docs` repo is planned. When it exists, all docs will be consolidated there and this page will redirect.
 
