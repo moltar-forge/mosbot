@@ -2205,100 +2205,37 @@ Errors:
 
 ### GET `/openclaw/subagents`
 
-Get running, queued, and completed subagents from OpenClaw workspace runtime files (all authenticated users).
+Get subagent status snapshot (all authenticated users).
 
-This endpoint aggregates subagent status by reading runtime files from the OpenClaw workspace:
-
-- `runtime/mosbot/spawn-active.jsonl` - Currently running subagents
-- `runtime/mosbot/spawn-requests.json` - Queued spawn requests
-- `runtime/mosbot/results-cache.jsonl` - Completed subagents with outcomes
-- `runtime/mosbot/activity-log.jsonl` - Activity logs for timestamp enrichment
+Legacy runtime integrations under `/runtime/mosbot/*` are retired and no longer part of the
+supported workspace contract.
 
 Response `200`:
 
 ```json
 {
   "data": {
-    "running": [
-      {
-        "sessionKey": "agent:main:cron:abc123",
-        "sessionLabel": "mosbot-task-550e8400-e29b-41d4-a716-446655440000",
-        "taskId": "550e8400-e29b-41d4-a716-446655440000",
-        "taskNumber": 1234,
-        "status": "RUNNING",
-        "model": "sonnet",
-        "startedAt": "2026-02-10T09:21:00Z",
-        "timeoutMinutes": 15
-      }
-    ],
-    "queued": [
-      {
-        "taskId": "650e8400-e29b-41d4-a716-446655440001",
-        "taskNumber": 1235,
-        "title": "Test display token usage",
-        "status": "SPAWN_QUEUED",
-        "model": "sonnet",
-        "queuedAt": "2026-02-10T05:33:58Z"
-      }
-    ],
-    "completed": [
-      {
-        "sessionLabel": "mosbot-task-750e8400-e29b-41d4-a716-446655440002",
-        "taskId": "750e8400-e29b-41d4-a716-446655440002",
-        "taskNumber": 1236,
-        "status": "COMPLETED",
-        "outcome": "✅ Task Complete: Successfully implemented feature",
-        "startedAt": "2026-02-09T09:43:58Z",
-        "completedAt": "2026-02-09T09:56:19Z",
-        "durationSeconds": 742
-      }
-    ],
-    "retention": {
-      "completedRetentionDays": 30,
-      "activityLogRetentionDays": 7,
-      "nextPurgeAt": "2026-02-11T03:00:00Z"
-    }
+    "running": [],
+    "queued": [],
+    "completed": []
   }
 }
 ```
 
 Response fields:
 
-- `running[]` - Currently active subagents from `spawn-active.jsonl`
-  - `taskNumber` - Human-readable task number (e.g., 1234 for TASK-1234), null if task not found
-- `queued[]` - Pending spawn requests with `status: "SPAWN_QUEUED"` from `spawn-requests.json`
-  - `taskNumber` - Human-readable task number (e.g., 1235 for TASK-1235), null if task not found
-- `completed[]` - Finished subagents from `results-cache.jsonl`, deduplicated by `sessionLabel` (latest `cachedAt` wins)
-  - `taskNumber` - Human-readable task number (e.g., 1236 for TASK-1236), null if task not found
-- `retention` - Data retention policy information
-
-**Data retention**: The API automatically purges old subagent data on a daily schedule (3 AM Asia/Singapore by default):
-
-- Completed subagents older than `completedRetentionDays` (default 30 days) are removed from `results-cache.jsonl`
-- Activity logs older than `activityLogRetentionDays` (default 7 days) are removed from `activity-log.jsonl`
-- If `RETENTION_ARCHIVE_ENABLED=true`, purged entries are archived to `/runtime/mosbot/archive/` before deletion
-
-**Configuration environment variables**:
-
-- `SUBAGENT_RETENTION_DAYS` - Days to retain completed subagents (default 30)
-- `ACTIVITY_LOG_RETENTION_DAYS` - Days to retain activity logs (default 7)
-- `RETENTION_ARCHIVE_ENABLED` - Archive purged entries before deletion (default true)
-- `ENABLE_SUBAGENT_RETENTION_PURGE` - Enable automatic retention purge (default true)
-- `SUBAGENT_RETENTION_CRON` - Cron schedule for purge job (default `0 3 * * *`)
+- `running[]` - Running subagents (currently empty)
+- `queued[]` - Queued subagents (currently empty)
+- `completed[]` - Completed subagents (currently empty)
 
 **Notes**:
 
-- Files are read from OpenClaw workspace via the workspace HTTP service
-- Missing files are treated gracefully (empty arrays returned, not errors)
-- Malformed JSON lines are ignored (the endpoint does not fail)
-- `startedAt` and `durationSeconds` for completed subagents are computed best-effort from `activity-log.jsonl` when available; otherwise may be null
+- Runtime-file-backed state under `/runtime/mosbot/*` is retired and should not be depended on
 
 Errors:
 
 - `401` authentication required
 - `503` OpenClaw service not configured or unavailable
-
-**Retry behavior**: All OpenClaw workspace requests automatically retry up to 3 times with exponential backoff (500ms base delay) for transient errors (timeouts, connection failures, 503 errors).
 
 ## OpenClaw config editor (admin/owner only)
 

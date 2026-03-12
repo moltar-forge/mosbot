@@ -79,8 +79,6 @@ const config = {
     get pathRemapPrefixes() {
       return process.env.OPENCLAW_PATH_REMAP_PREFIXES || '';
     },
-    subagentRetentionDays: parseInt(process.env.SUBAGENT_RETENTION_DAYS || '30', 10),
-    activityLogRetentionDays: parseInt(process.env.ACTIVITY_LOG_RETENTION_DAYS || '7', 10),
   },
 
   polling: {
@@ -90,10 +88,6 @@ const config = {
       10,
     ),
     activityCronIntervalMs: parseInt(process.env.ACTIVITY_CRON_POLL_INTERVAL_MS || '120000', 10),
-    activitySubagentIntervalMs: parseInt(
-      process.env.ACTIVITY_SUBAGENT_POLL_INTERVAL_MS || '180000',
-      10,
-    ),
     agentReconcileIntervalMs: parseInt(
       process.env.AGENT_RECONCILE_INTERVAL_MS || String(5 * 60 * 1000),
       10,
@@ -109,11 +103,6 @@ const config = {
   openrouter: {
     apiKey: process.env.OPENROUTER_API_KEY || null,
   },
-
-  retention: {
-    archiveEnabled: process.env.RETENTION_ARCHIVE_ENABLED === 'true',
-  },
-
   /**
    * Validate required configuration at startup.
    * Throws an Error listing all missing variables so the process exits cleanly

@@ -68,10 +68,6 @@ Before exposing MosBot OS to the internet or using it with real data, complete t
 
 - [ ] `ARCHIVE_AFTER_DAYS` is set appropriately (default: 7 days)
 
-- [ ] `ACTIVITY_LOG_RETENTION_DAYS` is set appropriately (default: 7 days)
-
-- [ ] `SUBAGENT_RETENTION_DAYS` is set appropriately (default: 30 days)
-
 ## OpenClaw (if using)
 
 - [ ] Workspace service is ClusterIP only (no public ingress)

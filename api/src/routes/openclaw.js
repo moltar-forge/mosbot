@@ -976,28 +976,6 @@ registerOpenClawWorkspaceRoutes({
   isAllowedWorkspacePath,
 });
 
-// Helper to calculate next purge time (3 AM Asia/Singapore = 19:00 UTC)
-function getNextPurgeTime() {
-  const now = new Date();
-  const sgOffset = 8 * 60; // Singapore is UTC+8
-
-  // Convert current time to Singapore timezone
-  const nowSg = new Date(now.getTime() + sgOffset * 60 * 1000);
-
-  // Get today's 3 AM in Singapore
-  const todayPurge = new Date(nowSg);
-  todayPurge.setHours(3, 0, 0, 0);
-
-  // If we're past 3 AM today, schedule for tomorrow
-  let nextPurge = todayPurge;
-  if (nowSg >= todayPurge) {
-    nextPurge = new Date(todayPurge.getTime() + 24 * 60 * 60 * 1000);
-  }
-
-  // Convert back to UTC
-  return new Date(nextPurge.getTime() - sgOffset * 60 * 1000).toISOString();
-}
-
 // GET /api/v1/openclaw/projects
 // List project registry and assignment counts (admin/owner/agent read)
 router.get('/projects', requireAuth, async (req, res, next) => {
@@ -2708,7 +2686,8 @@ router.post(
 });
 
 // GET /api/v1/openclaw/subagents
-// Get running, queued, and completed subagents from OpenClaw workspace runtime files
+// Runtime file integrations under /runtime/mosbot/* are retired.
+// This endpoint remains for compatibility and currently returns empty runtime arrays.
 router.get('/subagents', requireAuth, async (req, res, next) => {
   try {
     logger.info('Fetching subagent status', { userId: req.user.id });
@@ -2718,21 +2697,11 @@ router.get('/subagents', requireAuth, async (req, res, next) => {
     // Fetch all subagents using runtime service
     const { running, queued, completed } = await getAllSubagents();
 
-    // Calculate retention metadata
-    const completedRetentionDays = config.openclaw.subagentRetentionDays;
-    const activityLogRetentionDays = config.openclaw.activityLogRetentionDays;
-    const nextPurgeAt = getNextPurgeTime();
-
     res.json({
       data: {
         running,
         queued,
         completed,
-        retention: {
-          completedRetentionDays,
-          activityLogRetentionDays,
-          nextPurgeAt,
-        },
       },
     });
   } catch (error) {

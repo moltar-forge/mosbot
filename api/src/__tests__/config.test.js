@@ -166,37 +166,6 @@ describe('config', () => {
       delete process.env.USE_STANDARD_CONFIG_VALUES; // Clean up
     });
 
-    it('should parse subagentRetentionDays as integer', () => {
-      jest.resetModules();
-      process.env.JWT_SECRET = 'test-secret';
-      process.env.SUBAGENT_RETENTION_DAYS = '60';
-      const testConfig = require('../config');
-      expect(testConfig.openclaw.subagentRetentionDays).toBe(60);
-    });
-
-    it('should use default subagentRetentionDays when not set', () => {
-      jest.resetModules();
-      process.env.JWT_SECRET = 'test-secret';
-      delete process.env.SUBAGENT_RETENTION_DAYS;
-      const testConfig = require('../config');
-      expect(testConfig.openclaw.subagentRetentionDays).toBe(30);
-    });
-
-    it('should parse activityLogRetentionDays as integer', () => {
-      jest.resetModules();
-      process.env.JWT_SECRET = 'test-secret';
-      process.env.ACTIVITY_LOG_RETENTION_DAYS = '14';
-      const testConfig = require('../config');
-      expect(testConfig.openclaw.activityLogRetentionDays).toBe(14);
-    });
-
-    it('should use default activityLogRetentionDays when not set', () => {
-      jest.resetModules();
-      process.env.JWT_SECRET = 'test-secret';
-      delete process.env.ACTIVITY_LOG_RETENTION_DAYS;
-      const testConfig = require('../config');
-      expect(testConfig.openclaw.activityLogRetentionDays).toBe(7);
-    });
   });
 
   describe('polling config', () => {
@@ -248,21 +217,6 @@ describe('config', () => {
       expect(testConfig.polling.activityCronIntervalMs).toBe(120000);
     });
 
-    it('should parse activitySubagentIntervalMs as integer', () => {
-      jest.resetModules();
-      process.env.JWT_SECRET = 'test-secret';
-      process.env.ACTIVITY_SUBAGENT_POLL_INTERVAL_MS = '120000';
-      const testConfig = require('../config');
-      expect(testConfig.polling.activitySubagentIntervalMs).toBe(120000);
-    });
-
-    it('should use default activitySubagentIntervalMs when not set', () => {
-      jest.resetModules();
-      process.env.JWT_SECRET = 'test-secret';
-      delete process.env.ACTIVITY_SUBAGENT_POLL_INTERVAL_MS;
-      const testConfig = require('../config');
-      expect(testConfig.polling.activitySubagentIntervalMs).toBe(180000);
-    });
   });
 
   describe('bootstrap config', () => {
@@ -330,32 +284,6 @@ describe('config', () => {
       delete process.env.OPENROUTER_API_KEY;
       const testConfig = require('../config');
       expect(testConfig.openrouter.apiKey).toBeNull();
-    });
-  });
-
-  describe('retention config', () => {
-    it('should return true when RETENTION_ARCHIVE_ENABLED is "true"', () => {
-      jest.resetModules();
-      process.env.JWT_SECRET = 'test-secret';
-      process.env.RETENTION_ARCHIVE_ENABLED = 'true';
-      const testConfig = require('../config');
-      expect(testConfig.retention.archiveEnabled).toBe(true);
-    });
-
-    it('should return false when RETENTION_ARCHIVE_ENABLED is not "true"', () => {
-      jest.resetModules();
-      process.env.JWT_SECRET = 'test-secret';
-      process.env.RETENTION_ARCHIVE_ENABLED = 'false';
-      const testConfig = require('../config');
-      expect(testConfig.retention.archiveEnabled).toBe(false);
-    });
-
-    it('should return false when RETENTION_ARCHIVE_ENABLED is not set', () => {
-      jest.resetModules();
-      process.env.JWT_SECRET = 'test-secret';
-      delete process.env.RETENTION_ARCHIVE_ENABLED;
-      const testConfig = require('../config');
-      expect(testConfig.retention.archiveEnabled).toBe(false);
     });
   });
 

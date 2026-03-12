@@ -106,18 +106,11 @@ will be limited.
 | `OPENCLAW_DEVICE_PRIVATE_KEY` | Ed25519 private key (base64url encoded)                                                   |
 | `OPENCLAW_DEVICE_TOKEN`       | Device pairing token                                                                      |
 
-## Data retention
+## Subagent runtime files
 
-Controls how long subagent session data and activity logs are kept.
-
-| Variable                          | Default     | Description                              |
-| --------------------------------- | ----------- | ---------------------------------------- |
-| `SUBAGENT_RETENTION_DAYS`         | `30`        | Keep subagent session data for N days    |
-| `ACTIVITY_LOG_RETENTION_DAYS`     | `7`         | Keep activity logs for N days            |
-| `RETENTION_ARCHIVE_ENABLED`       | `true`      | Enable retention archiving               |
-| `ENABLE_SUBAGENT_RETENTION_PURGE` | `true`      | Enable automatic purge of old data       |
-| `SUBAGENT_RETENTION_CRON`         | `0 3 * * *` | Purge cron schedule (default: 3am daily) |
-| `SUBAGENT_RETENTION_ON_STARTUP`   | `false`     | Run purge immediately on startup         |
+Legacy runtime file integrations under `/runtime/mosbot/*` are retired and are no longer part of
+the supported workspace contract. Configure subagent observability through supported OpenClaw
+gateway and activity APIs instead of runtime JSON/JSONL files.
 
 ## Model pricing (optional)
 

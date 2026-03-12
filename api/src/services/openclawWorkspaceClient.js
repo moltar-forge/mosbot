@@ -199,7 +199,7 @@ async function makeOpenClawRequest(method, path, body = null, retryCount = 0) {
 
 /**
  * Get file content from OpenClaw workspace
- * @param {string} path - Workspace file path (e.g., '/runtime/mosbot/spawn-active.jsonl')
+ * @param {string} path - Workspace file path (e.g., '/workspace/notes/todo.md')
  * @returns {Promise<string|null>} File content as string, or null if file not found (404)
  * @throws {Error} For non-404 errors (service unavailable, network errors, etc.)
  */

@@ -1,16 +1,7 @@
-const mockGetFileContent = jest.fn();
 const mockPoolQuery = jest.fn();
-
-jest.mock('../openclawWorkspaceClient', () => ({
-  getFileContent: (...args) => mockGetFileContent(...args),
-}));
 
 jest.mock('../../db/pool', () => ({
   query: (...args) => mockPoolQuery(...args),
-}));
-
-jest.mock('../../utils/logger', () => ({
-  warn: jest.fn(),
 }));
 
 const {
@@ -40,9 +31,7 @@ describe('subagentsRuntimeService', () => {
   });
 
   describe('fetchRuntimeSubagents()', () => {
-    it('swallows non-SERVICE_NOT_CONFIGURED file errors and returns empty data', async () => {
-      mockGetFileContent.mockRejectedValue(new Error('transient read error'));
-
+    it('returns explicit empty runtime data', async () => {
       await expect(fetchRuntimeSubagents()).resolves.toEqual({
         running: [],
         queued: [],
@@ -51,51 +40,11 @@ describe('subagentsRuntimeService', () => {
       });
     });
 
-    it('filters activity/results by taskId when entry taskId mismatches', async () => {
-      mockGetFileContent
-        // spawn-active.jsonl
-        .mockResolvedValueOnce('')
-        // spawn-requests.json
-        .mockResolvedValueOnce('')
-        // results-cache.jsonl
-        .mockResolvedValueOnce(
-          [
-            JSON.stringify({
-              sessionLabel: 'agent:coo:subagent:1',
-              taskId: 'task-1',
-              cachedAt: '2026-03-03T10:00:00.000Z',
-              outcome: 'ok',
-            }),
-            JSON.stringify({
-              sessionLabel: 'agent:coo:subagent:2',
-              taskId: 'task-2',
-              cachedAt: '2026-03-03T10:00:00.000Z',
-              outcome: 'ok',
-            }),
-          ].join('\n'),
-        )
-        // activity-log.jsonl
-        .mockResolvedValueOnce(
-          [
-            // Should be filtered out by taskId mismatch even though session_label matches.
-            JSON.stringify({
-              timestamp: '2026-03-03T09:59:00.000Z',
-              task_id: 'task-2',
-              metadata: { session_label: 'agent:coo:subagent:1' },
-              event: 'agent_start',
-            }),
-          ].join('\n'),
-        );
-
+    it('returns empty runtime data when filtered by taskId', async () => {
       const result = await fetchRuntimeSubagents({ taskId: 'task-1' });
-
-      expect(result.completed).toHaveLength(1);
-      expect(result.completed[0]).toMatchObject({
-        sessionLabel: 'agent:coo:subagent:1',
-        taskId: 'task-1',
-      });
-      // Activity event is intentionally filtered out due to mismatched task_id.
-      expect(result.completed[0].startedAt).toBeNull();
+      expect(result.running).toEqual([]);
+      expect(result.queued).toEqual([]);
+      expect(result.completed).toEqual([]);
     });
   });
 
@@ -118,29 +67,11 @@ describe('subagentsRuntimeService', () => {
   });
 
   describe('getAllSubagents()', () => {
-    it('combines runtime fetch and DB enrichment', async () => {
-      mockGetFileContent
-        .mockResolvedValueOnce(
-          JSON.stringify({
-            sessionKey: 'k',
-            sessionLabel: 's',
-            taskId: 't1',
-            model: 'x',
-            startedAt: '2026-03-03T10:00:00.000Z',
-            timeoutMinutes: 15,
-          }),
-        )
-        .mockResolvedValueOnce(JSON.stringify({ requests: [] }))
-        .mockResolvedValueOnce('')
-        .mockResolvedValueOnce('');
-      mockPoolQuery.mockResolvedValueOnce({ rows: [{ id: 't1', task_number: 7 }] });
-
+    it('returns empty arrays without runtime-file access', async () => {
       const result = await getAllSubagents();
 
-      expect(result.running[0]).toMatchObject({
-        taskId: 't1',
-        taskNumber: 7,
-      });
+      expect(mockPoolQuery).not.toHaveBeenCalled();
+      expect(result.running).toEqual([]);
       expect(result.queued).toEqual([]);
       expect(result.completed).toEqual([]);
     });
