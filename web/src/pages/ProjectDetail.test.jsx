@@ -10,6 +10,8 @@ vi.mock('../api/client', () => ({
   assignAgentToProject: vi.fn(),
   unassignAgentFromProject: vi.fn(),
   deleteProject: vi.fn(),
+  getProjectLinkHealth: vi.fn(),
+  repairProjectLinkHealth: vi.fn(),
 }));
 
 vi.mock('../stores/authStore', () => ({
@@ -28,7 +30,8 @@ vi.mock('../components/WorkspaceExplorer', () => ({
   ),
 }));
 
-const { getProjects, getAgents, updateProject } = await import('../api/client');
+const { getProjects, getAgents, updateProject, getProjectLinkHealth, repairProjectLinkHealth } =
+  await import('../api/client');
 
 describe('ProjectDetail', () => {
   beforeEach(() => {
@@ -54,6 +57,18 @@ describe('ProjectDetail', () => {
       { id: 'web-agent', name: 'Web Agent', icon: '🖥️' },
       { id: 'architect-agent', name: 'Architect Agent', icon: '🧭' },
     ]);
+
+    getProjectLinkHealth.mockResolvedValue([
+      { slug: 'project-alpha', agentId: 'main', state: 'linked' },
+      { slug: 'project-alpha', agentId: 'api-agent', state: 'linked' },
+      { slug: 'project-alpha', agentId: 'web-agent', state: 'missing' },
+    ]);
+
+    repairProjectLinkHealth.mockResolvedValue({
+      attempted: 3,
+      repaired: 1,
+      failed: 0,
+    });
   });
 
   it('does not render a separate agents tab', async () => {
@@ -90,6 +105,47 @@ describe('ProjectDetail', () => {
     expect(screen.getByText('Web Agent')).toBeInTheDocument();
     expect(screen.queryByText('Architect Agent')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /remove/i })).toHaveLength(2);
+  });
+
+  it('renders project link health diagnostics in overview', async () => {
+    render(
+      <MemoryRouter initialEntries={['/projects/project-alpha']}>
+        <Routes>
+          <Route path="/projects/:slug" element={<ProjectDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Link health')).toBeInTheDocument();
+    });
+
+    expect(getProjectLinkHealth).toHaveBeenCalledWith({ projectId: 'p1', limit: 200 });
+    expect(screen.getByText('main')).toBeInTheDocument();
+    expect(screen.getAllByText('api-agent').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('web-agent').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('linked').length).toBeGreaterThan(0);
+    expect(screen.getByText('missing')).toBeInTheDocument();
+  });
+
+  it('repairs project links from overview diagnostics', async () => {
+    render(
+      <MemoryRouter initialEntries={['/projects/project-alpha']}>
+        <Routes>
+          <Route path="/projects/:slug" element={<ProjectDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Repair links' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Repair links' }));
+
+    await waitFor(() => {
+      expect(repairProjectLinkHealth).toHaveBeenCalledWith({ projectId: 'p1', limit: 200 });
+    });
   });
 
   it('excludes main from the assignment dropdown', async () => {

@@ -16,6 +16,8 @@ import {
   assignAgentToProject,
   unassignAgentFromProject,
   deleteProject,
+  getProjectLinkHealth,
+  repairProjectLinkHealth,
 } from '../api/client';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
@@ -54,6 +56,10 @@ export default function ProjectDetail() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isTogglingArchive, setIsTogglingArchive] = useState(false);
   const [unassigningAgentId, setUnassigningAgentId] = useState(null);
+  const [linkHealth, setLinkHealth] = useState([]);
+  const [isLoadingLinkHealth, setIsLoadingLinkHealth] = useState(false);
+  const [isRepairingLinkHealth, setIsRepairingLinkHealth] = useState(false);
+  const [linkHealthError, setLinkHealthError] = useState(null);
   const [editForm, setEditForm] = useState({
     name: '',
     slug: '',
@@ -74,6 +80,8 @@ export default function ProjectDetail() {
       if (!nextProject) {
         setProject(null);
         setProjectsError(`Project "${slug}" not found`);
+        setLinkHealth([]);
+        setLinkHealthError(null);
       } else {
         setProject(nextProject);
         setEditForm({
@@ -83,6 +91,18 @@ export default function ProjectDetail() {
           status: nextProject.status || 'active',
         });
         setProjectsError(null);
+
+        setIsLoadingLinkHealth(true);
+        try {
+          const health = await getProjectLinkHealth({ projectId: nextProject.id, limit: 200 });
+          setLinkHealth(Array.isArray(health) ? health : []);
+          setLinkHealthError(null);
+        } catch (healthErr) {
+          setLinkHealth([]);
+          setLinkHealthError(healthErr.message || 'Failed to load project link health');
+        } finally {
+          setIsLoadingLinkHealth(false);
+        }
       }
       setAgents(Array.isArray(agentsData) ? agentsData : []);
     } catch (err) {
@@ -164,6 +184,23 @@ export default function ProjectDetail() {
       showToast(err?.response?.data?.error?.message || err.message || 'Failed to unassign agent', 'error');
     } finally {
       setUnassigningAgentId(null);
+    }
+  };
+
+  const handleRepairLinkHealth = async () => {
+    if (!project?.id) return;
+    setIsRepairingLinkHealth(true);
+    try {
+      const result = await repairProjectLinkHealth({ projectId: project.id, limit: 200 });
+      showToast(
+        `Link repair complete · repaired ${result?.repaired ?? 0}, failed ${result?.failed ?? 0}`,
+        result?.failed ? 'warning' : 'success',
+      );
+      await loadProject();
+    } catch (err) {
+      showToast(err?.response?.data?.error?.message || err.message || 'Failed to repair project links', 'error');
+    } finally {
+      setIsRepairingLinkHealth(false);
     }
   };
 
@@ -397,6 +434,54 @@ export default function ProjectDetail() {
                       )}
                     </div>
                   ))
+                )}
+              </div>
+
+              <div className="border-t border-dark-700 pt-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[11px] uppercase tracking-wide text-dark-500">Link health</label>
+                  {isAdmin() && (
+                    <button
+                      className="btn-secondary text-xs disabled:opacity-50"
+                      onClick={handleRepairLinkHealth}
+                      disabled={isRepairingLinkHealth || project.status !== 'active'}
+                    >
+                      {isRepairingLinkHealth ? 'Repairing…' : 'Repair links'}
+                    </button>
+                  )}
+                </div>
+
+                {isLoadingLinkHealth ? (
+                  <div className="text-xs text-dark-400">Loading link diagnostics…</div>
+                ) : linkHealthError ? (
+                  <div className="text-xs text-red-400">{linkHealthError}</div>
+                ) : linkHealth.length === 0 ? (
+                  <div className="text-xs text-dark-400">No link diagnostics found.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {linkHealth.map((entry) => {
+                      const state = String(entry.state || 'unknown').toLowerCase();
+                      const stateClass =
+                        state === 'linked'
+                          ? 'bg-green-900/30 text-green-300 border-green-700/60'
+                          : state === 'error' || state === 'conflict'
+                            ? 'bg-red-900/30 text-red-300 border-red-700/60'
+                            : 'bg-yellow-900/30 text-yellow-300 border-yellow-700/60';
+
+                      return (
+                        <div
+                          key={`${entry.slug}-${entry.agentId}`}
+                          className="bg-dark-900 border border-dark-700 rounded p-2 text-xs flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-dark-200 truncate">{entry.agentId}</div>
+                            {entry.errorCode ? <div className="text-red-400">{entry.errorCode}</div> : null}
+                          </div>
+                          <span className={`px-2 py-0.5 rounded border ${stateClass}`}>{state}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
 
