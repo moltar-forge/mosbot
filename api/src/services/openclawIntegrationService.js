@@ -104,6 +104,25 @@ async function getIntegrationRow() {
   return result.rows?.[0] || null;
 }
 
+async function getIntegrationStatusRow() {
+  const result = await pool.query(
+    `SELECT
+      status,
+      granted_scopes,
+      gateway_url,
+      device_id,
+      client_id,
+      client_mode,
+      platform,
+      last_error,
+      last_checked_at,
+      updated_at
+    FROM openclaw_integration_state
+    WHERE id = 1`,
+  );
+  return result.rows?.[0] || null;
+}
+
 async function upsertIntegrationRow(patch) {
   const existing = await getIntegrationRow();
   const next = {
@@ -168,9 +187,9 @@ function buildStatusFromRow(row = null) {
     return {
       status: 'uninitialized',
       ready: false,
-      requiredScopes: REQUIRED_OPERATOR_SCOPES,
+      requiredScopes: [...REQUIRED_OPERATOR_SCOPES],
       grantedScopes: [],
-      missingScopes: REQUIRED_OPERATOR_SCOPES,
+      missingScopes: [...REQUIRED_OPERATOR_SCOPES],
       lastError: null,
       lastCheckedAt: null,
     };
@@ -185,9 +204,9 @@ function buildStatusFromRow(row = null) {
   return {
     status,
     ready: status === 'ready' && missingScopes.length === 0,
-    requiredScopes: REQUIRED_OPERATOR_SCOPES,
-    grantedScopes,
-    missingScopes,
+    requiredScopes: [...REQUIRED_OPERATOR_SCOPES],
+    grantedScopes: [...grantedScopes],
+    missingScopes: [...missingScopes],
     gatewayUrl: row.gateway_url || null,
     deviceId: row.device_id || null,
     clientId: row.client_id || null,
@@ -201,7 +220,7 @@ function buildStatusFromRow(row = null) {
 
 async function getIntegrationStatus() {
   try {
-    const row = await getIntegrationRow();
+    const row = await getIntegrationStatusRow();
     return buildStatusFromRow(row);
   } catch (error) {
     if (error.code === '42P01') {

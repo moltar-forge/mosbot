@@ -11,6 +11,10 @@ export default function ProtectedRoute() {
   const [integrationReady, setIntegrationReady] = useState(true);
   const [integrationCheckDone, setIntegrationCheckDone] = useState(false);
 
+  const role = user?.role;
+  const mustEnforcePairing =
+    isAuthenticated && (role === 'admin' || role === 'owner') && location.pathname !== PAIRING_ROUTE;
+
   useEffect(() => {
     let cancelled = false;
 
@@ -23,9 +27,6 @@ export default function ProtectedRoute() {
         return;
       }
 
-      // Only enforce pairing gate for admin/owner users.
-      const role = user?.role;
-      const mustEnforcePairing = role === 'admin' || role === 'owner';
       if (!mustEnforcePairing) {
         if (!cancelled) {
           setIntegrationReady(true);
@@ -40,7 +41,8 @@ export default function ProtectedRoute() {
         setIntegrationReady(status?.ready === true);
       } catch (_error) {
         if (cancelled) return;
-        setIntegrationReady(false);
+        // Fail-open on transient status check errors; route-level APIs still enforce readiness.
+        setIntegrationReady(true);
       } finally {
         if (!cancelled) {
           setIntegrationCheckDone(true);
@@ -53,7 +55,7 @@ export default function ProtectedRoute() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, user?.role]);
+  }, [isAuthenticated, mustEnforcePairing]);
 
   // Wait for initialization to complete before checking auth
   if (!isInitialized || isLoading) {
@@ -72,7 +74,7 @@ export default function ProtectedRoute() {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (!integrationCheckDone) {
+  if (mustEnforcePairing && !integrationCheckDone) {
     return (
       <div className="flex items-center justify-center h-screen bg-dark-950">
         <div className="text-center">

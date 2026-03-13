@@ -12,6 +12,7 @@ const { getOpenClawIntegrationStatus } = await import('../api/client');
 
 describe('ProtectedRoute', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     // Reset store to default state before each test
     useAuthStore.setState({
       user: null,
@@ -107,6 +108,55 @@ describe('ProtectedRoute', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Protected Content')).toBeInTheDocument();
+    });
+  });
+
+  it('does not enforce pairing check for non-admin users', async () => {
+    useAuthStore.setState({
+      user: { id: 'u2', role: 'user' },
+      isAuthenticated: true,
+      isLoading: false,
+      isInitialized: true,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/tasks']}>
+        <Routes>
+          <Route element={<ProtectedRoute />}>
+            <Route path="tasks" element={<div>Tasks Page</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Tasks Page')).toBeInTheDocument();
+    });
+    expect(getOpenClawIntegrationStatus).not.toHaveBeenCalled();
+  });
+
+  it('fails open on transient pairing status errors for admins', async () => {
+    getOpenClawIntegrationStatus.mockRejectedValue(new Error('network down'));
+
+    useAuthStore.setState({
+      user: { id: 'u1', role: 'admin' },
+      isAuthenticated: true,
+      isLoading: false,
+      isInitialized: true,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/tasks']}>
+        <Routes>
+          <Route element={<ProtectedRoute />}>
+            <Route path="tasks" element={<div>Tasks Page</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Tasks Page')).toBeInTheDocument();
     });
   });
 

@@ -52,7 +52,7 @@ function handleKnownConfigError(error, res, next) {
 }
 
 function registerOpenClawConfigRoutes({ router, requireAuth }) {
-  router.get('/integration/status', requireAuth, async (req, res, next) => {
+  router.get('/integration/status', requireAuth, requireOwnerOrAdmin, async (req, res, next) => {
     try {
       const data = await getIntegrationStatus();
       res.json({ data });

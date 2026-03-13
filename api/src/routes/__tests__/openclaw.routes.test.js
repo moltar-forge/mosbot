@@ -2896,6 +2896,16 @@ describe('OpenClaw Routes', () => {
         }),
       );
     });
+
+    it('denies regular users from integration readiness details', async () => {
+      const token = getToken('user-id', 'user');
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/integration/status')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(403);
+    });
   });
 
   describe('POST /api/v1/openclaw/integration/pairing/start', () => {
