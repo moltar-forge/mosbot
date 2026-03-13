@@ -67,7 +67,8 @@ function generateDeviceIdentity() {
     deviceId: crypto.randomBytes(32).toString('hex'),
     publicKey: publicKeyRaw,
     privateSeed,
-    deviceToken: crypto.randomBytes(32).toString('base64url'),
+    // Pairing handshake should authenticate with the configured gateway token.
+    deviceToken: String(config.openclaw.gatewayToken || ''),
     clientId: DEFAULT_CLIENT_ID,
     clientMode: DEFAULT_CLIENT_MODE,
     platform: process.platform || 'node',
@@ -161,7 +162,11 @@ function mapPairingErrorToStatus(error) {
   const rpcCode = String(error?.rpcCode || error?.code || '').toUpperCase();
   const message = String(error?.message || '').toLowerCase();
 
-  if (rpcCode === 'NOT_PAIRED' || message.includes('not paired')) {
+  if (
+    rpcCode === 'NOT_PAIRED' ||
+    message.includes('not paired') ||
+    message.includes('device identity mismatch')
+  ) {
     return 'pending_pairing';
   }
 
@@ -248,22 +253,40 @@ async function getDeviceAuthFromDb() {
 }
 
 async function startPairing() {
-  const identity = generateDeviceIdentity();
+  const existing = await getIntegrationRow();
+  const hasReusablePendingIdentity =
+    existing?.status === 'pending_pairing' &&
+    existing?.device_id &&
+    existing?.public_key &&
+    existing?.private_key &&
+    existing?.device_token;
 
-  await upsertIntegrationRow({
-    status: 'pending_pairing',
-    gateway_url: config.openclaw.gatewayUrl || null,
-    device_id: identity.deviceId,
-    client_id: identity.clientId,
-    client_mode: identity.clientMode,
-    platform: identity.platform,
-    public_key: identity.publicKey,
-    private_key: encryptSecret(identity.privateSeed),
-    device_token: encryptSecret(identity.deviceToken),
-    granted_scopes: [],
-    last_error: null,
-    last_checked_at: new Date().toISOString(),
-  });
+  if (!hasReusablePendingIdentity) {
+    const identity = generateDeviceIdentity();
+
+    await upsertIntegrationRow({
+      status: 'pending_pairing',
+      gateway_url: config.openclaw.gatewayUrl || null,
+      device_id: identity.deviceId,
+      client_id: identity.clientId,
+      client_mode: identity.clientMode,
+      platform: identity.platform,
+      public_key: identity.publicKey,
+      private_key: encryptSecret(identity.privateSeed),
+      device_token: encryptSecret(identity.deviceToken),
+      granted_scopes: [],
+      last_error: null,
+      last_checked_at: new Date().toISOString(),
+    });
+  } else {
+    await upsertIntegrationRow({
+      status: 'pending_pairing',
+      gateway_url: config.openclaw.gatewayUrl || null,
+      granted_scopes: [],
+      last_error: null,
+      last_checked_at: new Date().toISOString(),
+    });
+  }
 
   // Attempting a device-auth RPC here intentionally creates/refreshes pairing request server-side.
   try {
