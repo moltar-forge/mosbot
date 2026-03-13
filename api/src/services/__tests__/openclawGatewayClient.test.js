@@ -89,6 +89,22 @@ function emitWs(event, ...args) {
   }
 }
 
+function configureDeviceAuth() {
+  const crypto = require('crypto');
+  const keyPair = crypto.generateKeyPairSync('ed25519');
+  const privateKeyDer = keyPair.privateKey.export({ format: 'der', type: 'pkcs8' });
+  const privateKeyBytes = privateKeyDer.slice(16);
+  const privateKeyB64 = privateKeyBytes.toString('base64url');
+  const publicKeyDer = keyPair.publicKey.export({ format: 'der', type: 'spki' });
+  const publicKeyBytes = publicKeyDer.slice(12);
+  const publicKeyB64 = publicKeyBytes.toString('base64url');
+
+  mockConfig.openclaw.device.id = 'device-1';
+  mockConfig.openclaw.device.publicKey = publicKeyB64;
+  mockConfig.openclaw.device.privateKey = privateKeyB64; // gitleaks:allow // fake private key for tests
+  mockConfig.openclaw.device.token = 'device-token';
+}
+
 describe('openclawGatewayClient', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -1168,65 +1184,27 @@ Line 2"}`;
   });
 
   describe('WebSocket RPC flows', () => {
-    it('should call sessions.list via allowInsecureAuth flow', async () => {
-      jest.useRealTimers(); // Use real timers for WebSocket tests
-      const sessionsPayload = { sessions: [{ id: 's1' }] };
-      mockConfig.openclaw.device.id = null;
-
-      mockWebSocket.send.mockImplementation((payload) => {
-        const message = JSON.parse(payload);
-        if (message.method === 'connect') {
-          originalSetTimeout(() => {
-            emitWs(
-              'message',
-              JSON.stringify({ type: 'res', id: message.id, ok: true, payload: {} }),
-            );
-          }, 0);
-          return;
-        }
-        if (message.method === 'sessions.list') {
-          originalSetTimeout(() => {
-            emitWs(
-              'message',
-              JSON.stringify({
-                type: 'res',
-                id: message.id,
-                ok: true,
-                payload: sessionsPayload,
-              }),
-            );
-          }, 0);
-        }
+    it('should require device auth for sessions.list websocket RPCs', async () => {
+      await expect(
+        sessionsListAllViaWs({
+          includeGlobal: true,
+          includeUnknown: false,
+          activeMinutes: 10,
+          limit: 20,
+          messageLimit: 5,
+        }),
+      ).rejects.toMatchObject({
+        status: 503,
+        code: 'DEVICE_AUTH_REQUIRED',
       });
 
-      const promise = sessionsListAllViaWs({
-        includeGlobal: true,
-        includeUnknown: false,
-        activeMinutes: 10,
-        limit: 20,
-        messageLimit: 5,
-      });
-
-      emitWs('open');
-      await expect(promise).resolves.toEqual(sessionsPayload);
-      expect(mockWebSocket.close).toHaveBeenCalled();
+      expect(mockWebSocket.on).not.toHaveBeenCalled();
+      expect(mockWebSocket.send).not.toHaveBeenCalled();
     });
 
     it('should call chat.history via device-auth challenge flow', async () => {
       jest.useRealTimers(); // Use real timers for WebSocket tests
-      const crypto = require('crypto');
-      const keyPair = crypto.generateKeyPairSync('ed25519');
-      const privateKeyDer = keyPair.privateKey.export({ format: 'der', type: 'pkcs8' });
-      const privateKeyBytes = privateKeyDer.slice(16);
-      const privateKeyB64 = privateKeyBytes.toString('base64url');
-      const publicKeyDer = keyPair.publicKey.export({ format: 'der', type: 'spki' });
-      const publicKeyBytes = publicKeyDer.slice(12);
-      const publicKeyB64 = publicKeyBytes.toString('base64url');
-
-      mockConfig.openclaw.device.id = 'device-1';
-      mockConfig.openclaw.device.publicKey = publicKeyB64;
-      mockConfig.openclaw.device.privateKey = privateKeyB64; // gitleaks:allow // fake private key for tests
-      mockConfig.openclaw.device.token = 'device-token';
+      configureDeviceAuth();
 
       mockWebSocket.send.mockImplementation((payload) => {
         const message = JSON.parse(payload);
@@ -1276,6 +1254,7 @@ Line 2"}`;
     it('should reject with SERVICE_TIMEOUT when websocket RPC times out', (done) => {
       jest.useRealTimers(); // Use real timers for WebSocket timeout test
       mockConfig.openclaw.gatewayTimeoutMs = 50; // Small timeout for faster test
+      configureDeviceAuth();
 
       sessionsListAllViaWs()
         .then(() => {
@@ -1299,6 +1278,7 @@ Line 2"}`;
 
     it('should reject with SERVICE_UNAVAILABLE on websocket error', async () => {
       jest.useRealTimers(); // Use real timers for WebSocket tests
+      configureDeviceAuth();
       const promise = sessionsListAllViaWs();
       emitWs('error', new Error('connection failed'));
 
@@ -1311,6 +1291,7 @@ Line 2"}`;
     it('should send an http Origin header for ws gateway URLs', async () => {
       jest.useRealTimers();
       const WebSocket = require('ws');
+      configureDeviceAuth();
 
       const promise = sessionsListAllViaWs();
 
@@ -1333,11 +1314,20 @@ Line 2"}`;
 
     it('should reject pending requests when websocket closes early', async () => {
       jest.useRealTimers(); // Use real timers for WebSocket tests
+      configureDeviceAuth();
       mockWebSocket.send.mockImplementation(() => {
         // Keep connect pending to exercise close handler rejection path.
       });
       const promise = sessionsListAllViaWs();
       emitWs('open');
+      emitWs(
+        'message',
+        JSON.stringify({
+          type: 'event',
+          event: 'connect.challenge',
+          payload: { nonce: 'nonce-123' },
+        }),
+      );
       emitWs('close', 1006, 'abnormal');
 
       await expect(promise).rejects.toThrow('WebSocket closed (1006): abnormal');
