@@ -103,9 +103,9 @@ Tasks: {"invalid": json}`;
   describe('getAgentUsersForStandup', () => {
     it('should return agents in correct order', async () => {
       const mockUsers = [
-        { user_id: '1', name: 'CTO', agent_id: 'cto', avatar_url: null },
-        { user_id: '2', name: 'CMO', agent_id: 'cmo', avatar_url: null },
-        { user_id: '3', name: 'COO', agent_id: 'coo', avatar_url: null },
+        { user_id: null, name: 'CTO', agent_id: 'cto', avatar_url: null },
+        { user_id: null, name: 'CMO', agent_id: 'cmo', avatar_url: null },
+        { user_id: null, name: 'COO', agent_id: 'coo', avatar_url: null },
       ];
       pool.query.mockResolvedValueOnce({ rows: mockUsers });
 
