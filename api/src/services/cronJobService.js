@@ -478,7 +478,7 @@ async function getCronJobsData({ userId }) {
   try {
     const allAgentIds = [...new Set(jobsWithRecalculatedNextRun.map((j) => j.agentId).filter(Boolean))];
     if (allAgentIds.length > 0) {
-      const result = await pool.query('SELECT agent_id, name FROM users WHERE agent_id = ANY($1)', [
+      const result = await pool.query('SELECT agent_id, name FROM agents WHERE agent_id = ANY($1)', [
         allAgentIds,
       ]);
       result.rows.forEach((row) => {
@@ -486,7 +486,7 @@ async function getCronJobsData({ userId }) {
       });
     }
   } catch (dbErr) {
-    logger.warn('Could not query users table for agent names', {
+    logger.warn('Could not query agents table for agent names', {
       error: dbErr.message,
     });
   }

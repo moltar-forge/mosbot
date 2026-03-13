@@ -383,7 +383,7 @@ describe('Standups CRUD (Unit Tests)', () => {
     it('should return 500 when runStandupById returns error', async () => {
       mockAuthUser('admin');
       pool.query.mockResolvedValueOnce({ rows: [makeStandup()] });
-      runStandupById.mockResolvedValueOnce({ status: 'error', message: 'No agent users found' });
+      runStandupById.mockResolvedValueOnce({ status: 'error', message: 'No active agents found' });
 
       const res = await request(app)
         .post(`/api/v1/standups/${STANDUP_UUID}/run`)

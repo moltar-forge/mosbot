@@ -46,14 +46,14 @@ router.get('/', authenticateToken, async (req, res, next) => {
           JSON_BUILD_OBJECT(
             'agent_id',    se.agent_id,
             'user_id',     se.user_id,
-            'user_name',   COALESCE(u_uid.name, u_aid.name),
-            'avatar_url',  COALESCE(u_uid.avatar_url, u_aid.avatar_url)
+            'user_name',   COALESCE(u_uid.name, a_aid.name),
+            'avatar_url',  COALESCE(u_uid.avatar_url, a_aid.meta->>'avatar_url')
           ) ORDER BY se.turn_order
         ) FILTER (WHERE se.id IS NOT NULL) AS participants
       FROM standups s
       LEFT JOIN standup_entries se ON s.id = se.standup_id
       LEFT JOIN users u_uid ON se.user_id = u_uid.id
-      LEFT JOIN users u_aid ON se.agent_id = u_aid.agent_id
+      LEFT JOIN agents a_aid ON se.agent_id = a_aid.agent_id
       GROUP BY s.id
       ORDER BY s.standup_date DESC, s.created_at DESC
       LIMIT $1 OFFSET $2`,
@@ -96,14 +96,14 @@ router.get('/latest', authenticateToken, async (req, res, next) => {
           JSON_BUILD_OBJECT(
             'agent_id',    se.agent_id,
             'user_id',     se.user_id,
-            'user_name',   COALESCE(u_uid.name, u_aid.name),
-            'avatar_url',  COALESCE(u_uid.avatar_url, u_aid.avatar_url)
+            'user_name',   COALESCE(u_uid.name, a_aid.name),
+            'avatar_url',  COALESCE(u_uid.avatar_url, a_aid.meta->>'avatar_url')
           ) ORDER BY se.turn_order
         ) FILTER (WHERE se.id IS NOT NULL) AS participants
       FROM standups s
       LEFT JOIN standup_entries se ON s.id = se.standup_id
       LEFT JOIN users u_uid ON se.user_id = u_uid.id
-      LEFT JOIN users u_aid ON se.agent_id = u_aid.agent_id
+      LEFT JOIN agents a_aid ON se.agent_id = a_aid.agent_id
       GROUP BY s.id
       ORDER BY s.standup_date DESC, s.created_at DESC
       LIMIT 1`,
@@ -199,8 +199,8 @@ router.get('/:id', authenticateToken, validateUUID('id'), async (req, res, next)
         se.standup_id,
         se.agent_id,
         se.user_id,
-        COALESCE(u_uid.name, u_aid.name)           AS user_name,
-        COALESCE(u_uid.avatar_url, u_aid.avatar_url) AS avatar_url,
+        COALESCE(u_uid.name, a_aid.name)           AS user_name,
+        COALESCE(u_uid.avatar_url, a_aid.meta->>'avatar_url') AS avatar_url,
         se.turn_order,
         se.yesterday,
         se.today,
@@ -210,7 +210,7 @@ router.get('/:id', authenticateToken, validateUUID('id'), async (req, res, next)
         se.created_at
       FROM standup_entries se
       LEFT JOIN users u_uid ON se.user_id = u_uid.id
-      LEFT JOIN users u_aid ON se.agent_id = u_aid.agent_id
+      LEFT JOIN agents a_aid ON se.agent_id = a_aid.agent_id
       WHERE se.standup_id = $1
       ORDER BY se.turn_order ASC`,
       [id],
@@ -461,8 +461,8 @@ router.get('/:id/entries', authenticateToken, validateUUID('id'), async (req, re
         se.standup_id,
         se.agent_id,
         se.user_id,
-        COALESCE(u_uid.name, u_aid.name)             AS user_name,
-        COALESCE(u_uid.avatar_url, u_aid.avatar_url) AS avatar_url,
+        COALESCE(u_uid.name, a_aid.name)             AS user_name,
+        COALESCE(u_uid.avatar_url, a_aid.meta->>'avatar_url') AS avatar_url,
         se.turn_order,
         se.yesterday,
         se.today,
@@ -472,7 +472,7 @@ router.get('/:id/entries', authenticateToken, validateUUID('id'), async (req, re
         se.created_at
       FROM standup_entries se
       LEFT JOIN users u_uid ON se.user_id = u_uid.id
-      LEFT JOIN users u_aid ON se.agent_id = u_aid.agent_id
+      LEFT JOIN agents a_aid ON se.agent_id = a_aid.agent_id
       WHERE se.standup_id = $1
       ORDER BY se.turn_order ASC`,
       [id],

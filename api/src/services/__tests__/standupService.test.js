@@ -101,7 +101,7 @@ Tasks: {"invalid": json}`;
   });
 
   describe('getAgentUsersForStandup', () => {
-    it('should return agent users in correct order', async () => {
+    it('should return agents in correct order', async () => {
       const mockUsers = [
         { user_id: '1', name: 'CTO', agent_id: 'cto', avatar_url: null },
         { user_id: '2', name: 'CMO', agent_id: 'cmo', avatar_url: null },
@@ -118,7 +118,7 @@ Tasks: {"invalid": json}`;
       expect(result).toEqual(mockUsers);
     });
 
-    it('should return empty array if no agent users found', async () => {
+    it('should return empty array if no agents are found', async () => {
       pool.query.mockRejectedValueOnce(new Error('Database error'));
 
       const result = await getAgentUsersForStandup();
@@ -265,8 +265,8 @@ Tasks: {"invalid": json}`;
       const result = await runStandupById(mockStandup);
 
       expect(result.status).toBe('error');
-      expect(result.message).toBe('No agent users found in the database');
-      expect(logger.warn).toHaveBeenCalledWith('No agent users found for standup', {
+      expect(result.message).toBe('No active agents found in the database');
+      expect(logger.warn).toHaveBeenCalledWith('No active agents found for standup', {
         standupId: 'standup-123',
       });
     });

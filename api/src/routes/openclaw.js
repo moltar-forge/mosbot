@@ -2052,27 +2052,24 @@ router.get('/agents', requireAuth, async (req, res, next) => {
         }));
       }
 
-      // Enrich agent names from users table (users.name is the canonical display name)
-      // and enrich icon/emoji from DB metadata when present.
+      // Enrich agent names + icon/emoji from the canonical agents table metadata.
       try {
         const pool = require('../db/pool');
         const agentIds = agents.map((a) => a.id);
-        const [userResult, metaResult] = await Promise.all([
-          pool.query('SELECT agent_id, name FROM users WHERE agent_id = ANY($1)', [agentIds]),
-          pool.query("SELECT agent_id, meta->>'emoji' AS emoji FROM agents WHERE agent_id = ANY($1)", [
-            agentIds,
-          ]),
-        ]);
+        const agentResult = await pool.query(
+          "SELECT agent_id, name, meta->>'emoji' AS emoji FROM agents WHERE agent_id = ANY($1)",
+          [agentIds],
+        );
 
-        const userNameMap = new Map(userResult.rows.map((r) => [r.agent_id, r.name]));
-        const emojiMap = new Map(metaResult.rows.map((r) => [r.agent_id, r.emoji]).filter(([, v]) => v));
+        const nameMap = new Map(agentResult.rows.map((r) => [r.agent_id, r.name]).filter(([, v]) => v));
+        const emojiMap = new Map(agentResult.rows.map((r) => [r.agent_id, r.emoji]).filter(([, v]) => v));
 
         agents = agents.map((agent) => {
-          const userName = userNameMap.get(agent.id);
+          const agentName = nameMap.get(agent.id);
           const emoji = emojiMap.get(agent.id);
           return {
             ...agent,
-            ...(userName ? { name: userName, label: userName } : {}),
+            ...(agentName ? { name: agentName, label: agentName } : {}),
             ...(emoji ? { icon: emoji } : {}),
           };
         });
