@@ -55,6 +55,20 @@ function privateKeyFromSeedB64(seedB64) {
   });
 }
 
+function privateKeyFromStoredMaterial(material) {
+  const value = String(material || '').trim();
+  if (!value) return null;
+
+  try {
+    if (value.includes('BEGIN PRIVATE KEY')) {
+      return crypto.createPrivateKey(value);
+    }
+    return privateKeyFromSeedB64(value);
+  } catch (_) {
+    return null;
+  }
+}
+
 function generateDeviceIdentity() {
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
   const publicSpki = publicKey.export({ format: 'der', type: 'spki' });
@@ -64,10 +78,13 @@ function generateDeviceIdentity() {
   const privateSeed = Buffer.from(privatePkcs8).subarray(-32).toString('base64url');
 
   return {
-    deviceId: crypto.randomBytes(32).toString('hex'),
+    // OpenClaw validates device.id against the Ed25519 public key fingerprint.
+    // It must be sha256(rawPublicKeyBytes) in lowercase hex.
+    deviceId: crypto.createHash('sha256').update(Buffer.from(publicKeyRaw, 'base64url')).digest('hex'),
     publicKey: publicKeyRaw,
     privateSeed,
-    // Pairing handshake should authenticate with the configured gateway token.
+    // First handshake authenticates with shared gateway token; gateway may return
+    // a rotated per-device token in hello-ok.auth.deviceToken after pairing.
     deviceToken: String(config.openclaw.gatewayToken || ''),
     clientId: DEFAULT_CLIENT_ID,
     clientMode: DEFAULT_CLIENT_MODE,
@@ -275,7 +292,7 @@ async function startPairing() {
       client_mode: identity.clientMode,
       platform: identity.platform,
       public_key: identity.publicKey,
-      private_key: encryptSecret(identity.privateKeyPem),
+      private_key: encryptSecret(identity.privateSeed),
       device_token: encryptSecret(identity.deviceToken),
       granted_scopes: [],
       last_error: null,
@@ -293,16 +310,30 @@ async function startPairing() {
 
   // Attempting a device-auth RPC here intentionally creates/refreshes pairing request server-side.
   try {
+    const connectMeta = {};
     await gatewayWsRpc(
       'sessions.list',
       { limit: 1, includeGlobal: true, includeUnknown: false },
-      { deviceAuth: await getDeviceAuthFromDb(), requireDeviceAuth: true },
+      {
+        deviceAuth: await getDeviceAuthFromDb(),
+        requireDeviceAuth: true,
+        onConnectOk: (connectPayload) => {
+          Object.assign(connectMeta, connectPayload || {});
+        },
+      },
     );
+
+    const grantedScopes = normalizeScopes(connectMeta?.auth?.scopes);
+    const rotatedDeviceToken =
+      typeof connectMeta?.auth?.deviceToken === 'string'
+        ? connectMeta.auth.deviceToken.trim()
+        : '';
 
     // If it succeeds immediately, we can mark ready.
     await upsertIntegrationRow({
       status: 'ready',
-      granted_scopes: REQUIRED_OPERATOR_SCOPES,
+      granted_scopes: grantedScopes.length > 0 ? grantedScopes : REQUIRED_OPERATOR_SCOPES,
+      ...(rotatedDeviceToken ? { device_token: encryptSecret(rotatedDeviceToken) } : {}),
       last_error: null,
       last_checked_at: new Date().toISOString(),
     });
@@ -328,15 +359,29 @@ async function finalizePairing() {
   }
 
   try {
+    const connectMeta = {};
     await gatewayWsRpc(
       'sessions.list',
       { limit: 1, includeGlobal: true, includeUnknown: false },
-      { deviceAuth, requireDeviceAuth: true },
+      {
+        deviceAuth,
+        requireDeviceAuth: true,
+        onConnectOk: (connectPayload) => {
+          Object.assign(connectMeta, connectPayload || {});
+        },
+      },
     );
+
+    const grantedScopes = normalizeScopes(connectMeta?.auth?.scopes);
+    const rotatedDeviceToken =
+      typeof connectMeta?.auth?.deviceToken === 'string'
+        ? connectMeta.auth.deviceToken.trim()
+        : '';
 
     await upsertIntegrationRow({
       status: 'ready',
-      granted_scopes: REQUIRED_OPERATOR_SCOPES,
+      granted_scopes: grantedScopes.length > 0 ? grantedScopes : REQUIRED_OPERATOR_SCOPES,
+      ...(rotatedDeviceToken ? { device_token: encryptSecret(rotatedDeviceToken) } : {}),
       last_error: null,
       last_checked_at: new Date().toISOString(),
     });

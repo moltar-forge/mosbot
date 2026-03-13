@@ -10,21 +10,77 @@ function sleep(ms) {
 // Device auth config for OpenClaw 2026.2.22+ challenge-response protocol.
 // When configured, the gateway grants operator.read/write scopes (vdev connection).
 // Without device auth, allowInsecureAuth only grants a vserver with no scopes.
+function privateKeyFromStoredMaterial(material) {
+  const value = String(material || '').trim();
+  if (!value) return null;
+  try {
+    if (value.includes('BEGIN PRIVATE KEY')) {
+      return crypto.createPrivateKey(value);
+    }
+    return crypto.createPrivateKey({
+      key: Buffer.concat([
+        Buffer.from('302e020100300506032b657004220420', 'hex'),
+        Buffer.from(value, 'base64url'),
+      ]),
+      format: 'der',
+      type: 'pkcs8',
+    });
+  } catch (_) {
+    return null;
+  }
+}
+
 function getDeviceAuthConfig() {
   const deviceId = config.openclaw.device.id;
   const publicKey = config.openclaw.device.publicKey;
-  const privateKeyB64 = config.openclaw.device.privateKey;
+  const privateKeyRaw = config.openclaw.device.privateKey;
   const deviceToken = config.openclaw.device.token;
-  if (!deviceId || !publicKey || !privateKeyB64 || !deviceToken) return null;
-  const privKey = crypto.createPrivateKey({
-    key: Buffer.concat([
-      Buffer.from('302e020100300506032b657004220420', 'hex'),
-      Buffer.from(privateKeyB64, 'base64url'),
-    ]),
-    format: 'der',
-    type: 'pkcs8',
-  });
-  return { deviceId, publicKey, privateKey: privKey, deviceToken };
+  if (!deviceId || !publicKey || !privateKeyRaw || !deviceToken) return null;
+  const privateKey = privateKeyFromStoredMaterial(privateKeyRaw);
+  if (!privateKey) return null;
+  return { deviceId, publicKey, privateKey, deviceToken };
+}
+
+async function getDeviceAuthConfigFromDb() {
+  try {
+    const pool = require('../db/pool');
+    const result = await pool.query(
+      `SELECT device_id, public_key, private_key, device_token, client_id, client_mode, platform
+       FROM openclaw_integration_state
+       WHERE id = 1
+       LIMIT 1`,
+    );
+    const row = result.rows?.[0];
+    if (!row?.device_id || !row?.public_key || !row?.private_key || !row?.device_token) {
+      return null;
+    }
+    const privateKey = privateKeyFromStoredMaterial(row.private_key);
+    if (!privateKey) return null;
+    return {
+      deviceId: row.device_id,
+      publicKey: row.public_key,
+      privateKey,
+      deviceToken: row.device_token,
+      clientId: row.client_id || DEVICE_CLIENT_ID,
+      clientMode: row.client_mode || DEVICE_CLIENT_MODE,
+      platform: row.platform || process.platform || 'node',
+    };
+  } catch (error) {
+    // No pairing table yet or DB unavailable — fall back to non-DB auth paths.
+    if (error?.code === '42P01') return null;
+    logger.debug('Unable to load OpenClaw device auth from DB; falling back', {
+      error: error?.message || String(error),
+    });
+    return null;
+  }
+}
+
+function resolveDeviceAuthConfig(options = {}) {
+  if (options.deviceAuth) return options.deviceAuth;
+  const envDeviceAuth = getDeviceAuthConfig();
+  if (envDeviceAuth) return envDeviceAuth;
+  if (process.env.JEST_WORKER_ID !== undefined) return null;
+  return getDeviceAuthConfigFromDb();
 }
 
 const DEVICE_CLIENT_ID = 'openclaw-control-ui';
@@ -42,11 +98,19 @@ const DEVICE_SCOPES = [
   'operator.write',
 ];
 
-function buildDeviceConnectPayload(deviceAuth, nonce) {
+function buildDeviceConnectPayload(deviceAuth, nonce, authOptions = {}) {
   const signedAt = Date.now();
   const clientId = deviceAuth.clientId || DEVICE_CLIENT_ID;
   const clientMode = deviceAuth.clientMode || DEVICE_CLIENT_MODE;
   const clientPlatform = deviceAuth.platform || process.platform || 'node';
+  const authToken =
+    typeof authOptions.authToken === 'string' && authOptions.authToken.trim().length > 0
+      ? authOptions.authToken.trim()
+      : deviceAuth.deviceToken;
+  const authDeviceToken =
+    typeof authOptions.authDeviceToken === 'string' && authOptions.authDeviceToken.trim().length > 0
+      ? authOptions.authDeviceToken.trim()
+      : null;
   const canonical = [
     'v2',
     deviceAuth.deviceId,
@@ -55,7 +119,7 @@ function buildDeviceConnectPayload(deviceAuth, nonce) {
     DEVICE_ROLE,
     DEVICE_SCOPES.join(','),
     String(signedAt),
-    deviceAuth.deviceToken,
+    authToken || '',
     nonce,
   ].join('|');
   const sig = crypto
@@ -79,7 +143,10 @@ function buildDeviceConnectPayload(deviceAuth, nonce) {
       signedAt,
       nonce,
     },
-    auth: { token: deviceAuth.deviceToken },
+    auth: {
+      ...(authToken ? { token: authToken } : {}),
+      ...(authDeviceToken ? { deviceToken: authDeviceToken } : {}),
+    },
   };
 }
 
@@ -605,7 +672,11 @@ async function sessionsListAllViaWs({
 async function gatewayWsRpcWithDeviceAuth(method, params = {}, options = {}) {
   const gatewayUrl = config.openclaw.gatewayUrl;
   const gatewayToken = config.openclaw.gatewayToken;
-  const deviceAuth = options.deviceAuth || getDeviceAuthConfig();
+  const resolvedDeviceAuth = resolveDeviceAuthConfig(options);
+  const deviceAuth =
+    resolvedDeviceAuth && typeof resolvedDeviceAuth.then === 'function'
+      ? await resolvedDeviceAuth
+      : resolvedDeviceAuth;
 
   if (!gatewayUrl) {
     const err = new Error(
@@ -697,13 +768,36 @@ async function gatewayWsRpcWithDeviceAuth(method, params = {}, options = {}) {
           };
           logger.debug('Sending shared-auth backend connect handshake');
         } else {
-          connectPayload = buildDeviceConnectPayload(deviceAuth, nonce);
+          const sharedGatewayToken =
+            typeof gatewayToken === 'string' && gatewayToken.trim().length > 0
+              ? gatewayToken.trim()
+              : '';
+          const storedDeviceToken =
+            typeof deviceAuth?.deviceToken === 'string' && deviceAuth.deviceToken.trim().length > 0
+              ? deviceAuth.deviceToken.trim()
+              : '';
+          const authToken = sharedGatewayToken || storedDeviceToken;
+          const authDeviceToken =
+            sharedGatewayToken && storedDeviceToken && sharedGatewayToken !== storedDeviceToken
+              ? storedDeviceToken
+              : null;
+
+          connectPayload = buildDeviceConnectPayload(deviceAuth, nonce, {
+            authToken,
+            authDeviceToken,
+          });
           logger.debug('Sending device-auth connect handshake', {
             deviceId: deviceAuth.deviceId,
             nonce,
+            hasSharedToken: Boolean(sharedGatewayToken),
+            hasStoredDeviceToken: Boolean(storedDeviceToken),
+            hasAuthDeviceToken: Boolean(authDeviceToken),
           });
         }
-        await send('connect', connectPayload);
+        const connectResult = await send('connect', connectPayload);
+        if (typeof options.onConnectOk === 'function') {
+          await options.onConnectOk(connectResult);
+        }
         logger.debug('Device-auth connect successful');
 
         const result = await send(method, params);
@@ -845,7 +939,7 @@ function warnIfDeviceAuthNotConfigured() {
 
   if (missing.length > 0) {
     logger.info(
-      'OpenClaw device auth not configured — falling back to shared gateway auth with backend client identity',
+      'OpenClaw device auth not configured in env vars — will use DB-paired device credentials when available, otherwise shared gateway auth fallback',
       {
         missingVars: missing,
       },

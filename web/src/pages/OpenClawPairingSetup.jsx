@@ -78,6 +78,43 @@ export default function OpenClawPairingSetup() {
   };
 
   const missingScopes = status?.missingScopes || [];
+  const statusValue = status?.status || 'unknown';
+
+  const hasStartedPairing = ['pending_pairing', 'paired_missing_scopes', 'ready'].includes(statusValue);
+  const shouldDisableStart = isStarting || isLoading || hasStartedPairing;
+
+  const startButtonLabel = isStarting
+    ? 'Starting…'
+    : statusValue === 'ready'
+      ? 'Already paired'
+      : hasStartedPairing
+        ? 'Pairing already started'
+        : 'Start pairing';
+
+  const nextStepHint =
+    statusValue === 'pending_pairing'
+      ? 'Next: approve the pending device in OpenClaw, then click Finalize pairing.'
+      : statusValue === 'paired_missing_scopes'
+        ? 'Pairing exists, but required scopes are missing. Re-approve/rotate scopes in OpenClaw, then finalize again.'
+        : statusValue === 'ready'
+          ? 'Pairing is complete. Continue to OpenClaw Config.'
+          : 'Start pairing to create a pending device request.';
+
+  const step1State = statusValue === 'ready' || hasStartedPairing ? 'done' : 'current';
+  const step2State = ['paired_missing_scopes', 'ready'].includes(statusValue)
+    ? 'done'
+    : statusValue === 'pending_pairing'
+      ? 'current'
+      : 'upcoming';
+  const step3State = statusValue === 'ready' ? 'done' : statusValue === 'paired_missing_scopes' ? 'current' : 'upcoming';
+
+  const stepBadgeClass = {
+    done: 'bg-green-900/30 text-green-300 border-green-700/60',
+    current: 'bg-yellow-900/30 text-yellow-300 border-yellow-700/60',
+    upcoming: 'bg-dark-900/40 text-dark-400 border-dark-700',
+  };
+
+  const finalizeDisabled = isFinalizing || isLoading || !hasStartedPairing;
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
@@ -152,23 +189,51 @@ export default function OpenClawPairingSetup() {
         )}
       </div>
 
-      <div className="card p-4 space-y-3">
-        <div className="text-sm text-dark-300">
-          Pairing flow:
-          <ol className="list-decimal ml-5 mt-1 space-y-1 text-dark-400">
-            <li>Start pairing to generate MosBot device identity + pending request.</li>
-            <li>Approve the request in OpenClaw operator controls.</li>
-            <li>Finalize pairing to verify scopes and unlock MosBot UI.</li>
-          </ol>
+      <div className="card p-4 space-y-4">
+        <div className="font-medium text-dark-200">Pairing wizard</div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="border border-dark-700 rounded p-3 space-y-2 bg-dark-900/20">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium text-dark-100">Step 1: Start</div>
+              <span className={`text-[11px] px-2 py-0.5 rounded border ${stepBadgeClass[step1State]}`}>
+                {step1State}
+              </span>
+            </div>
+            <p className="text-xs text-dark-400">Create MosBot device identity and open a pairing request.</p>
+            <button className="btn-primary w-full" onClick={handleStartPairing} disabled={shouldDisableStart}>
+              {startButtonLabel}
+            </button>
+          </div>
+
+          <div className="border border-dark-700 rounded p-3 space-y-2 bg-dark-900/20">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium text-dark-100">Step 2: Approve</div>
+              <span className={`text-[11px] px-2 py-0.5 rounded border ${stepBadgeClass[step2State]}`}>
+                {step2State}
+              </span>
+            </div>
+            <p className="text-xs text-dark-400">
+              Approve the pending device request in OpenClaw operator controls.
+            </p>
+          </div>
+
+          <div className="border border-dark-700 rounded p-3 space-y-2 bg-dark-900/20">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium text-dark-100">Step 3: Finalize</div>
+              <span className={`text-[11px] px-2 py-0.5 rounded border ${stepBadgeClass[step3State]}`}>
+                {step3State}
+              </span>
+            </div>
+            <p className="text-xs text-dark-400">Validate required scopes and unlock MosBot UI.</p>
+            <button className="btn-secondary w-full" onClick={handleFinalizePairing} disabled={finalizeDisabled}>
+              {isFinalizing ? 'Finalizing…' : 'Finalize pairing'}
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-primary" onClick={handleStartPairing} disabled={isStarting}>
-            {isStarting ? 'Starting…' : 'Start pairing'}
-          </button>
-          <button className="btn-secondary" onClick={handleFinalizePairing} disabled={isFinalizing}>
-            {isFinalizing ? 'Finalizing…' : 'Finalize pairing'}
-          </button>
+        <div className="text-xs text-dark-400 bg-dark-900/40 border border-dark-700 rounded px-3 py-2">
+          <span className="text-dark-300">Current status:</span> {statusValue} — {nextStepHint}
         </div>
       </div>
 
