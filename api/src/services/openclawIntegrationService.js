@@ -34,12 +34,12 @@ function normalizeScopes(rawScopes) {
   return [];
 }
 
-function encryptSecret(plaintext) {
+function serializeStoredSecret(plaintext) {
   if (!plaintext) return null;
   return String(plaintext);
 }
 
-function decryptSecret(payload) {
+function deserializeStoredSecret(payload) {
   if (!payload) return null;
   return String(payload);
 }
@@ -252,8 +252,8 @@ async function getDeviceAuthFromDb() {
   const row = await getIntegrationRow();
   if (!row) return null;
 
-  const privateKeyMaterial = decryptSecret(row.private_key);
-  const deviceToken = decryptSecret(row.device_token);
+  const privateKeyMaterial = deserializeStoredSecret(row.private_key);
+  const deviceToken = deserializeStoredSecret(row.device_token);
   if (!row.device_id || !row.public_key || !privateKeyMaterial || !deviceToken) {
     return null;
   }
@@ -292,8 +292,8 @@ async function startPairing() {
       client_mode: identity.clientMode,
       platform: identity.platform,
       public_key: identity.publicKey,
-      private_key: encryptSecret(identity.privateSeed),
-      device_token: encryptSecret(identity.deviceToken),
+      private_key: serializeStoredSecret(identity.privateSeed),
+      device_token: serializeStoredSecret(identity.deviceToken),
       granted_scopes: [],
       last_error: null,
       last_checked_at: new Date().toISOString(),
@@ -333,7 +333,7 @@ async function startPairing() {
     await upsertIntegrationRow({
       status: 'ready',
       granted_scopes: grantedScopes.length > 0 ? grantedScopes : REQUIRED_OPERATOR_SCOPES,
-      ...(rotatedDeviceToken ? { device_token: encryptSecret(rotatedDeviceToken) } : {}),
+      ...(rotatedDeviceToken ? { device_token: serializeStoredSecret(rotatedDeviceToken) } : {}),
       last_error: null,
       last_checked_at: new Date().toISOString(),
     });
@@ -381,7 +381,7 @@ async function finalizePairing() {
     await upsertIntegrationRow({
       status: 'ready',
       granted_scopes: grantedScopes.length > 0 ? grantedScopes : REQUIRED_OPERATOR_SCOPES,
-      ...(rotatedDeviceToken ? { device_token: encryptSecret(rotatedDeviceToken) } : {}),
+      ...(rotatedDeviceToken ? { device_token: serializeStoredSecret(rotatedDeviceToken) } : {}),
       last_error: null,
       last_checked_at: new Date().toISOString(),
     });
