@@ -23,6 +23,18 @@ function createHttpError(status, message, code, details) {
   return err;
 }
 
+function wrapMissingIntegrationTableError(error) {
+  if (error?.code !== '42P01') {
+    return error;
+  }
+
+  return createHttpError(
+    503,
+    'OpenClaw integration state is not initialized. Run DB migrations and try again.',
+    'OPENCLAW_INTEGRATION_STATE_MISSING',
+  );
+}
+
 function normalizeScopes(rawScopes) {
   if (Array.isArray(rawScopes)) {
     return [...new Set(rawScopes.map((s) => String(s || '').trim()).filter(Boolean))];
@@ -357,24 +369,28 @@ async function startPairing() {
     return startPairingInFlight;
   }
 
-  startPairingInFlight = runStartPairing().finally(() => {
-    startPairingInFlight = null;
-  });
+  startPairingInFlight = runStartPairing()
+    .catch((error) => {
+      throw wrapMissingIntegrationTableError(error);
+    })
+    .finally(() => {
+      startPairingInFlight = null;
+    });
 
   return startPairingInFlight;
 }
 
 async function finalizePairing() {
-  const deviceAuth = await getDeviceAuthFromDb();
-  if (!deviceAuth) {
-    throw createHttpError(
-      409,
-      'Pairing has not been started. Start pairing before finalize.',
-      'PAIRING_NOT_STARTED',
-    );
-  }
-
   try {
+    const deviceAuth = await getDeviceAuthFromDb();
+    if (!deviceAuth) {
+      throw createHttpError(
+        409,
+        'Pairing has not been started. Start pairing before finalize.',
+        'PAIRING_NOT_STARTED',
+      );
+    }
+
     const connectMeta = {};
     await gatewayWsRpc(
       'sessions.list',
@@ -389,16 +405,23 @@ async function finalizePairing() {
     );
 
     await upsertIntegrationRow(buildPairingSuccessPatch(connectMeta, { lastCheckedAt: new Date().toISOString() }));
+    return getIntegrationStatus();
   } catch (error) {
-    await upsertIntegrationRow({
-      status: mapPairingErrorToStatus(error),
-      granted_scopes: [],
-      last_error: error?.message || 'pairing finalize failed',
-      last_checked_at: new Date().toISOString(),
-    });
+    if (error?.status === 409 && error?.code === 'PAIRING_NOT_STARTED') {
+      throw error;
+    }
+    try {
+      await upsertIntegrationRow({
+        status: mapPairingErrorToStatus(error),
+        granted_scopes: [],
+        last_error: error?.message || 'pairing finalize failed',
+        last_checked_at: new Date().toISOString(),
+      });
+    } catch (writeError) {
+      throw wrapMissingIntegrationTableError(writeError);
+    }
+    return getIntegrationStatus();
   }
-
-  return getIntegrationStatus();
 }
 
 async function assertIntegrationReady() {

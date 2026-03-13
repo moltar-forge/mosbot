@@ -118,6 +118,17 @@ describe('openclawIntegrationService', () => {
   });
 
   describe('startPairing', () => {
+    it('returns a typed 503 when the integration-state table is missing', async () => {
+      const err = new Error('relation does not exist');
+      err.code = '42P01';
+      pool.query.mockRejectedValue(err);
+
+      await expect(startPairing()).rejects.toMatchObject({
+        status: 503,
+        code: 'OPENCLAW_INTEGRATION_STATE_MISSING',
+      });
+    });
+
     it('deduplicates concurrent start requests into a single pairing handshake', async () => {
       let integrationRow = null;
       pool.query.mockImplementation(async (sql, params) => {
@@ -244,6 +255,17 @@ describe('openclawIntegrationService', () => {
   });
 
   describe('finalizePairing', () => {
+    it('returns a typed 503 when the integration-state table is missing', async () => {
+      const err = new Error('relation does not exist');
+      err.code = '42P01';
+      pool.query.mockRejectedValue(err);
+
+      await expect(finalizePairing()).rejects.toMatchObject({
+        status: 503,
+        code: 'OPENCLAW_INTEGRATION_STATE_MISSING',
+      });
+    });
+
     it('keeps pairing non-ready when finalize succeeds without granted scopes', async () => {
       const crypto = require('crypto');
       const keyPair = crypto.generateKeyPairSync('ed25519');
