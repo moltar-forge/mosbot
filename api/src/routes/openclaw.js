@@ -1325,7 +1325,7 @@ registerOpenClawWorkspaceRoutes({
 
 // Wizard-first pairing gate: lock OpenClaw-dependent routes until integration is ready.
 router.use(
-  ['/projects', '/agents', '/sessions', '/cron-jobs', '/usage', '/subagents'],
+  ['/projects', '/sessions', '/cron-jobs', '/usage'],
   requireIntegrationReady,
 );
 
@@ -3237,30 +3237,6 @@ router.post(
         updatedFiles,
         warnings: setupWarnings,
         projectOnboarding,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// GET /api/v1/openclaw/subagents
-// Runtime file integrations under /runtime/mosbot/* are retired.
-// This endpoint remains for compatibility and currently returns empty runtime arrays.
-router.get('/subagents', requireAuth, async (req, res, next) => {
-  try {
-    logger.info('Fetching subagent status', { userId: req.user.id });
-
-    const { getAllSubagents } = require('../services/subagentsRuntimeService');
-
-    // Fetch all subagents using runtime service
-    const { running, queued, completed } = await getAllSubagents();
-
-    res.json({
-      data: {
-        running,
-        queued,
-        completed,
       },
     });
   } catch (error) {

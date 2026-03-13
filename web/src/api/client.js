@@ -233,42 +233,6 @@ export const repairProjectLinkHealth = async ({ projectId, agentId, limit } = {}
   });
   return response.data?.data || null;
 };
-// OpenClaw Subagents API - returns object with { running, queued, completed, retention }
-export const getSubagents = async () => {
-  const response = await api.get('/openclaw/subagents');
-  return response.data.data;
-};
-
-// Get active subagent sessions as a flat array - combines running and queued sessions
-// This is useful for components that need to iterate over sessions (e.g., Agents, TaskManagerOverview)
-// Normalizes field names: sessionLabel → label, status values to lowercase
-export const getActiveSubagentSessions = async () => {
-  const response = await api.get('/openclaw/subagents');
-  const data = response.data.data;
-
-  // Normalize field names for UI consumption
-  const normalizeSession = (session, statusOverride) => ({
-    ...session,
-    // Normalize sessionLabel to label for UI matching
-    label: session.sessionLabel || session.label || null,
-    // Normalize status to lowercase strings (running, queued)
-    status: statusOverride || (session.status || '').toLowerCase(),
-    // Keep original fields for debugging/future use
-    sessionLabel: session.sessionLabel,
-    taskId: session.taskId || null,
-    taskNumber: session.taskNumber || null,
-    startedAt: session.startedAt || session.queuedAt || null,
-  });
-
-  // Combine running and queued into a single array with normalized fields
-  const sessions = [
-    ...(data.running || []).map((s) => normalizeSession(s, 'running')),
-    ...(data.queued || []).map((s) => normalizeSession(s, 'queued')),
-  ];
-
-  return sessions;
-};
-
 // OpenClaw Cron Jobs API - get configured scheduled jobs from OpenClaw
 export const getCronJobs = async () => {
   const response = await api.get('/openclaw/cron-jobs', { timeout: OPENCLAW_TIMEOUT });

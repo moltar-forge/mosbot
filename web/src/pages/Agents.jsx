@@ -12,7 +12,6 @@ import {
 } from '@heroicons/react/24/outline';
 import Header from '../components/Header';
 import {
-  getActiveSubagentSessions,
   getAgentsConfig,
   rebootstrapAgent,
   syncAgentsFromOpenClaw,
@@ -20,8 +19,6 @@ import {
 import { useAuthStore } from '../stores/authStore';
 import AgentEditModal from '../components/AgentEditModal';
 import logger from '../utils/logger';
-
-const POLLING_INTERVAL = 30000; // 30 seconds (reduced from 10s to minimize load)
 
 // Color palette for agent cards — assigned by hash of agent id
 const AGENT_COLORS = [
@@ -43,19 +40,15 @@ function getAgentColor(agentId) {
 }
 
 export default function Agents() {
-  const [subagents, setSubagents] = useState([]);
   const [agentsConfig, setAgentsConfig] = useState(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
-  const [, setIsLoadingSessions] = useState(true);
   const [configError, setConfigError] = useState(null);
-  const [, setSessionError] = useState(null);
   const [showAgentModal, setShowAgentModal] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [agentModalMode, setAgentModalMode] = useState('edit'); // 'edit' or 'create'
   const [isSyncingAgents, setIsSyncingAgents] = useState(false);
   const [rebootstrappingByAgentId, setRebootstrappingByAgentId] = useState({});
   const rebootstrappingRef = useRef(new Set());
-  const pollingRef = useRef(null);
   const { user } = useAuthStore();
   const canManageAgents = user?.role === 'admin' || user?.role === 'owner';
 
@@ -74,69 +67,14 @@ export default function Agents() {
     }
   };
 
-  // Fetch subagents
-  const loadSubagents = async () => {
-    try {
-      const data = await getActiveSubagentSessions();
-      setSubagents(data || []);
-      setSessionError(null);
-    } catch (err) {
-      logger.error('Failed to fetch subagents', err);
-      setSessionError(err.message);
-    } finally {
-      setIsLoadingSessions(false);
-    }
-  };
-
   // Initial load
   useEffect(() => {
     loadConfig();
-    loadSubagents();
-  }, []);
-
-  // Polling (only when tab is visible)
-  useEffect(() => {
-    const startPolling = () => {
-      if (pollingRef.current) return; // Already polling
-      pollingRef.current = setInterval(() => {
-        if (document.visibilityState === 'visible') {
-          loadSubagents();
-        }
-      }, POLLING_INTERVAL);
-    };
-
-    const stopPolling = () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
-    };
-
-    // Start polling immediately
-    startPolling();
-
-    // Stop polling when tab is hidden, resume when visible
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        loadSubagents(); // Refresh immediately when tab becomes visible
-        startPolling();
-      } else {
-        stopPolling();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      stopPolling();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
   }, []);
 
   const handleRefresh = async () => {
     setIsLoadingConfig(true);
-    setIsLoadingSessions(true);
-    await Promise.all([loadConfig(), loadSubagents()]);
+    await loadConfig();
   };
 
   const handleAgentModalSave = async () => {
@@ -198,10 +136,6 @@ export default function Agents() {
   // Uses the configured label field to match against live session data
   const getNodeStatus = (nodeLabel) => {
     if (!nodeLabel) return 'scaffolded';
-
-    // Check if there's a live running session with this label
-    const session = subagents.find((s) => s.label === nodeLabel && s.status === 'running');
-    if (session) return 'active';
 
     // Otherwise, try to find the node in the config and return its status
     // First check leadership

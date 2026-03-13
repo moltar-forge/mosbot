@@ -59,8 +59,6 @@ import {
   getModels,
   getAgents,
   getAgentsConfig,
-  getSubagents,
-  getActiveSubagentSessions,
   getCronJobs,
   getSchedulerStats,
   getCronJobRuns,
@@ -428,40 +426,6 @@ describe('api client', () => {
       await expect(getAgentsConfig()).resolves.toEqual({ root: 'ceo' });
       expect(api.get).toHaveBeenLastCalledWith('/openclaw/agents/config');
 
-      api.get.mockResolvedValueOnce({ data: { data: { running: [] } } });
-      await expect(getSubagents()).resolves.toEqual({ running: [] });
-      expect(api.get).toHaveBeenLastCalledWith('/openclaw/subagents');
-    });
-
-    it('normalizes active subagent sessions from running and queued lists', async () => {
-      api.get.mockResolvedValueOnce({
-        data: {
-          data: {
-            running: [
-              { sessionLabel: 'agent:coo:main', taskId: 't1', startedAt: '2026-01-01T00:00:00Z' },
-            ],
-            queued: [
-              { label: 'agent:cto:main', status: 'QUEUED', queuedAt: '2026-01-01T00:10:00Z' },
-            ],
-          },
-        },
-      });
-
-      const sessions = await getActiveSubagentSessions();
-      expect(sessions).toEqual([
-        expect.objectContaining({
-          label: 'agent:coo:main',
-          status: 'running',
-          taskId: 't1',
-          startedAt: '2026-01-01T00:00:00Z',
-        }),
-        expect.objectContaining({
-          label: 'agent:cto:main',
-          status: 'queued',
-          taskId: null,
-          startedAt: '2026-01-01T00:10:00Z',
-        }),
-      ]);
     });
 
     it('handles cron jobs and scheduler endpoints', async () => {

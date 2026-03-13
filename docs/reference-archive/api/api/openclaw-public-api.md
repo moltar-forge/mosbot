@@ -90,7 +90,6 @@ This document describes the **public HTTP API contract** OpenClaw can use to int
   - [PUT `/openclaw/workspace/files`](#put-openclawworkspacefiles)
   - [DELETE `/openclaw/workspace/files`](#delete-openclawworkspacefiles)
   - [GET `/openclaw/workspace/status`](#get-openclawworkspacestatus)
-  - [GET `/openclaw/subagents`](#get-openclawsubagents)
 - [OpenClaw config editor (admin/owner only)](#openclaw-config-editor-adminowner-only)
   - [GET `/openclaw/config`](#get-openclawconfig)
   - [PUT `/openclaw/config`](#put-openclawconfig)
@@ -2203,40 +2202,6 @@ Errors:
 - `401` authentication required
 - `503` OpenClaw service not configured or unavailable
 
-### GET `/openclaw/subagents`
-
-Get subagent status snapshot (all authenticated users).
-
-Legacy runtime integrations under `/runtime/mosbot/*` are retired and no longer part of the
-supported workspace contract.
-
-Response `200`:
-
-```json
-{
-  "data": {
-    "running": [],
-    "queued": [],
-    "completed": []
-  }
-}
-```
-
-Response fields:
-
-- `running[]` - Running subagents (currently empty)
-- `queued[]` - Queued subagents (currently empty)
-- `completed[]` - Completed subagents (currently empty)
-
-**Notes**:
-
-- Runtime-file-backed state under `/runtime/mosbot/*` is retired and should not be depended on
-
-Errors:
-
-- `401` authentication required
-- `503` OpenClaw service not configured or unavailable
-
 ## OpenClaw config editor (admin/owner only)
 
 These endpoints expose the live `openclaw.json` configuration for reading and editing via the Mosbot Dashboard. All writes go through the OpenClaw Gateway's `config.apply` RPC, which validates the config against the Gateway's own schema before writing it. The existing config is backed up as a workspace file before each successful apply.
@@ -2528,7 +2493,6 @@ Errors:
 - `PUT /api/v1/openclaw/workspace/files` - Update file (admin/owner, fails if not exists)
 - `DELETE /api/v1/openclaw/workspace/files` - Delete file (admin/owner)
 - `GET /api/v1/openclaw/workspace/status` - Get sync status (all users)
-- `GET /api/v1/openclaw/subagents` - Get running/queued/completed subagents (all users)
 
 ### OpenClaw Config Editor (Admin/Owner Only)
 

@@ -13,7 +13,6 @@ import Docs from './pages/Docs';
 import Projects from './pages/Projects';
 import ProjectDetail from './pages/ProjectDetail';
 import Skills from './pages/Skills';
-// import Subagents from './pages/Subagents'; // Hidden: Task Manager + Agents page cover this; re-enable if needed
 import CronJobs from './pages/CronJobs';
 import Log from './pages/Log';
 import Archived from './pages/Archived';
@@ -139,7 +138,6 @@ function App() {
                 </Layout>
               }
             />
-            {/* <Route path="/subagents" element={<Layout><Subagents /></Layout>} /> */}
             <Route
               path="/scheduler"
               element={

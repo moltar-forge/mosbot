@@ -209,7 +209,7 @@ describe('openclawGatewayClient', () => {
         client: {
           id: 'openclaw-control-ui',
           version: 'server',
-          platform: 'node',
+          platform: process.platform || 'node',
           mode: 'webchat',
         },
         role: 'operator',
