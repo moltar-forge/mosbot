@@ -2956,6 +2956,128 @@ describe('OpenClaw Routes', () => {
       expect(response.body.data[0].slug).toBe('alpha');
     });
 
+    it('returns project link health for main and assigned agents', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: '11111111-1111-1111-1111-111111111111',
+            slug: 'alpha',
+            name: 'Alpha',
+            root_path: '/projects/alpha',
+            agent_id: 'cto',
+          },
+        ],
+      });
+
+      global.fetch = jest.fn().mockImplementation(async (url) => {
+        if (
+          String(url).includes('/links/project/main?targetPath=%2Fprojects%2Falpha') ||
+          String(url).includes('/links/project/cto?targetPath=%2Fprojects%2Falpha')
+        ) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ state: 'linked' }),
+            text: async () => 'OK',
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ files: [] }),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/projects/link-health')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ slug: 'alpha', agentId: 'main', state: 'linked' }),
+          expect.objectContaining({ slug: 'alpha', agentId: 'cto', state: 'linked' }),
+        ]),
+      );
+    });
+
+    it('rejects invalid link-health limit values', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/projects/link-health?limit=0')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_LIMIT');
+    });
+
+    it('applies repair limit when provided', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: '11111111-1111-1111-1111-111111111111',
+            slug: 'alpha',
+            name: 'Alpha',
+            root_path: '/projects/alpha',
+            agent_id: 'cto',
+          },
+        ],
+      });
+
+      ensureProjectLinkIfMissing.mockResolvedValue({ action: 'unchanged', state: 'linked' });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects/link-health/repair')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ limit: 1 });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.attempted).toBe(1);
+      expect(ensureProjectLinkIfMissing).toHaveBeenCalledTimes(1);
+    });
+
+    it('repairs project links and returns summary', async () => {
+      const token = getToken('admin-id', 'admin');
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: '11111111-1111-1111-1111-111111111111',
+            slug: 'alpha',
+            name: 'Alpha',
+            root_path: '/projects/alpha',
+            agent_id: 'cto',
+          },
+        ],
+      });
+
+      ensureProjectLinkIfMissing.mockImplementation(async (agentId) => {
+        if (agentId === 'main') return { action: 'created', state: 'linked' };
+        return { action: 'unchanged', state: 'linked' };
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/projects/link-health/repair')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual(
+        expect.objectContaining({
+          attempted: 2,
+          repaired: 1,
+          unchanged: 1,
+          conflicts: 0,
+          failed: 0,
+        }),
+      );
+      expect(ensureProjectLinkIfMissing).toHaveBeenCalledWith('main', '/projects/alpha');
+      expect(ensureProjectLinkIfMissing).toHaveBeenCalledWith('cto', '/projects/alpha');
+    });
+
     it('returns 409 when creating a duplicate project slug', async () => {
       const token = getToken('admin-id', 'admin');
       const duplicateError = new Error('duplicate key value violates unique constraint');

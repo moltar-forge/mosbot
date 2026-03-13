@@ -37,6 +37,8 @@ const MAIN_WORKSPACE_REMAP_PREFIXES = new Set([
   '/~/.openclaw/workspace',
 ]);
 const AGENT_ID_INPUT_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
+const PROJECT_LINK_HEALTH_DEFAULT_LIMIT = 200;
+const PROJECT_LINK_HEALTH_MAX_LIMIT = 500;
 
 // Auth middleware - require valid JWT
 const requireAuth = (req, res, next) => {
@@ -826,6 +828,90 @@ async function getAssignedProjectsForAgent(agentId) {
   return result.rows || [];
 }
 
+async function mapWithConcurrency(items, limit, worker) {
+  const normalizedLimit = Math.max(1, Number(limit) || 1);
+  const queue = [...items];
+  const results = [];
+
+  const runners = Array.from({ length: Math.min(normalizedLimit, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (!item) continue;
+      const result = await worker(item);
+      results.push(result);
+    }
+  });
+
+  await Promise.all(runners);
+  return results;
+}
+
+async function loadActiveProjectsWithAssignments(projectIdFilter = null) {
+  const rowsResult = await pool.query(
+    `SELECT p.id, p.slug, p.name, p.root_path, apa.agent_id
+       FROM projects p
+       LEFT JOIN agent_project_assignments apa ON apa.project_id = p.id
+      WHERE p.status = 'active'
+        AND ($1::uuid IS NULL OR p.id = $1)
+      ORDER BY p.slug ASC, apa.agent_id ASC`,
+    [projectIdFilter || null],
+  );
+
+  const projectMap = new Map();
+  for (const row of rowsResult.rows || []) {
+    if (!projectMap.has(row.id)) {
+      projectMap.set(row.id, {
+        projectId: row.id,
+        slug: row.slug,
+        name: row.name,
+        rootPath: row.root_path,
+        assignedAgents: new Set(),
+      });
+    }
+    if (row.agent_id) {
+      projectMap.get(row.id).assignedAgents.add(row.agent_id);
+    }
+  }
+
+  return [...projectMap.values()];
+}
+
+function expandProjectAgentTargets(projects, agentIdFilter = '') {
+  const targets = [];
+  for (const project of projects) {
+    const agentIds = new Set(['main', ...project.assignedAgents]);
+    for (const agentId of agentIds) {
+      if (agentIdFilter && agentId !== agentIdFilter) continue;
+      targets.push({
+        projectId: project.projectId,
+        slug: project.slug,
+        rootPath: project.rootPath,
+        agentId,
+      });
+    }
+  }
+  return targets;
+}
+
+function parseProjectLinkHealthLimit(rawLimit) {
+  if (rawLimit === undefined || rawLimit === null || rawLimit === '') {
+    return { value: PROJECT_LINK_HEALTH_DEFAULT_LIMIT };
+  }
+
+  const parsed = Number(rawLimit);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > PROJECT_LINK_HEALTH_MAX_LIMIT) {
+    return {
+      error: {
+        message: `limit must be an integer between 1 and ${PROJECT_LINK_HEALTH_MAX_LIMIT}`,
+        status: 400,
+        code: 'INVALID_LIMIT',
+      },
+    };
+  }
+
+  return { value: parsed };
+}
+
 function createDefaultProjectOnboarding() {
   return {
     hasAssignedProject: false,
@@ -1217,6 +1303,174 @@ router.get('/projects', requireAuth, async (req, res, next) => {
     if (error.code === '42P01') {
       return res.json({ data: [] });
     }
+    next(error);
+  }
+});
+
+// GET /api/v1/openclaw/projects/link-health
+// Inspect current project-link states for main + assigned agents.
+router.get('/projects/link-health', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const projectIdFilter = req.query.projectId ? String(req.query.projectId).trim() : '';
+    const agentIdFilter = req.query.agentId ? String(req.query.agentId).trim() : '';
+    const parsedLimit = parseProjectLinkHealthLimit(req.query.limit);
+
+    if (parsedLimit.error) {
+      return res.status(400).json({ error: parsedLimit.error });
+    }
+
+    const limit = parsedLimit.value;
+
+    if (projectIdFilter && !isValidProjectId(projectIdFilter)) {
+      return res.status(400).json({
+        error: { message: 'Invalid projectId format', status: 400, code: 'INVALID_PROJECT_ID' },
+      });
+    }
+
+    if (agentIdFilter && !AGENT_ID_INPUT_PATTERN.test(agentIdFilter)) {
+      return res.status(400).json({
+        error: { message: 'Invalid agentId format', status: 400, code: 'INVALID_AGENT_ID' },
+      });
+    }
+
+    let projects;
+    try {
+      projects = await loadActiveProjectsWithAssignments(projectIdFilter || null);
+    } catch (error) {
+      if (error.code === '42P01') {
+        return res.json({ data: [] });
+      }
+      throw error;
+    }
+
+    const tasks = expandProjectAgentTargets(projects, agentIdFilter);
+    const limitedTasks = tasks.slice(0, limit);
+    const checks = await mapWithConcurrency(limitedTasks, 5, async (task) => {
+      try {
+        const linkState = await makeOpenClawRequest(
+          'GET',
+          `/links/project/${encodeURIComponent(task.agentId)}?targetPath=${encodeURIComponent(task.rootPath)}`,
+        );
+        return {
+          projectId: task.projectId,
+          slug: task.slug,
+          rootPath: task.rootPath,
+          agentId: task.agentId,
+          state: linkState?.state || 'unknown',
+          conflict: linkState?.conflict || null,
+        };
+      } catch (linkError) {
+        return {
+          projectId: task.projectId,
+          slug: task.slug,
+          rootPath: task.rootPath,
+          agentId: task.agentId,
+          state: 'error',
+          errorCode: linkError?.code || null,
+          status: linkError?.status || null,
+        };
+      }
+    });
+
+    checks.sort((a, b) => {
+      const slugCmp = String(a.slug || '').localeCompare(String(b.slug || ''));
+      if (slugCmp !== 0) return slugCmp;
+      return String(a.agentId || '').localeCompare(String(b.agentId || ''));
+    });
+
+    res.json({ data: checks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/v1/openclaw/projects/link-health/repair
+// Reconcile project links for main + assigned agents.
+router.post('/projects/link-health/repair', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const projectIdFilter = body.projectId ? String(body.projectId).trim() : '';
+    const agentIdFilter = body.agentId ? String(body.agentId).trim() : '';
+    const parsedLimit = parseProjectLinkHealthLimit(body.limit);
+
+    if (parsedLimit.error) {
+      return res.status(400).json({ error: parsedLimit.error });
+    }
+
+    const limit = parsedLimit.value;
+
+    if (projectIdFilter && !isValidProjectId(projectIdFilter)) {
+      return res.status(400).json({
+        error: { message: 'Invalid projectId format', status: 400, code: 'INVALID_PROJECT_ID' },
+      });
+    }
+
+    if (agentIdFilter && !AGENT_ID_INPUT_PATTERN.test(agentIdFilter)) {
+      return res.status(400).json({
+        error: { message: 'Invalid agentId format', status: 400, code: 'INVALID_AGENT_ID' },
+      });
+    }
+
+    let projects;
+    try {
+      projects = await loadActiveProjectsWithAssignments(projectIdFilter || null);
+    } catch (error) {
+      if (error.code === '42P01') {
+        return res.json({
+          data: {
+            attempted: 0,
+            repaired: 0,
+            unchanged: 0,
+            conflicts: 0,
+            failed: 0,
+            skipped: 0,
+            unknown: 0,
+            results: [],
+          },
+        });
+      }
+      throw error;
+    }
+
+    const tasks = expandProjectAgentTargets(projects, agentIdFilter);
+    const limitedTasks = tasks.slice(0, limit);
+    const results = await mapWithConcurrency(limitedTasks, 5, async (task) => {
+      const reconcile = await ensureProjectLinkIfMissing(task.agentId, task.rootPath);
+      const action = reconcile?.action || 'unknown';
+      return {
+        projectId: task.projectId,
+        slug: task.slug,
+        rootPath: task.rootPath,
+        agentId: task.agentId,
+        action,
+        state: reconcile?.state || null,
+        ...(action === 'error'
+          ? {
+              errorCode: reconcile?.errorCode || 'RECONCILE_FAILED',
+              message: 'project link reconciliation failed',
+            }
+          : {}),
+      };
+    });
+
+    results.sort((a, b) => {
+      const slugCmp = String(a.slug || '').localeCompare(String(b.slug || ''));
+      if (slugCmp !== 0) return slugCmp;
+      return String(a.agentId || '').localeCompare(String(b.agentId || ''));
+    });
+
+    const summary = {
+      attempted: results.length,
+      repaired: results.filter((item) => item.action === 'repaired' || item.action === 'created').length,
+      unchanged: results.filter((item) => item.action === 'unchanged').length,
+      conflicts: results.filter((item) => item.action === 'conflict').length,
+      failed: results.filter((item) => item.action === 'error').length,
+      skipped: results.filter((item) => item.action === 'skipped').length,
+      unknown: results.filter((item) => item.action === 'unknown').length,
+    };
+
+    res.json({ data: { ...summary, results } });
+  } catch (error) {
     next(error);
   }
 });
