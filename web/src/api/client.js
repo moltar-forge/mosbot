@@ -214,6 +214,25 @@ export const unassignAgentFromProject = async (projectId, agentId) => {
   );
   return response.data?.data || null;
 };
+
+export const getProjectLinkHealth = async ({ projectId, agentId, limit } = {}) => {
+  const params = new URLSearchParams();
+  if (projectId) params.set('projectId', projectId);
+  if (agentId) params.set('agentId', agentId);
+  if (limit !== undefined && limit !== null) params.set('limit', String(limit));
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const response = await api.get(`/openclaw/projects/link-health${suffix}`);
+  return response.data?.data || [];
+};
+
+export const repairProjectLinkHealth = async ({ projectId, agentId, limit } = {}) => {
+  const response = await api.post('/openclaw/projects/link-health/repair', {
+    ...(projectId ? { projectId } : {}),
+    ...(agentId ? { agentId } : {}),
+    ...(limit !== undefined && limit !== null ? { limit } : {}),
+  });
+  return response.data?.data || null;
+};
 // OpenClaw Subagents API - returns object with { running, queued, completed, retention }
 export const getSubagents = async () => {
   const response = await api.get('/openclaw/subagents');
