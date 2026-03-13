@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeftIcon,
@@ -67,6 +67,7 @@ export default function ProjectDetail() {
     description: '',
     status: 'active',
   });
+  const loadRequestIdRef = useRef(0);
 
   const activeTab = useMemo(() => {
     if (location.pathname.includes('/files')) return 'files';
@@ -74,9 +75,16 @@ export default function ProjectDetail() {
   }, [location.pathname]);
 
   const loadProject = useCallback(async () => {
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
+
+    const isStaleRequest = () => loadRequestIdRef.current !== requestId;
+
     setIsLoading(true);
     try {
       const [projectsData, agentsData] = await Promise.all([getProjects(), getAgents()]);
+      if (isStaleRequest()) return;
+
       const nextProject = (projectsData || []).find((item) => item.slug === slug);
       if (!nextProject) {
         setProject(null);
@@ -97,13 +105,21 @@ export default function ProjectDetail() {
           setIsLoadingLinkHealth(true);
           try {
             const health = await getProjectLinkHealth({ projectId: nextProject.id, limit: 200 });
+            if (isStaleRequest()) return;
             setLinkHealth(Array.isArray(health) ? health : []);
             setLinkHealthError(null);
           } catch (healthErr) {
+            if (isStaleRequest()) return;
             setLinkHealth([]);
-            setLinkHealthError(healthErr.message || 'Failed to load project link health');
+            setLinkHealthError(
+              healthErr?.response?.data?.error?.message ||
+                healthErr.message ||
+                'Failed to load project link health',
+            );
           } finally {
-            setIsLoadingLinkHealth(false);
+            if (!isStaleRequest()) {
+              setIsLoadingLinkHealth(false);
+            }
           }
         } else {
           setLinkHealth([]);
@@ -111,12 +127,18 @@ export default function ProjectDetail() {
           setIsLoadingLinkHealth(false);
         }
       }
-      setAgents(Array.isArray(agentsData) ? agentsData : []);
+
+      if (!isStaleRequest()) {
+        setAgents(Array.isArray(agentsData) ? agentsData : []);
+      }
     } catch (err) {
+      if (isStaleRequest()) return;
       setProjectsError(err.message || 'Failed to load project');
       setProject(null);
     } finally {
-      setIsLoading(false);
+      if (!isStaleRequest()) {
+        setIsLoading(false);
+      }
     }
   }, [isAdminUser, slug]);
 
