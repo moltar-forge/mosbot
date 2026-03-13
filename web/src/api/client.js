@@ -396,7 +396,12 @@ export const resetActivityLogs = async (password) => {
   return response.data.data;
 };
 
-// OpenClaw Config Editor API (admin/owner only)
+// OpenClaw Integration / Config API
+export const getOpenClawIntegrationStatus = async () => {
+  const response = await api.get('/openclaw/integration/status', { timeout: OPENCLAW_TIMEOUT });
+  return response.data.data;
+};
+
 export const getOpenClawConfig = async () => {
   const response = await api.get('/openclaw/config', { timeout: OPENCLAW_TIMEOUT });
   return response.data.data;

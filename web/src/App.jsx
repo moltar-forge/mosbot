@@ -20,6 +20,7 @@ import Archived from './pages/Archived';
 import Settings from './pages/Settings';
 import ModelFleetSettings from './pages/ModelFleetSettings';
 const OpenClawConfigSettings = lazy(() => import('./pages/OpenClawConfigSettings'));
+const OpenClawPairingSetup = lazy(() => import('./pages/OpenClawPairingSetup'));
 import TaskView from './pages/TaskView';
 import Standup from './pages/Standup';
 import UsageAnalytics from './pages/UsageAnalytics';
@@ -201,6 +202,22 @@ function App() {
               element={
                 <Layout>
                   <ModelFleetSettings />
+                </Layout>
+              }
+            />
+            <Route
+              path="/settings/openclaw-pairing"
+              element={
+                <Layout>
+                  <Suspense
+                    fallback={
+                      <div className="flex items-center justify-center h-full">
+                        <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    }
+                  >
+                    <OpenClawPairingSetup />
+                  </Suspense>
                 </Layout>
               }
             />

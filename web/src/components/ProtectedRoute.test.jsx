@@ -1,8 +1,14 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import ProtectedRoute from './ProtectedRoute';
 import { useAuthStore } from '../stores/authStore';
+
+vi.mock('../api/client', () => ({
+  getOpenClawIntegrationStatus: vi.fn(),
+}));
+
+const { getOpenClawIntegrationStatus } = await import('../api/client');
 
 describe('ProtectedRoute', () => {
   beforeEach(() => {
@@ -15,6 +21,7 @@ describe('ProtectedRoute', () => {
       isInitialized: false,
       error: null,
     });
+    getOpenClawIntegrationStatus.mockResolvedValue({ ready: true, status: 'ready' });
   });
 
   it('shows loading state when not initialized', () => {
@@ -80,8 +87,9 @@ describe('ProtectedRoute', () => {
     expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
   });
 
-  it('renders children when authenticated', () => {
+  it('renders children when authenticated and integration is ready', async () => {
     useAuthStore.setState({
+      user: { id: 'u1', role: 'admin' },
       isAuthenticated: true,
       isLoading: false,
       isInitialized: true,
@@ -97,6 +105,34 @@ describe('ProtectedRoute', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Protected Content')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Protected Content')).toBeInTheDocument();
+    });
+  });
+
+  it('redirects admin users to pairing setup when integration is not ready', async () => {
+    getOpenClawIntegrationStatus.mockResolvedValue({ ready: false, status: 'pending_pairing' });
+
+    useAuthStore.setState({
+      user: { id: 'u1', role: 'admin' },
+      isAuthenticated: true,
+      isLoading: false,
+      isInitialized: true,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/tasks']}>
+        <Routes>
+          <Route element={<ProtectedRoute />}>
+            <Route path="tasks" element={<div>Tasks Page</div>} />
+            <Route path="settings/openclaw-pairing" element={<div>Pairing Setup</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Pairing Setup')).toBeInTheDocument();
+    });
   });
 });
