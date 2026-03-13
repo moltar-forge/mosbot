@@ -142,9 +142,9 @@ Configure this token in:
 The gateway token is configured in `openclaw.json` under `gateway.auth`. Retrieve it from your
 OpenClaw configuration or generate one following OpenClaw's documentation.
 
-Configure this token in MosBot API's `.env` as `OPENCLAW_GATEWAY_TOKEN`. MosBot uses it to
-bootstrap the device pairing workflow; gateway-backed features are unlocked only after an
-`owner`/`admin` completes pairing in the dashboard.
+Configure this token in MosBot API's `.env` as `OPENCLAW_GATEWAY_TOKEN`. MosBot uses it to bootstrap
+the device pairing workflow; gateway-backed features are unlocked only after an `owner`/`admin`
+completes pairing in the dashboard.
 
 ## Verifying both services are running
 

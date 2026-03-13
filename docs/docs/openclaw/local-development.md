@@ -135,13 +135,13 @@ The status should become `ready` after approval and finalize.
 
 ## Troubleshooting
 
-| Symptom                   | Cause                                                    | Fix                                                                 |
-| ------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------- |
-| 503 errors                    | Port-forward stopped or service restarted                | Restart the port-forward in the terminal                            |
-| Connection refused            | Wrong namespace/service name or port-forward not running | Check service names: `kubectl get svc -n <namespace>`               |
-| 401 Unauthorized              | Token mismatch                                           | Re-fetch the token from Kubernetes secrets                          |
-| Pairing stuck at `pending_pairing` | Device request not yet approved in OpenClaw        | Approve the pending MosBot device, then finalize pairing            |
-| Only seeing default agent     | API can't reach workspace service                        | Verify `OPENCLAW_WORKSPACE_URL` and that the port-forward is active |
+| Symptom                            | Cause                                                    | Fix                                                                 |
+| ---------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------- |
+| 503 errors                         | Port-forward stopped or service restarted                | Restart the port-forward in the terminal                            |
+| Connection refused                 | Wrong namespace/service name or port-forward not running | Check service names: `kubectl get svc -n <namespace>`               |
+| 401 Unauthorized                   | Token mismatch                                           | Re-fetch the token from Kubernetes secrets                          |
+| Pairing stuck at `pending_pairing` | Device request not yet approved in OpenClaw              | Approve the pending MosBot device, then finalize pairing            |
+| Only seeing default agent          | API can't reach workspace service                        | Verify `OPENCLAW_WORKSPACE_URL` and that the port-forward is active |
 
 ## Tips
 

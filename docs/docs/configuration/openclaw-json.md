@@ -551,16 +551,16 @@ Configures the OpenClaw gateway service.
 }
 ```
 
-| Field                         | Description                                                                                         |
-| ----------------------------- | --------------------------------------------------------------------------------------------------- |
-| `port`                        | Gateway port (default: `18789`)                                                                     |
-| `mode`                        | `local` for local/LAN operation                                                                     |
-| `bind`                        | `lan` to bind to all LAN interfaces                                                                 |
+| Field                         | Description                                                                                           |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `port`                        | Gateway port (default: `18789`)                                                                       |
+| `mode`                        | `local` for local/LAN operation                                                                       |
+| `bind`                        | `lan` to bind to all LAN interfaces                                                                   |
 | `controlUi.allowedOrigins`    | CORS allowed origins for the gateway UI — **must include the gateway origin MosBot uses for pairing** |
-| `controlUi.allowInsecureAuth` | Legacy OpenClaw setting. MosBot no longer relies on this as a gateway RPC fallback.                 |
-| `auth.mode`                   | `token` for bearer token authentication                                                             |
-| `tls.enabled`                 | Enable TLS                                                                                          |
-| `tls.autoGenerate`            | Auto-generate a self-signed certificate                                                             |
+| `controlUi.allowInsecureAuth` | Legacy OpenClaw setting. MosBot no longer relies on this as a gateway RPC fallback.                   |
+| `auth.mode`                   | `token` for bearer token authentication                                                               |
+| `tls.enabled`                 | Enable TLS                                                                                            |
+| `tls.autoGenerate`            | Auto-generate a self-signed certificate                                                               |
 
 :::info MosBot Integration
 
