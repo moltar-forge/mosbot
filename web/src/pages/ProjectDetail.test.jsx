@@ -14,8 +14,10 @@ vi.mock('../api/client', () => ({
   repairProjectLinkHealth: vi.fn(),
 }));
 
+let isAdminValue = true;
+
 vi.mock('../stores/authStore', () => ({
-  useAuthStore: () => ({ isAdmin: () => true }),
+  useAuthStore: () => ({ isAdmin: () => isAdminValue }),
 }));
 
 vi.mock('../stores/toastStore', () => ({
@@ -36,6 +38,7 @@ const { getProjects, getAgents, updateProject, getProjectLinkHealth, repairProje
 describe('ProjectDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    isAdminValue = true;
 
     getProjects.mockResolvedValue([
       {
@@ -126,6 +129,26 @@ describe('ProjectDetail', () => {
     expect(screen.getAllByText('web-agent').length).toBeGreaterThan(0);
     expect(screen.getAllByText('linked').length).toBeGreaterThan(0);
     expect(screen.getByText('missing')).toBeInTheDocument();
+  });
+
+  it('hides link health diagnostics for non-admin users', async () => {
+    isAdminValue = false;
+
+    render(
+      <MemoryRouter initialEntries={['/projects/project-alpha']}>
+        <Routes>
+          <Route path="/projects/:slug" element={<ProjectDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Assigned agents')).toBeInTheDocument();
+    });
+
+    expect(getProjectLinkHealth).not.toHaveBeenCalled();
+    expect(screen.queryByText('Link health')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Repair links' })).not.toBeInTheDocument();
   });
 
   it('repairs project links from overview diagnostics', async () => {
