@@ -78,16 +78,25 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     avatar_url TEXT,
     role VARCHAR(20) DEFAULT 'user',
+    agent_id TEXT UNIQUE,
     active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT valid_role CHECK (
-        role IN ('owner', 'admin', 'user')
+        role IN ('owner', 'agent', 'admin', 'user')
     ),
     CONSTRAINT check_email_format CHECK (
         email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
     ),
-    CONSTRAINT check_name_not_empty CHECK (trim(name) != '')
+    CONSTRAINT check_name_not_empty CHECK (trim(name) != ''),
+    CONSTRAINT check_agent_role_requires_agent_id CHECK (
+        (role = 'agent' AND agent_id IS NOT NULL) OR
+        (role != 'agent')
+    ),
+    CONSTRAINT check_agent_id_format CHECK (
+        agent_id IS NULL OR 
+        agent_id ~ '^[a-z0-9_-]+$'
+    )
 );
 
 -- Tasks table (consolidated with all features)
@@ -282,6 +291,7 @@ CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);
 
 CREATE INDEX IF NOT EXISTS idx_users_active ON users (active);
 
+CREATE INDEX IF NOT EXISTS idx_users_agent_id ON users (agent_id);
 
 -- Enforce exactly one owner (partial unique index)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_single_owner ON users (role)
