@@ -329,7 +329,7 @@ const authenticateToken = async (req, res, next) => {
 
     // Verify user still exists and is active
     const result = await pool.query(
-      'SELECT id, name, email, role, active, agent_id FROM users WHERE id = $1',
+      'SELECT id, name, email, role, active FROM users WHERE id = $1',
       [decoded.id],
     );
 
@@ -350,7 +350,7 @@ const authenticateToken = async (req, res, next) => {
       ...decoded,
       active: result.rows[0].active,
       role: result.rows[0].role,
-      agent_id: result.rows[0].agent_id || decoded.agent_id || null,
+      agent_id: decoded.agent_id || null,
     };
     next();
   } catch (_err) {
