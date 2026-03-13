@@ -46,18 +46,13 @@ The bootstrap is **idempotent** — it is skipped if an owner already exists.
 
 See `docs/getting-started/first-run.md` for full setup instructions.
 
-### Agent ID Linkage
+### Agent identity model
 
-The `users` table includes an `agent_id` field for linking agent users to OpenClaw configuration:
+Machine agents are managed via the dedicated `agents` table (and related API key / project assignment tables), not `users`.
 
-- **agent_id** column (unique, nullable TEXT)
-  - Links users with `role='agent'` to their OpenClaw agent config entry
-  - Format: lowercase slug (e.g., `coo`, `cto`, `ops-assistant`)
-  - Constraint: users with `role='agent'` must have a non-null `agent_id`
-  - Validation: `agent_id` must match pattern `^[a-z0-9_-]+$`
-  - Seeded agents are pre-configured with their corresponding agent IDs
-
-This enables the dashboard to manage OpenClaw agent configurations through the `/settings/users` interface.
+- `users` now represents human accounts (`owner`, `admin`, `user`)
+- runtime agent identity, metadata, and status come from `agents`
+- legacy `users.agent_id` linkage was removed in `018_drop_users_agent_id.sql`
 
 ## Old Migrations
 

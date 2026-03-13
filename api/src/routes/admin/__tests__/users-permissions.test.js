@@ -72,10 +72,10 @@ describe('User List Permissions (Unit Tests)', () => {
         });
       }
 
-      // Mock user list (SELECT id, name, email, avatar_url, role, agent_id, active, created_at, updated_at FROM users)
+      // Mock user list (SELECT id, name, email, avatar_url, role, active, created_at, updated_at FROM users)
       if (
         query.includes(
-          'SELECT id, name, email, avatar_url, role, agent_id, active, created_at, updated_at',
+          'SELECT id, name, email, avatar_url, role, active, created_at, updated_at',
         ) &&
         !query.includes('WHERE id =')
       ) {
@@ -88,7 +88,6 @@ describe('User List Permissions (Unit Tests)', () => {
               role: 'user',
               active: true,
               avatar_url: null,
-              agent_id: null,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             },
@@ -99,7 +98,6 @@ describe('User List Permissions (Unit Tests)', () => {
               role: 'admin',
               active: true,
               avatar_url: null,
-              agent_id: null,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             },
@@ -119,7 +117,6 @@ describe('User List Permissions (Unit Tests)', () => {
               role: 'user',
               active: true,
               avatar_url: null,
-              agent_id: null,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             },
@@ -206,8 +203,7 @@ describe('User List Permissions (Unit Tests)', () => {
                 role: 'user',
                 active: true,
                 avatar_url: null,
-                agent_id: null,
-                created_at: new Date().toISOString(),
+              created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
               },
             ],

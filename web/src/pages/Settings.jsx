@@ -56,7 +56,7 @@ export default function Settings() {
     setIsLoading(true);
     setError('');
     try {
-      const response = await api.get('/admin/users?includeAgentConfig=true');
+      const response = await api.get('/admin/users');
       setUsers(response.data.data || []);
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to load users');

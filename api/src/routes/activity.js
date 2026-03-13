@@ -133,12 +133,12 @@ router.get('/feed', async (req, res, next) => {
         al.actor_user_id,
         al.created_at,
         t.title       AS task_title,
-        u.name        AS agent_name,
-        u.avatar_url  AS agent_avatar,
+        ag.name       AS agent_name,
+        ag.meta->>'avatar_url' AS agent_avatar,
         au.name       AS actor_name
       FROM activity_logs al
       LEFT JOIN tasks t  ON t.id = al.task_id
-      LEFT JOIN users u  ON u.agent_id = al.agent_id
+      LEFT JOIN agents ag ON ag.agent_id = al.agent_id
       LEFT JOIN users au ON au.id = al.actor_user_id
       WHERE 1=1
     `;
@@ -256,11 +256,11 @@ router.get('/', async (req, res, next) => {
         al.agent_id,
         al.task_id,
         al.created_at,
-        t.title AS task_title,
-        u.name  AS agent_name
+        t.title  AS task_title,
+        ag.name  AS agent_name
       FROM activity_logs al
       LEFT JOIN tasks t ON t.id = al.task_id
-      LEFT JOIN users u ON u.agent_id = al.agent_id
+      LEFT JOIN agents ag ON ag.agent_id = al.agent_id
       WHERE 1=1
     `;
     const params = [];
@@ -353,11 +353,11 @@ router.get('/:id', validateUUID('id'), async (req, res, next) => {
       `SELECT
          al.id, al.timestamp, al.title, al.description,
          al.category, al.agent_id, al.task_id, al.created_at,
-         t.title AS task_title,
-         u.name  AS agent_name
+         t.title  AS task_title,
+         ag.name  AS agent_name
        FROM activity_logs al
        LEFT JOIN tasks t ON t.id = al.task_id
-       LEFT JOIN users u ON u.agent_id = al.agent_id
+       LEFT JOIN agents ag ON ag.agent_id = al.agent_id
        WHERE al.id = $1`,
       [id],
     );

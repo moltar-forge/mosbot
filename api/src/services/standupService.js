@@ -6,23 +6,28 @@ const { recordActivityLogEventSafe } = require('./activityLogService');
 const STANDUP_AGENT_ORDER = ['coo', 'cto', 'cpo', 'cmo'];
 
 /**
- * Fetch agent users from DB in standup order (COO > CTO > CPO > CMO)
- * Only returns active users with a recognised agent_id
- * @returns {Promise<Array>} Array of user rows
+ * Fetch agents from DB in standup order (COO > CTO > CPO > CMO)
+ * Only returns active, non-deprecated agents with recognised agent_id
+ * @returns {Promise<Array>} Array of agent rows
  */
 async function getAgentUsersForStandup() {
   try {
     const result = await pool.query(
-      `SELECT id AS user_id, name, agent_id, avatar_url
-       FROM users
+      `SELECT
+         NULL::uuid AS user_id,
+         name,
+         agent_id,
+         meta->>'avatar_url' AS avatar_url
+       FROM agents
        WHERE agent_id = ANY($1::text[])
          AND active = true
+         AND status = 'active'
        ORDER BY ARRAY_POSITION($1::text[], agent_id)`,
       [STANDUP_AGENT_ORDER],
     );
     return result.rows;
   } catch (error) {
-    logger.error('Failed to fetch agent users for standup', { error: error.message });
+    logger.error('Failed to fetch agents for standup', { error: error.message });
     return [];
   }
 }
@@ -230,11 +235,11 @@ async function runStandupById(standup) {
   const agents = await getAgentUsersForStandup();
 
   if (agents.length === 0) {
-    logger.warn('No agent users found for standup', { standupId });
+    logger.warn('No active agents found for standup', { standupId });
     await pool.query("UPDATE standups SET status = 'error', completed_at = NOW() WHERE id = $1", [
       standupId,
     ]);
-    return { status: 'error', message: 'No agent users found in the database', standupId };
+    return { status: 'error', message: 'No active agents found in the database', standupId };
   }
 
   logger.info(`Collecting standup from ${agents.length} agents`, {

@@ -703,7 +703,7 @@ async function listSessionsData({ userId }) {
   try {
     const sessionAgentIds = [...new Set(transformedSessions.map((s) => s.agent).filter(Boolean))];
     if (sessionAgentIds.length > 0) {
-      const result = await pool.query('SELECT agent_id, name FROM users WHERE agent_id = ANY($1)', [
+      const result = await pool.query('SELECT agent_id, name FROM agents WHERE agent_id = ANY($1)', [
         sessionAgentIds,
       ]);
       result.rows.forEach((row) => {
@@ -711,7 +711,7 @@ async function listSessionsData({ userId }) {
       });
     }
   } catch (dbErr) {
-    logger.warn('Could not query users table for session agent names', {
+    logger.warn('Could not query agents table for session agent names', {
       error: dbErr.message,
     });
   }

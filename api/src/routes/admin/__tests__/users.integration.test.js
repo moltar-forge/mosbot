@@ -87,8 +87,8 @@ function defaultQueryMock(sql, params) {
     return Promise.resolve({ rows: [] });
   }
 
-  // PUT route: check target user exists and get role (SELECT id, role, agent_id FROM users WHERE id = $1)
-  if (sql.includes('SELECT id, role, agent_id FROM users WHERE id')) {
+  // PUT route: check target user exists and get role (SELECT id, role FROM users WHERE id = $1)
+  if (sql.includes('SELECT id, role FROM users WHERE id')) {
     const userId = params && params[0];
     const user = usersById[userId];
     if (user) {
@@ -97,12 +97,12 @@ function defaultQueryMock(sql, params) {
     return Promise.resolve({ rows: [] });
   }
 
-  // DELETE route: check target user role (SELECT role, agent_id FROM users WHERE id = $1)
-  if (sql.includes('SELECT role, agent_id FROM users WHERE id')) {
+  // DELETE route: check target user role (SELECT role FROM users WHERE id = $1)
+  if (sql.includes('SELECT role FROM users WHERE id')) {
     const userId = params && params[0];
     const user = usersById[userId];
     if (user) {
-      return Promise.resolve({ rows: [{ role: user.role, agent_id: user.agent_id || null }] });
+      return Promise.resolve({ rows: [{ role: user.role }] });
     }
     return Promise.resolve({ rows: [] });
   }
@@ -166,7 +166,7 @@ function defaultQueryMock(sql, params) {
     return Promise.resolve({ rows: [{ total: '3' }] });
   }
 
-  // GET single user by ID (SELECT id, name, email, avatar_url, role, agent_id, active, created_at, updated_at FROM users WHERE id = $1)
+  // GET single user by ID (SELECT id, name, email, avatar_url, role, active, created_at, updated_at FROM users WHERE id = $1)
   if (sql.includes('FROM users WHERE id =') && sql.includes('avatar_url')) {
     const userId = params && params[0];
     const user = usersById[userId];
@@ -176,8 +176,7 @@ function defaultQueryMock(sql, params) {
           {
             ...user,
             avatar_url: user.avatar_url || null,
-            agent_id: user.agent_id || null,
-            created_at: user.created_at || new Date().toISOString(),
+                        created_at: user.created_at || new Date().toISOString(),
             updated_at: user.updated_at || new Date().toISOString(),
           },
         ],
@@ -186,18 +185,17 @@ function defaultQueryMock(sql, params) {
     return Promise.resolve({ rows: [] });
   }
 
-  // GET list: data (SELECT id, name, email, avatar_url, role, agent_id, active, created_at, updated_at FROM users ...)
+  // GET list: data (SELECT id, name, email, avatar_url, role, active, created_at, updated_at FROM users ...)
   if (
     sql.includes(
-      'SELECT id, name, email, avatar_url, role, agent_id, active, created_at, updated_at',
+      'SELECT id, name, email, avatar_url, role, active, created_at, updated_at',
     ) &&
     !sql.includes('WHERE id =')
   ) {
     const users = [ownerUser, adminUser, regularUser].map((u) => ({
       ...u,
       avatar_url: u.avatar_url || null,
-      agent_id: u.agent_id || null,
-      created_at: u.created_at || new Date().toISOString(),
+            created_at: u.created_at || new Date().toISOString(),
       updated_at: u.updated_at || new Date().toISOString(),
     }));
     return Promise.resolve({

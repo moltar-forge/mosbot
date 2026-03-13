@@ -702,7 +702,7 @@ describe('OpenClaw Routes', () => {
 
       expect(response.status).toBe(200);
       expect(pool.query).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT agent_id, name FROM users'),
+        expect.stringContaining("SELECT agent_id, name, meta->>'emoji' AS emoji FROM agents"),
         expect.any(Array),
       );
     });

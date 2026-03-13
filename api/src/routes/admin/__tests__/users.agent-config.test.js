@@ -38,7 +38,6 @@ jest.mock('../../auth', () => ({
 }));
 
 const pool = require('../../../db/pool');
-const logger = require('../../../utils/logger');
 const { makeOpenClawRequest } = require('../../../services/openclawWorkspaceClient');
 const usersRouter = require('../users');
 
@@ -64,44 +63,25 @@ describe('admin users legacy-agent cutover behavior', () => {
     app = makeApp();
   });
 
-  it('GET / merges includeAgentConfig for admin users only', async () => {
-    pool.query.mockResolvedValueOnce({ rows: [{ total: '3' }] }).mockResolvedValueOnce({
-      rows: [
-        { id: 'u1', role: 'agent', agent_id: 'coo' },
-        { id: 'u2', role: 'admin', agent_id: 'cto' },
-        { id: 'u3', role: 'user', agent_id: null },
-      ],
-    });
-    makeOpenClawRequest.mockResolvedValueOnce({
-      content: JSON.stringify({
-        agents: {
-          list: [
-            { id: 'coo', workspace: '/w-coo', identity: { name: 'COO' }, model: { primary: 'x' } },
-            { id: 'cto', workspace: '/w-cto', identity: { name: 'CTO' }, model: { primary: 'y' } },
-          ],
-        },
-      }),
+  it('GET / does not query OpenClaw config for user listing', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ total: '1' }] }).mockResolvedValueOnce({
+      rows: [{ id: 'u2', role: 'admin' }],
     });
 
-    const res = await request(app).get('/api/v1/admin/users?includeAgentConfig=true');
+    const res = await request(app).get('/api/v1/admin/users');
     expect(res.status).toBe(200);
     expect(res.body.data[0].agentConfig).toBeUndefined();
-    expect(res.body.data[1].agentConfig.id).toBe('cto');
-    expect(res.body.data[2].agentConfig).toBeUndefined();
+    expect(makeOpenClawRequest).not.toHaveBeenCalled();
   });
 
-  it('GET /:id merges includeAgentConfig for admin users only', async () => {
+  it('GET /:id does not query OpenClaw config for user detail', async () => {
     const id = '550e8400-e29b-41d4-a716-446655440000';
-    pool.query.mockResolvedValueOnce({ rows: [{ id, role: 'admin', agent_id: 'coo' }] });
-    makeOpenClawRequest.mockResolvedValueOnce({
-      content: JSON.stringify({
-        agents: { list: [{ id: 'coo', workspace: '/w', identity: { name: 'COO' } }] },
-      }),
-    });
+    pool.query.mockResolvedValueOnce({ rows: [{ id, role: 'admin' }] });
 
-    const res = await request(app).get(`/api/v1/admin/users/${id}?includeAgentConfig=true`);
+    const res = await request(app).get(`/api/v1/admin/users/${id}`);
     expect(res.status).toBe(200);
-    expect(res.body.data.agentConfig.id).toBe('coo');
+    expect(res.body.data.agentConfig).toBeUndefined();
+    expect(makeOpenClawRequest).not.toHaveBeenCalled();
   });
 
   it('POST / rejects creating legacy role=agent users', async () => {
@@ -131,7 +111,7 @@ describe('admin users legacy-agent cutover behavior', () => {
 
   it('PUT /:id rejects assigning role=agent', async () => {
     const id = '550e8400-e29b-41d4-a716-446655440000';
-    pool.query.mockResolvedValueOnce({ rows: [{ id, role: 'user', agent_id: null }] });
+    pool.query.mockResolvedValueOnce({ rows: [{ id, role: 'user' }] });
 
     const res = await request(app).put(`/api/v1/admin/users/${id}`).send({ role: 'agent' });
 
@@ -141,7 +121,7 @@ describe('admin users legacy-agent cutover behavior', () => {
 
   it('PUT /:id rejects setting agent_id on users', async () => {
     const id = '550e8400-e29b-41d4-a716-446655440000';
-    pool.query.mockResolvedValueOnce({ rows: [{ id, role: 'admin', agent_id: null }] });
+    pool.query.mockResolvedValueOnce({ rows: [{ id, role: 'admin' }] });
 
     const res = await request(app).put(`/api/v1/admin/users/${id}`).send({ agent_id: 'coo' });
 
@@ -156,20 +136,5 @@ describe('admin users legacy-agent cutover behavior', () => {
 
     expect(res.status).toBe(410);
     expect(res.body.error.code).toBe('ENDPOINT_DEPRECATED');
-  });
-
-  it('GET / continues without merge when OpenClaw config read fails', async () => {
-    pool.query
-      .mockResolvedValueOnce({ rows: [{ total: '1' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'u1', role: 'admin', agent_id: 'coo' }] });
-    makeOpenClawRequest.mockRejectedValueOnce(Object.assign(new Error('down'), { status: 503 }));
-
-    const res = await request(app).get('/api/v1/admin/users?includeAgentConfig=true');
-    expect(res.status).toBe(200);
-    expect(res.body.data[0].agentConfig).toBeUndefined();
-    expect(logger.warn).toHaveBeenCalledWith(
-      'Failed to read OpenClaw config for agent merge',
-      expect.any(Object),
-    );
   });
 });

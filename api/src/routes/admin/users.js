@@ -22,7 +22,7 @@ const validateUUID = (paramName) => (req, res, next) => {
 // GET /api/v1/admin/users - List all users (all authenticated users can view)
 router.get('/', async (req, res, next) => {
   try {
-    const { limit = 100, offset = 0, includeAgentConfig } = req.query;
+    const { limit = 100, offset = 0 } = req.query;
 
     // Validate pagination parameters
     const limitNum = Math.max(1, Math.min(parseInt(limit) || 100, 1000));
@@ -33,7 +33,7 @@ router.get('/', async (req, res, next) => {
       pool.query('SELECT COUNT(*) as total FROM users'),
       pool.query(
         `
-        SELECT id, name, email, avatar_url, role, agent_id, active, created_at, updated_at
+        SELECT id, name, email, avatar_url, role, active, created_at, updated_at
         FROM users
         ORDER BY created_at DESC
         LIMIT $1 OFFSET $2
@@ -44,54 +44,6 @@ router.get('/', async (req, res, next) => {
 
     const total = parseInt(countResult.rows[0].total, 10);
     let users = dataResult.rows;
-
-    // If includeAgentConfig is requested, merge with OpenClaw agent config
-    if (includeAgentConfig === 'true') {
-      try {
-        const { makeOpenClawRequest } = require('../../services/openclawWorkspaceClient');
-
-        // Read openclaw.json from workspace service
-        const configData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
-        const openclawConfig = JSON.parse(configData.content);
-        const agentsList = openclawConfig?.agents?.list || [];
-
-        // Create a map of agent_id -> agent config
-        const agentConfigMap = new Map();
-        agentsList.forEach((agent) => {
-          if (agent.id) {
-            agentConfigMap.set(agent.id, agent);
-          }
-        });
-
-        // Merge agent config into user objects (admin users can still have linked agent config)
-        users = users.map((user) => {
-          if (user.role === 'admin' && user.agent_id) {
-            const agentConfig = agentConfigMap.get(user.agent_id);
-            if (agentConfig) {
-              return {
-                ...user,
-                agentConfig: {
-                  id: agentConfig.id,
-                  workspace: agentConfig.workspace,
-                  identity: agentConfig.identity,
-                  model: agentConfig.model,
-                  default: agentConfig.default,
-                  subagents: agentConfig.subagents,
-                  heartbeat: agentConfig.heartbeat,
-                },
-              };
-            }
-          }
-          return user;
-        });
-      } catch (configError) {
-        // If OpenClaw config can't be read, log warning but continue with users data
-        logger.warn('Failed to read OpenClaw config for agent merge', {
-          error: configError.message,
-          status: configError.status,
-        });
-      }
-    }
 
     res.json({
       data: users,
@@ -110,10 +62,9 @@ router.get('/', async (req, res, next) => {
 router.get('/:id', validateUUID('id'), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { includeAgentConfig } = req.query;
 
     const result = await pool.query(
-      'SELECT id, name, email, avatar_url, role, agent_id, active, created_at, updated_at FROM users WHERE id = $1',
+      'SELECT id, name, email, avatar_url, role, active, created_at, updated_at FROM users WHERE id = $1',
       [id],
     );
 
@@ -122,42 +73,6 @@ router.get('/:id', validateUUID('id'), async (req, res, next) => {
     }
 
     let user = result.rows[0];
-
-    // If includeAgentConfig is requested and user is an admin with agent_id, merge OpenClaw config
-    if (includeAgentConfig === 'true' && user.role === 'admin' && user.agent_id) {
-      try {
-        const { makeOpenClawRequest } = require('../../services/openclawWorkspaceClient');
-
-        // Read openclaw.json from workspace service
-        const configData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
-        const openclawConfig = JSON.parse(configData.content);
-        const agentsList = openclawConfig?.agents?.list || [];
-
-        // Find matching agent config
-        const agentConfig = agentsList.find((agent) => agent.id === user.agent_id);
-        if (agentConfig) {
-          user = {
-            ...user,
-            agentConfig: {
-              id: agentConfig.id,
-              workspace: agentConfig.workspace,
-              identity: agentConfig.identity,
-              model: agentConfig.model,
-              default: agentConfig.default,
-              subagents: agentConfig.subagents,
-              heartbeat: agentConfig.heartbeat,
-            },
-          };
-        }
-      } catch (configError) {
-        // If OpenClaw config can't be read, log warning but continue with user data
-        logger.warn('Failed to read OpenClaw config for agent merge', {
-          error: configError.message,
-          status: configError.status,
-          userId: id,
-        });
-      }
-    }
 
     res.json({ data: user });
   } catch (error) {
@@ -239,7 +154,7 @@ router.post('/', requireManageUsers, async (req, res, next) => {
       `
       INSERT INTO users (name, email, password_hash, role, avatar_url, active)
       VALUES ($1, $2, $3, $4, $5, true)
-      RETURNING id, name, email, avatar_url, role, agent_id, active, created_at
+      RETURNING id, name, email, avatar_url, role, active, created_at
     `,
       [name, email, password_hash, role, avatar_url],
     );
@@ -256,8 +171,8 @@ router.put('/:id', requireManageUsers, validateUUID('id'), async (req, res, next
     const { id } = req.params;
     const { name, email, password, role, avatar_url, active, agent_id } = req.body;
 
-    // Check if user exists and get their role and agent_id
-    const existing = await pool.query('SELECT id, role, agent_id FROM users WHERE id = $1', [id]);
+    // Check if user exists and get their role
+    const existing = await pool.query('SELECT id, role FROM users WHERE id = $1', [id]);
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: { message: 'User not found', status: 404 } });
     }
@@ -440,7 +355,7 @@ router.put('/:id', requireManageUsers, validateUUID('id'), async (req, res, next
       UPDATE users
       SET ${updates.join(', ')}
       WHERE id = $${paramCount}
-      RETURNING id, name, email, avatar_url, role, agent_id, active, created_at, updated_at
+      RETURNING id, name, email, avatar_url, role, active, created_at, updated_at
     `,
       params,
     );
@@ -474,8 +389,8 @@ router.delete('/:id', requireManageUsers, validateUUID('id'), async (req, res, n
       });
     }
 
-    // Check target user's role and agent_id
-    const targetUser = await pool.query('SELECT role, agent_id FROM users WHERE id = $1', [id]);
+    // Check target user's role
+    const targetUser = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
     if (targetUser.rows.length === 0) {
       return res.status(404).json({ error: { message: 'User not found', status: 404 } });
     }
