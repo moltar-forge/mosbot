@@ -87,11 +87,11 @@ Virtual path conventions:
 Required to bootstrap OpenClaw gateway connectivity and the MosBot pairing wizard. Without these
 variables, gateway-backed features remain unavailable.
 
-| Variable                      | Default | Description                                                 |
-| ----------------------------- | ------- | ----------------------------------------------------------- |
-| `OPENCLAW_GATEWAY_URL`        | —       | URL of the OpenClaw gateway (e.g. `http://localhost:18789`) |
+| Variable                      | Default | Description                                                  |
+| ----------------------------- | ------- | ------------------------------------------------------------ |
+| `OPENCLAW_GATEWAY_URL`        | —       | URL of the OpenClaw gateway (e.g. `http://localhost:18789`)  |
 | `OPENCLAW_GATEWAY_TOKEN`      | —       | Gateway token used to bootstrap MosBot's device pairing flow |
-| `OPENCLAW_GATEWAY_TIMEOUT_MS` | `15000` | Request timeout in milliseconds                             |
+| `OPENCLAW_GATEWAY_TIMEOUT_MS` | `15000` | Request timeout in milliseconds                              |
 
 ## OpenClaw Device Auth
 
@@ -101,9 +101,9 @@ MosBot now manages device auth through the dashboard pairing workflow. After set
 
 ## Subagent runtime files
 
-Legacy runtime file integrations under `/runtime/mosbot/*` are retired and are no longer part of
-the supported workspace contract. Configure subagent observability through supported OpenClaw
-gateway and activity APIs instead of runtime JSON/JSONL files.
+Legacy runtime file integrations under `/runtime/mosbot/*` are retired and are no longer part of the
+supported workspace contract. Configure subagent observability through supported OpenClaw gateway
+and activity APIs instead of runtime JSON/JSONL files.
 
 ## Model pricing (optional)
 

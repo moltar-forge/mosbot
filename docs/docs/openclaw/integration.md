@@ -162,13 +162,13 @@ must expose ports publicly, ensure TLS is enabled and tokens are strong. :::
 
 ## Troubleshooting
 
-| Symptom                                   | Likely cause                    | Fix                                                                  |
-| ----------------------------------------- | ------------------------------- | -------------------------------------------------------------------- |
-| Dashboard shows "OpenClaw not configured" | Missing env vars                | Add `OPENCLAW_WORKSPACE_URL` and/or `OPENCLAW_GATEWAY_URL` to `.env` |
-| Pairing page shows `pending_pairing`      | Device not yet approved         | Approve the pending device in OpenClaw, then finalize pairing        |
-| Pairing page shows `paired_missing_scopes`| Gateway accepted connect without required scopes | Check OpenClaw operator scopes and finalize again                    |
-| 503 on workspace endpoints                | Workspace service unreachable   | Check `OPENCLAW_WORKSPACE_URL` and that the service is running       |
-| 401 on workspace endpoints                | Wrong workspace token           | Verify `OPENCLAW_WORKSPACE_TOKEN` matches OpenClaw's config          |
-| Only seeing one agent                     | Workspace service unreachable   | API falls back to default agent; check workspace connectivity        |
+| Symptom                                    | Likely cause                                     | Fix                                                                  |
+| ------------------------------------------ | ------------------------------------------------ | -------------------------------------------------------------------- |
+| Dashboard shows "OpenClaw not configured"  | Missing env vars                                 | Add `OPENCLAW_WORKSPACE_URL` and/or `OPENCLAW_GATEWAY_URL` to `.env` |
+| Pairing page shows `pending_pairing`       | Device not yet approved                          | Approve the pending device in OpenClaw, then finalize pairing        |
+| Pairing page shows `paired_missing_scopes` | Gateway accepted connect without required scopes | Check OpenClaw operator scopes and finalize again                    |
+| 503 on workspace endpoints                 | Workspace service unreachable                    | Check `OPENCLAW_WORKSPACE_URL` and that the service is running       |
+| 401 on workspace endpoints                 | Wrong workspace token                            | Verify `OPENCLAW_WORKSPACE_TOKEN` matches OpenClaw's config          |
+| Only seeing one agent                      | Workspace service unreachable                    | API falls back to default agent; check workspace connectivity        |
 
 See [Troubleshooting](./troubleshooting) for more.

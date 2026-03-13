@@ -339,15 +339,15 @@ The smallest `openclaw.json` that gives MosBot full functionality:
 
 ## Quick reference
 
-| Setting                                 | Required for                      | Default if missing    |
-| --------------------------------------- | --------------------------------- | --------------------- |
-| `gateway.controlUi.allowedOrigins`      | Dashboard → gateway communication | CORS errors           |
+| Setting                                 | Required for                      | Default if missing     |
+| --------------------------------------- | --------------------------------- | ---------------------- |
+| `gateway.controlUi.allowedOrigins`      | Dashboard → gateway communication | CORS errors            |
 | `gateway.controlUi.allowedOrigins`      | Pairing WebSocket origin checks   | Origin mismatch errors |
-| `gateway.auth.mode: "token"`            | Bearer token auth                 | Auth may fail         |
-| `tools.sessions.visibility: "agent"`    | Agent Monitor session data        | Empty session list    |
-| `tools.agentToAgent.enabled`            | Subagent tracking                 | Subagents not tracked |
-| `agents[].workspace`                    | Workspace browser, agents page    | 404 / empty workspace |
-| `agents[].identity`                     | Agents page display names         | Raw IDs, no icons     |
-| `memory.qmd.paths`                      | Shared docs in agent memory       | No shared memory      |
-| `channels.telegram.accounts[].botToken` | Telegram integration              | Telegram disabled     |
-| `plugins.entries.telegram.enabled`      | Telegram plugin activation        | Telegram disabled     |
+| `gateway.auth.mode: "token"`            | Bearer token auth                 | Auth may fail          |
+| `tools.sessions.visibility: "agent"`    | Agent Monitor session data        | Empty session list     |
+| `tools.agentToAgent.enabled`            | Subagent tracking                 | Subagents not tracked  |
+| `agents[].workspace`                    | Workspace browser, agents page    | 404 / empty workspace  |
+| `agents[].identity`                     | Agents page display names         | Raw IDs, no icons      |
+| `memory.qmd.paths`                      | Shared docs in agent memory       | No shared memory       |
+| `channels.telegram.accounts[].botToken` | Telegram integration              | Telegram disabled      |
+| `plugins.entries.telegram.enabled`      | Telegram plugin activation        | Telegram disabled      |

@@ -4,33 +4,33 @@ This document describes how MosBot API handles secrets and sensitive configurati
 
 ## Where configuration lives
 
-| Location | Purpose |
-| -------- | ------- |
-| `.env` (local) | Local development overrides. Never committed. |
-| Environment variables | Runtime config injected by Docker Compose, Kubernetes, or your CI/CD platform. |
-| GitHub Actions secrets | Used by CI/CD workflows (e.g. `JWT_SECRET`, `DB_PASSWORD`). |
+| Location                        | Purpose                                                                                                         |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `.env` (local)                  | Local development overrides. Never committed.                                                                   |
+| Environment variables           | Runtime config injected by Docker Compose, Kubernetes, or your CI/CD platform.                                  |
+| GitHub Actions secrets          | Used by CI/CD workflows (e.g. `JWT_SECRET`, `DB_PASSWORD`).                                                     |
 | `k8s/base/secret.template.yaml` | Template for Kubernetes Secret manifests. Copy to `secret.yaml` (gitignored) and fill in base64-encoded values. |
 
 ## Required environment variables
 
 Copy `.env.example` to `.env` and fill in all required values before starting the API.
 
-| Variable | Required | Description |
-| -------- | -------- | ----------- |
-| `DB_PASSWORD` | **Yes** | PostgreSQL password |
-| `JWT_SECRET` | **Yes** | JWT signing secret (min 32 chars). Generate with: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
-| `CORS_ORIGIN` | **Yes** | Exact dashboard origin (e.g. `https://dashboard.example.com`). Cannot be `*`. |
-| `BOOTSTRAP_OWNER_EMAIL` | First run | Email for the initial owner account |
-| `BOOTSTRAP_OWNER_PASSWORD` | First run | Password for the initial owner account (min 12 chars) |
-| `OPENCLAW_WORKSPACE_TOKEN` | If using OpenClaw | Bearer token for the workspace service |
-| `OPENCLAW_GATEWAY_TOKEN` | If using OpenClaw | Bearer token for the gateway service |
+| Variable                   | Required          | Description                                                                                                                  |
+| -------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `DB_PASSWORD`              | **Yes**           | PostgreSQL password                                                                                                          |
+| `JWT_SECRET`               | **Yes**           | JWT signing secret (min 32 chars). Generate with: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
+| `CORS_ORIGIN`              | **Yes**           | Exact dashboard origin (e.g. `https://dashboard.example.com`). Cannot be `*`.                                                |
+| `BOOTSTRAP_OWNER_EMAIL`    | First run         | Email for the initial owner account                                                                                          |
+| `BOOTSTRAP_OWNER_PASSWORD` | First run         | Password for the initial owner account (min 12 chars)                                                                        |
+| `OPENCLAW_WORKSPACE_TOKEN` | If using OpenClaw | Bearer token for the workspace service                                                                                       |
+| `OPENCLAW_GATEWAY_TOKEN`   | If using OpenClaw | Bearer token for the gateway service                                                                                         |
 
 See `.env.example` for the full list with descriptions and defaults.
 
 ## Bootstrap flow (first run)
 
-On a fresh database, set `BOOTSTRAP_OWNER_EMAIL` and `BOOTSTRAP_OWNER_PASSWORD` before starting
-the API. The post-migration script creates the owner account once, then skips on subsequent starts.
+On a fresh database, set `BOOTSTRAP_OWNER_EMAIL` and `BOOTSTRAP_OWNER_PASSWORD` before starting the
+API. The post-migration script creates the owner account once, then skips on subsequent starts.
 
 **After the first login, remove `BOOTSTRAP_OWNER_PASSWORD` from your environment.**
 
@@ -66,5 +66,5 @@ These patterns are already covered by `.gitignore`.
 ## Automated secret scanning
 
 Pull requests and pushes to `main` are scanned by [Gitleaks](https://github.com/gitleaks/gitleaks)
-via the CI workflow (`.github/workflows/ci.yml`). If a scan fails, no secrets have been pushed yet
-— fix the finding before merging.
+via the CI workflow (`.github/workflows/ci.yml`). If a scan fails, no secrets have been pushed yet —
+fix the finding before merging.
