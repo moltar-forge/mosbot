@@ -1,5 +1,6 @@
 -- 019_openclaw_integration_state.sql
 -- Wizard-first OpenClaw integration state (singleton row, DB-backed pairing contract)
+-- Sensitive values are stored as encrypted-at-rest payloads (no plaintext secret columns).
 
 BEGIN;
 
@@ -12,8 +13,8 @@ CREATE TABLE IF NOT EXISTS openclaw_integration_state (
   client_mode TEXT,
   platform TEXT,
   public_key TEXT,
-  private_key TEXT,
-  device_token TEXT,
+  private_key_encrypted TEXT,
+  device_token_encrypted TEXT,
   granted_scopes JSONB NOT NULL DEFAULT '[]'::jsonb,
   last_error TEXT,
   last_checked_at TIMESTAMPTZ,

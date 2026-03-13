@@ -2545,6 +2545,22 @@ describe('OpenClaw Routes', () => {
       expect(response.body.data).toHaveProperty('idle');
       expect(response.body.data).toHaveProperty('total');
     });
+
+    it('should return pairing-required when integration is not ready', async () => {
+      const token = getToken('admin-id', 'admin');
+      const err = new Error('OpenClaw pairing is required before using this feature. Complete the pairing wizard first.');
+      err.status = 503;
+      err.code = 'OPENCLAW_PAIRING_REQUIRED';
+      err.details = { status: 'pending_pairing', missingScopes: ['operator.read'] };
+      assertIntegrationReady.mockRejectedValueOnce(err);
+
+      const response = await request(app)
+        .get('/api/v1/openclaw/sessions/status')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(503);
+      expect(response.body.error.code).toBe('OPENCLAW_PAIRING_REQUIRED');
+    });
   });
 
   describe('GET /api/v1/openclaw/sessions', () => {

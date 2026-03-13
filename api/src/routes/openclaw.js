@@ -25,6 +25,7 @@ const {
   ensureProjectLinkIfMissing,
 } = require('../services/docsLinkReconciliationService');
 const { gatewayWsRpc, invokeTool } = require('../services/openclawGatewayClient');
+const { assertIntegrationReady } = require('../services/openclawIntegrationService');
 
 const BUILTIN_OPENCLAW_REMAP_PREFIXES = [
   '/home/node/.openclaw/workspace',
@@ -67,6 +68,25 @@ const requireAuth = (req, res, next) => {
     return res.status(401).json({
       error: { message: 'Invalid or expired token', status: 401 },
     });
+  }
+};
+
+const requireIntegrationReady = async (req, res, next) => {
+  try {
+    await assertIntegrationReady();
+    next();
+  } catch (error) {
+    if (error?.code === 'OPENCLAW_PAIRING_REQUIRED') {
+      return res.status(error.status || 503).json({
+        error: {
+          message: error.message,
+          status: error.status || 503,
+          code: error.code,
+          details: error.details,
+        },
+      });
+    }
+    return next(error);
   }
 };
 
@@ -1302,6 +1322,13 @@ registerOpenClawWorkspaceRoutes({
   isAllowedWorkspacePath,
   getAssignedProjectRootPaths,
 });
+
+// Wizard-first pairing gate: lock OpenClaw-dependent routes until integration is ready.
+router.use(
+  ['/projects', '/agents', '/sessions', '/cron-jobs', '/usage', '/subagents', '/config'],
+  requireAuth,
+  requireIntegrationReady,
+);
 
 // GET /api/v1/openclaw/projects
 // List project registry and assignment counts (admin/owner/agent read)
