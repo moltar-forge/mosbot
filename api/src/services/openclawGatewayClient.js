@@ -7,6 +7,12 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const DEVICE_AUTH_DB_CACHE_TTL_MS = 5000;
+let deviceAuthDbCache = {
+  value: null,
+  expiresAt: 0,
+};
+
 // Device auth config for OpenClaw 2026.2.22+ challenge-response protocol.
 // When configured, the gateway grants operator.read/write scopes (vdev connection).
 // Without device auth, allowInsecureAuth only grants a vserver with no scopes.
@@ -42,6 +48,11 @@ function getDeviceAuthConfig() {
 }
 
 async function getDeviceAuthConfigFromDb() {
+  const now = Date.now();
+  if (deviceAuthDbCache.expiresAt > now) {
+    return deviceAuthDbCache.value;
+  }
+
   try {
     const pool = require('../db/pool');
     const result = await pool.query(
@@ -52,11 +63,16 @@ async function getDeviceAuthConfigFromDb() {
     );
     const row = result.rows?.[0];
     if (!row?.device_id || !row?.public_key || !row?.private_key || !row?.device_token) {
+      deviceAuthDbCache = { value: null, expiresAt: now + DEVICE_AUTH_DB_CACHE_TTL_MS };
       return null;
     }
     const privateKey = privateKeyFromStoredMaterial(row.private_key);
-    if (!privateKey) return null;
-    return {
+    if (!privateKey) {
+      deviceAuthDbCache = { value: null, expiresAt: now + DEVICE_AUTH_DB_CACHE_TTL_MS };
+      return null;
+    }
+
+    const value = {
       deviceId: row.device_id,
       publicKey: row.public_key,
       privateKey,
@@ -65,12 +81,19 @@ async function getDeviceAuthConfigFromDb() {
       clientMode: row.client_mode || DEVICE_CLIENT_MODE,
       platform: row.platform || process.platform || 'node',
     };
+
+    deviceAuthDbCache = { value, expiresAt: now + DEVICE_AUTH_DB_CACHE_TTL_MS };
+    return value;
   } catch (error) {
     // No pairing table yet or DB unavailable — fall back to non-DB auth paths.
-    if (error?.code === '42P01') return null;
+    if (error?.code === '42P01') {
+      deviceAuthDbCache = { value: null, expiresAt: now + DEVICE_AUTH_DB_CACHE_TTL_MS };
+      return null;
+    }
     logger.debug('Unable to load OpenClaw device auth from DB; falling back', {
       error: error?.message || String(error),
     });
+    deviceAuthDbCache = { value: null, expiresAt: now + DEVICE_AUTH_DB_CACHE_TTL_MS };
     return null;
   }
 }

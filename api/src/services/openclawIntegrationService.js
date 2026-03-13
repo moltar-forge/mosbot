@@ -181,8 +181,10 @@ function mapPairingErrorToStatus(error) {
 
   if (
     rpcCode === 'NOT_PAIRED' ||
+    rpcCode === 'DEVICE_AUTH_REQUIRED' ||
     message.includes('not paired') ||
-    message.includes('device identity mismatch')
+    message.includes('device identity mismatch') ||
+    message.includes('device auth')
   ) {
     return 'pending_pairing';
   }

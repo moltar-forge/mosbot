@@ -75,6 +75,9 @@ import {
   getUsageAnalytics,
   resetUsageData,
   resetActivityLogs,
+  getOpenClawIntegrationStatus,
+  startOpenClawPairing,
+  finalizeOpenClawPairing,
   getOpenClawConfig,
   updateOpenClawConfig,
   listOpenClawConfigBackups,
@@ -558,6 +561,23 @@ describe('api client', () => {
       api.post.mockResolvedValueOnce({ data: { data: { success: true } } });
       await expect(resetActivityLogs('pw')).resolves.toEqual({ success: true });
       expect(api.post).toHaveBeenLastCalledWith('/activity/reset', { password: 'pw' });
+
+      api.get.mockResolvedValueOnce({ data: { data: { ready: false, status: 'pending_pairing' } } });
+      await expect(getOpenClawIntegrationStatus()).resolves.toEqual({
+        ready: false,
+        status: 'pending_pairing',
+      });
+      expect(api.get).toHaveBeenLastCalledWith('/openclaw/integration/status', { timeout: 30000 });
+
+      api.post.mockResolvedValueOnce({ data: { data: { status: 'pending_pairing' } } });
+      await expect(startOpenClawPairing()).resolves.toEqual({ status: 'pending_pairing' });
+      expect(api.post).toHaveBeenLastCalledWith('/openclaw/integration/pairing/start', {}, { timeout: 30000 });
+
+      api.post.mockResolvedValueOnce({ data: { data: { status: 'ready', ready: true } } });
+      await expect(finalizeOpenClawPairing()).resolves.toEqual({ status: 'ready', ready: true });
+      expect(api.post).toHaveBeenLastCalledWith('/openclaw/integration/pairing/finalize', {}, {
+        timeout: 30000,
+      });
 
       api.get.mockResolvedValueOnce({ data: { data: { raw: '{}' } } });
       await expect(getOpenClawConfig()).resolves.toEqual({ raw: '{}' });
