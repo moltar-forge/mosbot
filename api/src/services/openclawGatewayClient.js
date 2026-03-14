@@ -135,7 +135,16 @@ const persistentRpcState = {
   queue: Promise.resolve(),
 };
 
-function resetPersistentRpcState() {
+function createPersistentRpcResetError(cause = null) {
+  const error = new Error('Persistent gateway RPC connection reset');
+  error.code = 'PERSISTENT_RPC_RESET';
+  if (cause) {
+    error.cause = cause;
+  }
+  return error;
+}
+
+function resetPersistentRpcState(cause = null) {
   if (persistentRpcState.idleTimer) {
     clearTimeout(persistentRpcState.idleTimer);
     persistentRpcState.idleTimer = null;
@@ -144,13 +153,20 @@ function resetPersistentRpcState() {
   persistentRpcState.connecting = null;
   persistentRpcState.currentUrl = null;
   persistentRpcState.currentAuthFingerprint = null;
+  const resetError = createPersistentRpcResetError(cause);
   for (const [, handler] of persistentRpcState.pending) {
-    handler.reject(new Error('Persistent gateway RPC connection reset'));
+    handler.reject(resetError);
   }
   persistentRpcState.pending.clear();
   if (persistentRpcState.ws) {
+    if (typeof persistentRpcState.ws.removeAllListeners === 'function') {
+      try {
+        persistentRpcState.ws.removeAllListeners();
+      } catch (_) {
+        void _;
+      }
+    }
     try {
-      persistentRpcState.ws.removeAllListeners();
       persistentRpcState.ws.close();
     } catch (_) {
       void _;
@@ -168,6 +184,7 @@ function buildAuthFingerprint(gatewayToken, deviceAuth) {
     deviceAuth?.deviceToken || '',
     deviceAuth?.clientId || DEVICE_CLIENT_ID,
     deviceAuth?.clientMode || DEVICE_CLIENT_MODE,
+    deviceAuth?.publicKey || '',
   ].join('|');
   return crypto.createHash('sha256').update(material).digest('hex');
 }
@@ -877,12 +894,12 @@ async function ensurePersistentRpcConnection(options = {}) {
       // If initial connect is already settled, this is a post-connect failure.
       // Still force-reset state so next RPC reconnects cleanly.
       if (settled) {
-        resetPersistentRpcState();
+        resetPersistentRpcState(error);
         return;
       }
       settled = true;
       clearTimeout(connectTimeout);
-      resetPersistentRpcState();
+      resetPersistentRpcState(error);
       reject(error);
     };
 
@@ -971,6 +988,8 @@ async function ensurePersistentRpcConnection(options = {}) {
           handler.reject(rpcErr);
           if (!persistentRpcState.connected) {
             failConnect(rpcErr);
+          } else {
+            schedulePersistentRpcIdleClose();
           }
         }
       }
@@ -990,6 +1009,10 @@ async function ensurePersistentRpcConnection(options = {}) {
         handler.reject(closeError);
       }
       persistentRpcState.pending.clear();
+      if (persistentRpcState.idleTimer) {
+        clearTimeout(persistentRpcState.idleTimer);
+        persistentRpcState.idleTimer = null;
+      }
       persistentRpcState.connected = false;
       persistentRpcState.ws = null;
       persistentRpcState.currentUrl = null;
@@ -1030,8 +1053,12 @@ async function gatewayWsRpcPersistent(method, params = {}, options = {}) {
       schedulePersistentRpcIdleClose();
       return result;
     } catch (error) {
-      if (error?.code === 'PERSISTENT_RPC_TIMEOUT' || error?.code === 'PERSISTENT_RPC_CLOSED') {
-        resetPersistentRpcState();
+      if (
+        error?.code === 'PERSISTENT_RPC_TIMEOUT' ||
+        error?.code === 'PERSISTENT_RPC_CLOSED' ||
+        error?.code === 'PERSISTENT_RPC_RESET'
+      ) {
+        resetPersistentRpcState(error);
         await ensurePersistentRpcConnection(options);
         const result = await persistentRpcSend(method, params, options.timeoutMs);
         schedulePersistentRpcIdleClose();
