@@ -119,8 +119,9 @@ const PERSISTENT_RPC_MAX_INFLIGHT = parsePositiveIntEnv(
 );
 const OPENCLAW_GATEWAY_INSECURE_TLS = process.env.OPENCLAW_GATEWAY_INSECURE_TLS === 'true';
 
-// Runtime default is persistent RPC; tests keep short-lived semantics for deterministic assertions.
-const ENABLE_PERSISTENT_RPC = process.env.NODE_ENV !== 'test';
+// Runtime default is persistent RPC; tests keep short-lived semantics unless explicitly overridden.
+const ENABLE_PERSISTENT_RPC =
+  process.env.OPENCLAW_WS_PERSISTENT_RPC === 'true' || process.env.NODE_ENV !== 'test';
 
 const persistentRpcState = {
   ws: null,
@@ -130,6 +131,7 @@ const persistentRpcState = {
   connecting: null,
   idleTimer: null,
   currentUrl: null,
+  currentAuthFingerprint: null,
   queue: Promise.resolve(),
 };
 
@@ -141,6 +143,7 @@ function resetPersistentRpcState() {
   persistentRpcState.connected = false;
   persistentRpcState.connecting = null;
   persistentRpcState.currentUrl = null;
+  persistentRpcState.currentAuthFingerprint = null;
   for (const [, handler] of persistentRpcState.pending) {
     handler.reject(new Error('Persistent gateway RPC connection reset'));
   }
@@ -156,6 +159,17 @@ function resetPersistentRpcState() {
   persistentRpcState.ws = null;
   persistentRpcState.nextId = 1;
   persistentRpcState.queue = Promise.resolve();
+}
+
+function buildAuthFingerprint(gatewayToken, deviceAuth) {
+  const material = [
+    gatewayToken || '',
+    deviceAuth?.deviceId || '',
+    deviceAuth?.deviceToken || '',
+    deviceAuth?.clientId || DEVICE_CLIENT_ID,
+    deviceAuth?.clientMode || DEVICE_CLIENT_MODE,
+  ].join('|');
+  return crypto.createHash('sha256').update(material).digest('hex');
 }
 
 function buildDeviceConnectPayload(deviceAuth, nonce, authOptions = {}) {
@@ -785,14 +799,6 @@ function persistentRpcSend(method, params = {}, timeoutMs = null) {
 }
 
 async function ensurePersistentRpcConnection(options = {}) {
-  if (persistentRpcState.ws && persistentRpcState.connected) {
-    return;
-  }
-
-  if (persistentRpcState.connecting) {
-    return persistentRpcState.connecting;
-  }
-
   const gatewayUrl = config.openclaw.gatewayUrl;
   const gatewayToken = config.openclaw.gatewayToken;
   const resolvedDeviceAuth = resolveDeviceAuthConfig(options);
@@ -817,7 +823,26 @@ async function ensurePersistentRpcConnection(options = {}) {
     throw err;
   }
 
-  if (persistentRpcState.ws && persistentRpcState.currentUrl !== gatewayUrl) {
+  const authFingerprint = buildAuthFingerprint(gatewayToken, deviceAuth);
+
+  if (
+    persistentRpcState.ws &&
+    persistentRpcState.connected &&
+    persistentRpcState.currentUrl === gatewayUrl &&
+    persistentRpcState.currentAuthFingerprint === authFingerprint
+  ) {
+    return;
+  }
+
+  if (persistentRpcState.connecting) {
+    return persistentRpcState.connecting;
+  }
+
+  if (
+    persistentRpcState.ws &&
+    (persistentRpcState.currentUrl !== gatewayUrl ||
+      persistentRpcState.currentAuthFingerprint !== authFingerprint)
+  ) {
     resetPersistentRpcState();
   }
 
@@ -861,6 +886,20 @@ async function ensurePersistentRpcConnection(options = {}) {
       reject(error);
     };
 
+    let connectRequestId = null;
+
+    const finalizeConnected = () => {
+      if (persistentRpcState.connected) return;
+      persistentRpcState.connected = true;
+      if (!settled) {
+        settled = true;
+        clearTimeout(connectTimeout);
+        persistentRpcState.currentUrl = gatewayUrl;
+        persistentRpcState.currentAuthFingerprint = authFingerprint;
+        resolve();
+      }
+    };
+
     ws.on('open', () => {
       logger.debug('Persistent gateway WebSocket opened, waiting for connect.challenge');
     });
@@ -896,6 +935,7 @@ async function ensurePersistentRpcConnection(options = {}) {
           });
           const connectResult = await new Promise((res, rej) => {
             const id = String(persistentRpcState.nextId++);
+            connectRequestId = id;
             persistentRpcState.pending.set(id, {
               resolve: (payload) => res(payload),
               reject: (err) => rej(err),
@@ -905,6 +945,7 @@ async function ensurePersistentRpcConnection(options = {}) {
           if (typeof options.onConnectOk === 'function') {
             await options.onConnectOk(connectResult);
           }
+          finalizeConnected();
         } catch (error) {
           failConnect(error);
         }
@@ -918,16 +959,11 @@ async function ensurePersistentRpcConnection(options = {}) {
 
         if (msg.ok) {
           handler.resolve(msg.payload);
-          if (!persistentRpcState.connected) {
-            persistentRpcState.connected = true;
-            if (!settled) {
-              settled = true;
-              clearTimeout(connectTimeout);
-              persistentRpcState.currentUrl = gatewayUrl;
-              resolve();
-            }
+          // Connection is only finalized after connect.challenge -> connect response
+          // and optional onConnectOk() complete successfully.
+          if (msg.id !== connectRequestId) {
+            schedulePersistentRpcIdleClose();
           }
-          schedulePersistentRpcIdleClose();
         } else {
           const rpcErr = new Error(msg.error?.message || 'RPC request failed');
           rpcErr.rpcCode = msg.error?.code;
@@ -957,6 +993,7 @@ async function ensurePersistentRpcConnection(options = {}) {
       persistentRpcState.connected = false;
       persistentRpcState.ws = null;
       persistentRpcState.currentUrl = null;
+      persistentRpcState.currentAuthFingerprint = null;
       if (!settled) {
         settled = true;
         clearTimeout(connectTimeout);
