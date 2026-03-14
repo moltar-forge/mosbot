@@ -104,7 +104,8 @@ const DEVICE_SCOPES = [
 ];
 
 const PERSISTENT_RPC_IDLE_MS = parseInt(
-  process.env.OPENCLAW_WS_RPC_IDLE_MS || '15000',
+  // Keep the persistent RPC socket warm for long stretches to avoid reconnect churn.
+  process.env.OPENCLAW_WS_RPC_IDLE_MS || String(30 * 60 * 1000),
   10,
 );
 // Enforced for pre-production hardening: always use persistent RPC path.
