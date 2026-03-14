@@ -28,9 +28,12 @@ describe('openclawGatewayClient persistent RPC mode', () => {
     jest.clearAllMocks();
   });
 
-  function setupPersistentClient() {
+  function setupPersistentClient({
+    gatewayTimeoutMs = 1000,
+    persistentOverride = 'true',
+  } = {}) {
     process.env.NODE_ENV = 'test';
-    process.env.OPENCLAW_WS_PERSISTENT_RPC = 'true';
+    process.env.OPENCLAW_WS_PERSISTENT_RPC = persistentOverride;
     jest.resetModules();
 
     const wsInstances = [];
@@ -53,7 +56,7 @@ describe('openclawGatewayClient persistent RPC mode', () => {
       openclaw: {
         gatewayUrl: 'http://test-gateway:18789',
         gatewayToken: null,
-        gatewayTimeoutMs: 1000,
+        gatewayTimeoutMs,
       },
     }));
     jest.doMock('../../utils/logger', () => ({
@@ -144,4 +147,20 @@ describe('openclawGatewayClient persistent RPC mode', () => {
     emitConnectChallenge(ws2, 'nonce-b');
     await expect(second).resolves.toEqual({ method: 'sessions.list' });
   });
+
+  it('allows explicit rollback to short-lived RPC mode via env override', async () => {
+    const { client, wsInstances } = setupPersistentClient({ persistentOverride: 'false' });
+    const deviceAuth = buildDeviceAuth('device-rollback', 'token-rollback');
+
+    const promise = client.gatewayWsRpc('sessions.list', {}, { deviceAuth });
+    await nextTick();
+
+    const ws = wsInstances[0];
+    wireRpcResponses(ws);
+    emitConnectChallenge(ws, 'nonce-rollback');
+
+    await expect(promise).resolves.toEqual({ method: 'sessions.list' });
+    expect(ws.close).toHaveBeenCalled();
+  });
+
 });

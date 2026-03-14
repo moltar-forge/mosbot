@@ -108,6 +108,14 @@ function parsePositiveIntEnv(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseBooleanEnv(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  return null;
+}
+
 const PERSISTENT_RPC_IDLE_MS = parsePositiveIntEnv(
   // Keep the persistent RPC socket warm for long stretches to avoid reconnect churn.
   process.env.OPENCLAW_WS_RPC_IDLE_MS,
@@ -119,9 +127,10 @@ const PERSISTENT_RPC_MAX_INFLIGHT = parsePositiveIntEnv(
 );
 const OPENCLAW_GATEWAY_INSECURE_TLS = process.env.OPENCLAW_GATEWAY_INSECURE_TLS === 'true';
 
-// Runtime default is persistent RPC; tests keep short-lived semantics unless explicitly overridden.
+// Runtime default is persistent RPC; explicit env override supports rollback during incidents.
+const persistentRpcOverride = parseBooleanEnv(process.env.OPENCLAW_WS_PERSISTENT_RPC);
 const ENABLE_PERSISTENT_RPC =
-  process.env.OPENCLAW_WS_PERSISTENT_RPC === 'true' || process.env.NODE_ENV !== 'test';
+  persistentRpcOverride != null ? persistentRpcOverride : process.env.NODE_ENV !== 'test';
 
 const persistentRpcState = {
   ws: null,
@@ -137,7 +146,9 @@ const persistentRpcState = {
 
 function createPersistentRpcResetError(cause = null) {
   const error = new Error('Persistent gateway RPC connection reset');
-  error.code = 'PERSISTENT_RPC_RESET';
+  error.status = 503;
+  error.code = 'SERVICE_UNAVAILABLE';
+  error.persistentCode = 'PERSISTENT_RPC_RESET';
   if (cause) {
     error.cause = cause;
   }
@@ -790,7 +801,9 @@ function persistentRpcSend(method, params = {}, timeoutMs = null) {
     const timeout = setTimeout(() => {
       persistentRpcState.pending.delete(id);
       const timeoutError = new Error(`Persistent gateway RPC timed out for method ${method}`);
-      timeoutError.code = 'PERSISTENT_RPC_TIMEOUT';
+      timeoutError.status = 503;
+      timeoutError.code = 'SERVICE_TIMEOUT';
+      timeoutError.persistentCode = 'PERSISTENT_RPC_TIMEOUT';
       reject(timeoutError);
     }, perRequestTimeout);
 
@@ -1004,7 +1017,9 @@ async function ensurePersistentRpcConnection(options = {}) {
 
     ws.on('close', (code, reason) => {
       const closeError = new Error(`Persistent WebSocket closed (${code}): ${reason}`);
-      closeError.code = 'PERSISTENT_RPC_CLOSED';
+      closeError.status = 503;
+      closeError.code = 'SERVICE_UNAVAILABLE';
+      closeError.persistentCode = 'PERSISTENT_RPC_CLOSED';
       for (const [, handler] of persistentRpcState.pending) {
         handler.reject(closeError);
       }
@@ -1053,10 +1068,11 @@ async function gatewayWsRpcPersistent(method, params = {}, options = {}) {
       schedulePersistentRpcIdleClose();
       return result;
     } catch (error) {
+      const persistentCode = error?.persistentCode || error?.code;
       if (
-        error?.code === 'PERSISTENT_RPC_TIMEOUT' ||
-        error?.code === 'PERSISTENT_RPC_CLOSED' ||
-        error?.code === 'PERSISTENT_RPC_RESET'
+        persistentCode === 'PERSISTENT_RPC_TIMEOUT' ||
+        persistentCode === 'PERSISTENT_RPC_CLOSED' ||
+        persistentCode === 'PERSISTENT_RPC_RESET'
       ) {
         resetPersistentRpcState(error);
         await ensurePersistentRpcConnection(options);
