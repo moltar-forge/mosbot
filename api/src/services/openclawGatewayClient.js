@@ -103,17 +103,23 @@ const DEVICE_SCOPES = [
   'operator.write',
 ];
 
-const PERSISTENT_RPC_IDLE_MS = parseInt(
+function parsePositiveIntEnv(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const PERSISTENT_RPC_IDLE_MS = parsePositiveIntEnv(
   // Keep the persistent RPC socket warm for long stretches to avoid reconnect churn.
-  process.env.OPENCLAW_WS_RPC_IDLE_MS || String(30 * 60 * 1000),
-  10,
+  process.env.OPENCLAW_WS_RPC_IDLE_MS,
+  30 * 60 * 1000,
 );
-const PERSISTENT_RPC_MAX_INFLIGHT = Math.max(
+const PERSISTENT_RPC_MAX_INFLIGHT = parsePositiveIntEnv(
+  process.env.OPENCLAW_WS_RPC_MAX_INFLIGHT,
   1,
-  parseInt(process.env.OPENCLAW_WS_RPC_MAX_INFLIGHT || '1', 10),
 );
-// Enforced for runtime paths (dev/prod). Keep legacy short-lived path in test mode
-// so existing websocket unit tests can assert explicit connect/close semantics.
+const OPENCLAW_GATEWAY_INSECURE_TLS = process.env.OPENCLAW_GATEWAY_INSECURE_TLS === 'true';
+
+// Runtime default is persistent RPC; tests keep short-lived semantics for deterministic assertions.
 const ENABLE_PERSISTENT_RPC = process.env.NODE_ENV !== 'test';
 
 const persistentRpcState = {
@@ -721,6 +727,7 @@ function schedulePersistentRpcIdleClose() {
   }
 
   persistentRpcState.idleTimer = setTimeout(() => {
+    persistentRpcState.idleTimer = null;
     if (!persistentRpcState.ws) return;
     if (persistentRpcState.pending.size > 0) return;
     try {
@@ -729,6 +736,10 @@ function schedulePersistentRpcIdleClose() {
       void _;
     }
   }, PERSISTENT_RPC_IDLE_MS);
+
+  if (typeof persistentRpcState.idleTimer.unref === 'function') {
+    persistentRpcState.idleTimer.unref();
+  }
 }
 
 function persistentRpcSend(method, params = {}, timeoutMs = null) {
@@ -747,7 +758,9 @@ function persistentRpcSend(method, params = {}, timeoutMs = null) {
 
     const timeout = setTimeout(() => {
       persistentRpcState.pending.delete(id);
-      reject(new Error(`Persistent gateway RPC timed out for method ${method}`));
+      const timeoutError = new Error(`Persistent gateway RPC timed out for method ${method}`);
+      timeoutError.code = 'PERSISTENT_RPC_TIMEOUT';
+      reject(timeoutError);
     }, perRequestTimeout);
 
     persistentRpcState.pending.set(id, {
@@ -832,11 +845,16 @@ async function ensurePersistentRpcConnection(options = {}) {
         Origin: `${originScheme}://${originHost}`,
         Host: originHost,
       },
-      rejectUnauthorized: false,
+      rejectUnauthorized: !OPENCLAW_GATEWAY_INSECURE_TLS,
     });
 
     const failConnect = (error) => {
-      if (settled) return;
+      // If initial connect is already settled, this is a post-connect failure.
+      // Still force-reset state so next RPC reconnects cleanly.
+      if (settled) {
+        resetPersistentRpcState();
+        return;
+      }
       settled = true;
       clearTimeout(connectTimeout);
       resetPersistentRpcState();
@@ -931,6 +949,7 @@ async function ensurePersistentRpcConnection(options = {}) {
 
     ws.on('close', (code, reason) => {
       const closeError = new Error(`Persistent WebSocket closed (${code}): ${reason}`);
+      closeError.code = 'PERSISTENT_RPC_CLOSED';
       for (const [, handler] of persistentRpcState.pending) {
         handler.reject(closeError);
       }
@@ -974,10 +993,7 @@ async function gatewayWsRpcPersistent(method, params = {}, options = {}) {
       schedulePersistentRpcIdleClose();
       return result;
     } catch (error) {
-      if (
-        error?.message?.includes('Persistent gateway RPC timed out') ||
-        error?.message?.includes('Persistent WebSocket closed')
-      ) {
+      if (error?.code === 'PERSISTENT_RPC_TIMEOUT' || error?.code === 'PERSISTENT_RPC_CLOSED') {
         resetPersistentRpcState();
         await ensurePersistentRpcConnection(options);
         const result = await persistentRpcSend(method, params, options.timeoutMs);
@@ -1058,7 +1074,7 @@ async function gatewayWsRpcWithDeviceAuth(method, params = {}, options = {}) {
         Origin: `${originScheme}://${originHost}`,
         Host: originHost,
       },
-      rejectUnauthorized: false,
+      rejectUnauthorized: !OPENCLAW_GATEWAY_INSECURE_TLS,
     });
 
     let nextId = 1;
@@ -1182,7 +1198,7 @@ async function gatewayWsRpcWithDeviceAuth(method, params = {}, options = {}) {
   });
 }
 
-// Main RPC entrypoint: persistent connection in production, short-lived in dev/tests.
+// Main RPC entrypoint: persistent by default at runtime, short-lived in test mode.
 async function gatewayWsRpc(method, params = {}, options = {}) {
   if (ENABLE_PERSISTENT_RPC) {
     return gatewayWsRpcPersistent(method, params, options);
