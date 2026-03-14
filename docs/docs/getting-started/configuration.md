@@ -87,11 +87,20 @@ Virtual path conventions:
 Required to bootstrap OpenClaw gateway connectivity and the MosBot pairing wizard. Without these
 variables, gateway-backed features remain unavailable.
 
-| Variable                      | Default | Description                                                  |
-| ----------------------------- | ------- | ------------------------------------------------------------ |
-| `OPENCLAW_GATEWAY_URL`        | —       | URL of the OpenClaw gateway (e.g. `http://localhost:18789`)  |
-| `OPENCLAW_GATEWAY_TOKEN`      | —       | Gateway token used to bootstrap MosBot's device pairing flow |
-| `OPENCLAW_GATEWAY_TIMEOUT_MS` | `15000` | Request timeout in milliseconds                              |
+| Variable                         | Default     | Description                                                                                           |
+| -------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
+| `OPENCLAW_GATEWAY_URL`           | —           | URL of the OpenClaw gateway (e.g. `http://localhost:18789`)                                          |
+| `OPENCLAW_GATEWAY_TOKEN`         | —           | Gateway token used to bootstrap MosBot's device pairing flow                                          |
+| `OPENCLAW_GATEWAY_TIMEOUT_MS`    | `15000`     | Request timeout in milliseconds                                                                       |
+| `OPENCLAW_WS_PERSISTENT_RPC`     | auto        | Tri-state override for gateway RPC mode: `true` force persistent, `false` force short-lived, unset uses runtime default (`NODE_ENV !== test`) |
+| `OPENCLAW_WS_RPC_IDLE_MS`        | `1800000`   | Idle-close window for persistent gateway RPC socket (30 minutes by default)                          |
+| `OPENCLAW_WS_RPC_MAX_INFLIGHT`   | `1`         | Max in-flight RPCs over the persistent socket (default serialized through one in-flight request)     |
+| `OPENCLAW_GATEWAY_INSECURE_TLS`  | `false`     | Set `true` only when gateway uses self-signed/internal certs and you explicitly accept insecure TLS  |
+
+:::important TLS behavior change
+MosBot now verifies gateway TLS certificates by default for WebSocket RPCs. If your environment uses
+self-signed/internal certificates, set `OPENCLAW_GATEWAY_INSECURE_TLS=true` explicitly.
+:::
 
 ## OpenClaw Device Auth
 
