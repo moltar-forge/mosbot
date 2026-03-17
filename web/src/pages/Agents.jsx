@@ -9,15 +9,19 @@ import {
   PencilIcon,
   PlusIcon,
   ArrowPathIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import Header from '../components/Header';
 import {
   getAgentsConfig,
   rebootstrapAgent,
   syncAgentsFromOpenClaw,
+  deleteAgent,
 } from '../api/client';
 import { useAuthStore } from '../stores/authStore';
+import { useToastStore } from '../stores/toastStore';
 import AgentEditModal from '../components/AgentEditModal';
+import AgentDeleteConfirmModal from '../components/AgentDeleteConfirmModal';
 import logger from '../utils/logger';
 
 // Color palette for agent cards — assigned by hash of agent id
@@ -48,8 +52,11 @@ export default function Agents() {
   const [agentModalMode, setAgentModalMode] = useState('edit'); // 'edit' or 'create'
   const [isSyncingAgents, setIsSyncingAgents] = useState(false);
   const [rebootstrappingByAgentId, setRebootstrappingByAgentId] = useState({});
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [isDeletingAgent, setIsDeletingAgent] = useState(false);
   const rebootstrappingRef = useRef(new Set());
   const { user } = useAuthStore();
+  const { showToast } = useToastStore();
   const canManageAgents = user?.role === 'admin' || user?.role === 'owner';
 
   // Fetch agents config
@@ -130,6 +137,36 @@ export default function Agents() {
     setSelectedAgentId(null);
     setAgentModalMode('create');
     setShowAgentModal(true);
+  };
+
+  const handleDeleteAgent = (agent) => {
+    if (!agent || agent.id === 'main') return;
+    setDeleteTarget(agent);
+  };
+
+  const handleConfirmDeleteAgent = async ({ force = false } = {}) => {
+    if (!deleteTarget?.id) return;
+
+    setIsDeletingAgent(true);
+    try {
+      const result = await deleteAgent(deleteTarget.id, { force });
+      await loadConfig();
+      setDeleteTarget(null);
+
+      if (result?.alreadyDeleted) {
+        showToast(`${deleteTarget.id} was already removed`, 'success');
+      } else {
+        showToast(`Deleted ${deleteTarget.id}`, 'success');
+      }
+    } catch (err) {
+      logger.error('Failed to delete agent', { agentId: deleteTarget.id, error: err.message });
+      showToast(
+        err?.response?.data?.error?.message || err.message || `Failed to delete ${deleteTarget.id}`,
+        'error',
+      );
+    } finally {
+      setIsDeletingAgent(false);
+    }
   };
 
   // Check if a node is active based on running sessions
@@ -255,6 +292,15 @@ export default function Agents() {
                     >
                       <PencilIcon className="w-3 h-3 text-dark-300" />
                     </button>
+                    {leader.id !== 'main' && (
+                      <button
+                        onClick={() => handleDeleteAgent(leader)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity h-[21px] px-1.5 bg-dark-800/70 hover:bg-red-800/60 rounded border border-dark-600 hover:border-red-500/60 flex items-center justify-center"
+                        title="Delete agent"
+                      >
+                        <TrashIcon className="w-3 h-3 text-red-300" />
+                      </button>
+                    )}
                   </>
                 )}
                 <StatusBadge status={status} />
@@ -459,6 +505,14 @@ export default function Agents() {
         onSave={handleAgentModalSave}
         agentId={selectedAgentId}
         mode={agentModalMode}
+      />
+
+      <AgentDeleteConfirmModal
+        isOpen={Boolean(deleteTarget)}
+        onClose={() => (isDeletingAgent ? null : setDeleteTarget(null))}
+        onConfirm={handleConfirmDeleteAgent}
+        agent={deleteTarget}
+        isSubmitting={isDeletingAgent}
       />
 
       <div className="flex-1 p-3 md:p-6 overflow-auto">

@@ -32,6 +32,7 @@ const VALID_EVENT_TYPES = new Set([
   'workspace_file_deleted',
   'org_chart_agent_updated',
   'org_chart_agent_created',
+  'agent_deleted',
   'cron_job_created',
   'cron_job_updated',
   'cron_job_deleted',

@@ -171,6 +171,14 @@ export const syncAgentsFromOpenClaw = async () => {
   return response.data.data;
 };
 
+export const deleteAgent = async (agentId, { force = false } = {}) => {
+  const params = new URLSearchParams();
+  if (force) params.set('force', 'true');
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const response = await api.delete(`/admin/agents/${encodeURIComponent(agentId)}${suffix}`);
+  return response.data.data;
+};
+
 export const rebootstrapAgent = async (agentId) => {
   const response = await api.post(
     `/openclaw/agents/config/${encodeURIComponent(agentId)}/rebootstrap`,
