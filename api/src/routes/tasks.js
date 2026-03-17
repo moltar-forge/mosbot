@@ -7,6 +7,13 @@ const { validateAndNormalizeTags } = require('../utils/tags');
 const { getJwtSecret } = require('../utils/jwt');
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EXECUTION_STATES = ['ack', 'progress', 'blocker', 'done'];
+const EXECUTION_EVENT_MAP = {
+  ack: 'AGENT_ACK',
+  progress: 'AGENT_PROGRESS',
+  blocker: 'AGENT_BLOCKER',
+  done: 'AGENT_DONE',
+};
 
 // Middleware to validate UUID
 const validateUUID = (paramName) => (req, res, next) => {
@@ -614,6 +621,12 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
       agent_model,
       agent_model_provider,
       preferred_model,
+      last_agent_id,
+      last_session_key,
+      last_run_id,
+      last_branch,
+      last_pr_url,
+      last_reported_at,
     } = req.body;
 
     await client.query('BEGIN');
@@ -704,6 +717,46 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
         await client.query('ROLLBACK');
         return res.status(400).json({
           error: { message: 'preferred_model must be 200 characters or less', status: 400 },
+        });
+      }
+    }
+
+    if (last_agent_id !== undefined && last_agent_id !== null) {
+      if (typeof last_agent_id !== 'string' || !last_agent_id.trim()) {
+        await client.query('ROLLBACK');
+        return res
+          .status(400)
+          .json({ error: { message: 'last_agent_id must be a non-empty string', status: 400 } });
+      }
+      if (last_agent_id.length > 100) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: { message: 'last_agent_id must be 100 characters or less', status: 400 },
+        });
+      }
+    }
+
+    if (last_pr_url !== undefined && last_pr_url !== null) {
+      if (typeof last_pr_url !== 'string' || !/^https?:\/\//i.test(last_pr_url.trim())) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: { message: 'last_pr_url must be a valid http(s) URL', status: 400 },
+        });
+      }
+      if (last_pr_url.length > 500) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: { message: 'last_pr_url must be 500 characters or less', status: 400 },
+        });
+      }
+    }
+
+    if (last_reported_at !== undefined && last_reported_at !== null) {
+      const parsedLastReported = new Date(last_reported_at);
+      if (Number.isNaN(parsedLastReported.getTime())) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: { message: 'last_reported_at must be a valid datetime', status: 400 },
         });
       }
     }
@@ -953,6 +1006,42 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
       paramCount++;
     }
 
+    if (last_agent_id !== undefined) {
+      updates.push(`last_agent_id = $${paramCount}`);
+      params.push(last_agent_id ? String(last_agent_id).trim() : null);
+      paramCount++;
+    }
+
+    if (last_session_key !== undefined) {
+      updates.push(`last_session_key = $${paramCount}`);
+      params.push(last_session_key ? String(last_session_key).trim() : null);
+      paramCount++;
+    }
+
+    if (last_run_id !== undefined) {
+      updates.push(`last_run_id = $${paramCount}`);
+      params.push(last_run_id ? String(last_run_id).trim() : null);
+      paramCount++;
+    }
+
+    if (last_branch !== undefined) {
+      updates.push(`last_branch = $${paramCount}`);
+      params.push(last_branch ? String(last_branch).trim() : null);
+      paramCount++;
+    }
+
+    if (last_pr_url !== undefined) {
+      updates.push(`last_pr_url = $${paramCount}`);
+      params.push(last_pr_url ? String(last_pr_url).trim() : null);
+      paramCount++;
+    }
+
+    if (last_reported_at !== undefined) {
+      updates.push(`last_reported_at = $${paramCount}`);
+      params.push(last_reported_at || null);
+      paramCount++;
+    }
+
     // Handle status transitions for done_at and archived_at
     if (status !== undefined && status !== currentStatus) {
       // Transition to DONE: set done_at
@@ -1053,6 +1142,142 @@ router.patch('/:id', validateUUID('id'), async (req, res, next) => {
   // Reuse PUT logic for PATCH
   req.method = 'PUT';
   return router.handle(req, res, next);
+});
+
+// POST /api/v1/tasks/:id/execution - Record agent execution heartbeat/progress metadata
+router.post('/:id/execution', optionalAuth, validateUUID('id'), async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: { message: 'Authorization required', status: 401 } });
+    }
+
+    const { id } = req.params;
+    const { state = 'progress', agent_id, session_key, run_id, branch, pr_url, note } = req.body || {};
+
+    if (!EXECUTION_STATES.includes(state)) {
+      return res.status(400).json({
+        error: {
+          message: `state must be one of: ${EXECUTION_STATES.join(', ')}`,
+          status: 400,
+        },
+      });
+    }
+
+    if (agent_id !== undefined && agent_id !== null && (!String(agent_id).trim() || String(agent_id).length > 100)) {
+      return res.status(400).json({
+        error: { message: 'agent_id must be a non-empty string up to 100 chars', status: 400 },
+      });
+    }
+
+    if (pr_url !== undefined && pr_url !== null) {
+      const normalizedPrUrl = String(pr_url).trim();
+      if (!/^https?:\/\//i.test(normalizedPrUrl) || normalizedPrUrl.length > 500) {
+        return res.status(400).json({
+          error: { message: 'pr_url must be a valid http(s) URL up to 500 chars', status: 400 },
+        });
+      }
+    }
+
+    await client.query('BEGIN');
+
+    const existing = await client.query('SELECT id FROM tasks WHERE id = $1', [id]);
+    if (existing.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: { message: 'Task not found', status: 404 } });
+    }
+
+    const normalizedAgentId =
+      agent_id !== undefined ? (agent_id === null ? null : String(agent_id).trim()) : undefined;
+    const normalizedSessionKey =
+      session_key !== undefined ? (session_key === null ? null : String(session_key).trim()) : undefined;
+    const normalizedRunId = run_id !== undefined ? (run_id === null ? null : String(run_id).trim()) : undefined;
+    const normalizedBranch = branch !== undefined ? (branch === null ? null : String(branch).trim()) : undefined;
+    const normalizedPrUrl = pr_url !== undefined ? (pr_url === null ? null : String(pr_url).trim()) : undefined;
+
+    const updates = ['last_reported_at = NOW()'];
+    const params = [];
+    let paramCount = 1;
+
+    if (normalizedAgentId !== undefined) {
+      updates.push(`last_agent_id = $${paramCount}`);
+      params.push(normalizedAgentId || null);
+      paramCount++;
+    }
+    if (normalizedSessionKey !== undefined) {
+      updates.push(`last_session_key = $${paramCount}`);
+      params.push(normalizedSessionKey || null);
+      paramCount++;
+    }
+    if (normalizedRunId !== undefined) {
+      updates.push(`last_run_id = $${paramCount}`);
+      params.push(normalizedRunId || null);
+      paramCount++;
+    }
+    if (normalizedBranch !== undefined) {
+      updates.push(`last_branch = $${paramCount}`);
+      params.push(normalizedBranch || null);
+      paramCount++;
+    }
+    if (normalizedPrUrl !== undefined) {
+      updates.push(`last_pr_url = $${paramCount}`);
+      params.push(normalizedPrUrl || null);
+      paramCount++;
+    }
+
+    params.push(id);
+
+    await client.query(
+      `UPDATE tasks SET ${updates.join(', ')} WHERE id = $${paramCount}`,
+      params,
+    );
+
+    await logTaskEvent(client, id, EXECUTION_EVENT_MAP[state], 'api', req.user?.id, null, null, {
+      state,
+      agent_id: normalizedAgentId ?? null,
+      session_key: normalizedSessionKey ?? null,
+      run_id: normalizedRunId ?? null,
+      branch: normalizedBranch ?? null,
+      pr_url: normalizedPrUrl ?? null,
+      note: note ? String(note).trim().slice(0, 2000) : null,
+    });
+
+    await client.query('COMMIT');
+
+    const completeTask = await client.query(
+      `
+      SELECT
+        t.*,
+        u_reporter.name as reporter_name,
+        u_reporter.email as reporter_email,
+        u_assignee.name as assignee_name,
+        u_assignee.email as assignee_email,
+        parent_task.task_number as parent_task_number,
+        parent_task.title as parent_task_title,
+        p.slug AS project_slug,
+        p.name AS project_name,
+        p.root_path AS project_root_path,
+        p.contract_path AS project_contract_path,
+        p.repo_url AS project_repo_url,
+        p.docs_path AS project_docs_path,
+        p.default_branch AS project_default_branch
+      FROM tasks t
+      LEFT JOIN users u_reporter ON t.reporter_id = u_reporter.id
+      LEFT JOIN users u_assignee ON t.assignee_id = u_assignee.id
+      LEFT JOIN tasks parent_task ON t.parent_task_id = parent_task.id
+      LEFT JOIN projects p ON t.project_id = p.id
+      WHERE t.id = $1
+    `,
+      [id],
+    );
+
+    res.json({ data: sanitizeProjectMetadataForAuth(completeTask.rows[0], req.user) });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    next(error);
+  } finally {
+    client.release();
+  }
 });
 
 // GET /api/v1/tasks/:id/history - Get history/audit log for a task

@@ -311,6 +311,66 @@ describe('Tasks Route Edge Cases', () => {
     });
   });
 
+  describe('Task Execution Metadata Edge Cases', () => {
+    it('should return 401 when recording execution metadata without authorization', async () => {
+      const response = await request(app)
+        .post('/api/v1/tasks/11111111-1111-1111-1111-111111111111/execution')
+        .send({ state: 'progress' });
+
+      expect(response.status).toBe(401);
+      expect(response.body.error.message).toBe('Authorization required');
+    });
+
+    it('should return 400 when execution state is invalid', async () => {
+      const token = getToken('user-123', 'user');
+
+      const response = await request(app)
+        .post('/api/v1/tasks/11111111-1111-1111-1111-111111111111/execution')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ state: 'nope' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toContain('state must be one of');
+    });
+
+    it('should record execution metadata and return updated task', async () => {
+      const token = getToken('user-123', 'user');
+      mockClient.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: '11111111-1111-1111-1111-111111111111' }] }) // task exists
+        .mockResolvedValueOnce({}) // UPDATE tasks
+        .mockResolvedValueOnce({}) // INSERT task_logs
+        .mockResolvedValueOnce({}) // COMMIT
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: '11111111-1111-1111-1111-111111111111',
+              title: 'Existing Task',
+              project_repo_url: 'https://example.com/repo',
+              project_docs_path: '/docs',
+              project_default_branch: 'main',
+            },
+          ],
+        }); // final SELECT
+
+      const response = await request(app)
+        .post('/api/v1/tasks/11111111-1111-1111-1111-111111111111/execution')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          state: 'progress',
+          agent_id: 'cto',
+          session_key: 'agent:cto:isolated',
+          run_id: 'run-123',
+          branch: 'feat/issue-59',
+          pr_url: 'https://github.com/ByMosDev/mosbot-os/pull/99',
+          note: 'Working through API updates',
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.id).toBe('11111111-1111-1111-1111-111111111111');
+    });
+  });
+
   describe('Task Dependencies Edge Cases', () => {
     it('should return 401 when creating dependency without authorization', async () => {
       const response = await request(app)

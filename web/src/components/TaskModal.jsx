@@ -16,6 +16,7 @@ import {
   BoltIcon,
   LinkIcon,
   CheckCircleIcon,
+  CheckBadgeIcon,
   ExclamationTriangleIcon,
   SparklesIcon,
   ArrowTrendingUpIcon,
@@ -960,6 +961,21 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
       return changes;
     }
 
+    if (
+      entry.event_type === 'AGENT_ACK' ||
+      entry.event_type === 'AGENT_PROGRESS' ||
+      entry.event_type === 'AGENT_BLOCKER' ||
+      entry.event_type === 'AGENT_DONE'
+    ) {
+      changes.push({
+        field: 'Execution update',
+        fieldKey: 'execution_note',
+        oldValue: null,
+        newValue: entry.meta?.note || '(no note)',
+      });
+      return changes;
+    }
+
     if (entry.old_values && entry.new_values) {
       Object.keys(entry.new_values).forEach((key) => {
         const oldVal = entry.old_values[key];
@@ -981,8 +997,8 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
   };
 
   const formatValue = (value, isLongText = false, fieldKey = null, isOldValue = false) => {
-    // Special handling for comment_body - show preview
-    if (fieldKey === 'comment_body') {
+    // Special handling for comment_body/execution_note - show preview
+    if (fieldKey === 'comment_body' || fieldKey === 'execution_note') {
       if (value === null || value === undefined) {
         // For old value: null means it's a new comment (didn't exist before)
         // For new value: null means it was deleted
@@ -1062,6 +1078,14 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
         return <PencilIcon className={iconClass} />;
       case 'COMMENT_DELETED':
         return <TrashIcon className={iconClass} />;
+      case 'AGENT_ACK':
+        return <CheckCircleIcon className={iconClass} />;
+      case 'AGENT_PROGRESS':
+        return <ArrowPathIcon className={iconClass} />;
+      case 'AGENT_BLOCKER':
+        return <ExclamationTriangleIcon className={iconClass} />;
+      case 'AGENT_DONE':
+        return <CheckBadgeIcon className={iconClass} />;
       default:
         return <PencilSquareIcon className={iconClass} />;
     }
@@ -1086,6 +1110,14 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
         return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
       case 'COMMENT_DELETED':
         return 'bg-red-500/10 text-red-400 border-red-500/20';
+      case 'AGENT_ACK':
+        return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+      case 'AGENT_PROGRESS':
+        return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+      case 'AGENT_BLOCKER':
+        return 'bg-orange-500/10 text-orange-400 border-orange-500/20';
+      case 'AGENT_DONE':
+        return 'bg-green-500/10 text-green-400 border-green-500/20';
       default:
         return 'bg-primary-500/10 text-primary-400 border-primary-500/20';
     }
@@ -1113,6 +1145,14 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
         return 'Comment edited';
       case 'COMMENT_DELETED':
         return 'Comment deleted';
+      case 'AGENT_ACK':
+        return 'Agent acknowledged';
+      case 'AGENT_PROGRESS':
+        return 'Agent progress';
+      case 'AGENT_BLOCKER':
+        return 'Agent blocked';
+      case 'AGENT_DONE':
+        return 'Agent done';
       default:
         return eventType;
     }
