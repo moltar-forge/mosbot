@@ -291,6 +291,19 @@ describe("Files API", () => {
       expect(actual).toBe("deep content");
     });
 
+    it("creates a file with explicit mode when provided", async () => {
+      const res = await request(app).post("/files").send({
+        path: "/workspace/script.sh",
+        content: "#!/usr/bin/env bash\necho hi\n",
+        mode: 0o755,
+      });
+
+      expect(res.status).toBe(201);
+
+      const stats = await fs.stat(path.join(workspaceRoot, "script.sh"));
+      expect(stats.mode & 0o777).toBe(0o755);
+    });
+
     it("creates agents config file under config root", async () => {
       const res = await request(app).post("/files").send({
         path: "/agents.json",
@@ -312,6 +325,16 @@ describe("Files API", () => {
       const res = await request(app).post("/files").send({ path: "/x.txt" });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("Path and content are required");
+    });
+
+    it("returns 400 when mode is invalid", async () => {
+      const res = await request(app).post("/files").send({
+        path: "/workspace/bad-mode.sh",
+        content: "echo hi",
+        mode: "999",
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Invalid mode");
     });
 
     it("returns 403 for disallowed create path", async () => {
@@ -354,6 +377,21 @@ describe("Files API", () => {
       expect(actual).toContain('"version":2');
     });
 
+    it("updates file mode when explicit mode is provided", async () => {
+      const filePath = path.join(workspaceRoot, "updatable.txt");
+      await fs.chmod(filePath, 0o600);
+
+      const res = await request(app).put("/files").send({
+        path: "/workspace/updatable.txt",
+        content: "updated with mode",
+        mode: "755",
+      });
+      expect(res.status).toBe(200);
+
+      const stats = await fs.stat(filePath);
+      expect(stats.mode & 0o777).toBe(0o755);
+    });
+
     it("returns 404 when file does not exist", async () => {
       const res = await request(app).put("/files").send({
         path: "/workspace/nonexistent.txt",
@@ -373,6 +411,16 @@ describe("Files API", () => {
       const res = await request(app).put("/files").send({ path: "/x.txt" });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("Path and content are required");
+    });
+
+    it("returns 400 when mode is invalid", async () => {
+      const res = await request(app).put("/files").send({
+        path: "/workspace/updatable.txt",
+        content: "x",
+        mode: "invalid",
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Invalid mode");
     });
 
     it("returns 403 for disallowed update path", async () => {

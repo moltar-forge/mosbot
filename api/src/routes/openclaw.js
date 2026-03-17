@@ -5,7 +5,6 @@ const crypto = require('crypto');
 const config = require('../config');
 const logger = require('../utils/logger');
 const path = require('path');
-const fs = require('fs/promises');
 const pool = require('../db/pool');
 const { requireAdmin, requireManageUsers } = require('./auth');
 const {
@@ -247,12 +246,35 @@ async function cleanupProvisionedApiKeyArtifacts({
   }
 }
 
-async function upsertWorkspaceFile(path, content, encoding = 'utf8') {
+async function upsertWorkspaceFile(path, content, encoding = 'utf8', mode = null) {
+  const payload = { path, content, encoding, ...(mode != null ? { mode } : {}) };
+
+  const writeWithMethod = async (method, body) => {
+    try {
+      return await makeOpenClawRequest(method, '/files', body);
+    } catch (error) {
+      if (
+        mode != null &&
+        (error?.status === 400 || error?.status === 422) &&
+        typeof error?.message === 'string' &&
+        error.message.toLowerCase().includes('mode')
+      ) {
+        logger.warn('Workspace service does not support file mode; retrying without mode', {
+          path,
+          method,
+          status: error.status,
+        });
+        return makeOpenClawRequest(method, '/files', { path, content, encoding });
+      }
+      throw error;
+    }
+  };
+
   try {
-    return await makeOpenClawRequest('PUT', '/files', { path, content, encoding });
+    return await writeWithMethod('PUT', payload);
   } catch (error) {
     if (error?.status === 404) {
-      return makeOpenClawRequest('POST', '/files', { path, content, encoding });
+      return writeWithMethod('POST', payload);
     }
     throw error;
   }
@@ -598,35 +620,18 @@ Override with: \`export MOSBOT_ENV_FILE=/path/to/mosbot.env\`.
 `;
 
   return [
-    { path: `${workspaceRoot}/tools/mosbot-auth`, content: mosbotAuthScript },
-    { path: `${workspaceRoot}/tools/mosbot-task`, content: mosbotTaskScript },
+    { path: `${workspaceRoot}/tools/mosbot-auth`, content: mosbotAuthScript, mode: 0o755 },
+    { path: `${workspaceRoot}/tools/mosbot-task`, content: mosbotTaskScript, mode: 0o755 },
     { path: `${workspaceRoot}/tools/INTEGRATION.md`, content: integrationDoc },
     { path: `${workspaceRoot}/TOOLS.md`, content: toolsDoc },
   ];
 }
 
-async function ensureToolkitExecutableBits(workspaceRoot) {
-  const executablePaths = [`${workspaceRoot}/tools/mosbot-auth`, `${workspaceRoot}/tools/mosbot-task`];
-
-  for (const scriptPath of executablePaths) {
-    try {
-      await fs.chmod(scriptPath, 0o755);
-    } catch (error) {
-      logger.warn('Failed to set executable bit on toolkit script', {
-        path: scriptPath,
-        error: error.message,
-      });
-    }
-  }
-}
-
 async function writeAgentToolkit(workspaceRoot) {
   const files = buildAgentToolkitFiles(workspaceRoot);
   for (const file of files) {
-    await upsertWorkspaceFile(file.path, file.content);
+    await upsertWorkspaceFile(file.path, file.content, 'utf8', file.mode ?? null);
   }
-
-  await ensureToolkitExecutableBits(workspaceRoot);
 }
 
 function buildAgentBootstrapContent(agentData = {}) {
@@ -710,7 +715,7 @@ ${projectScopeSection}
    - \`AGENTS.md\`: operating rules, workspace conventions, safety reminders
 4. Confirm \`mosbot.env\` exists in workspace root.
 ${projectChecklistStep}${queueStepNumber}. Pull your queue:
-   - \`bash ./tools/mosbot-task list --status "TO DO"\`
+   - \`./tools/mosbot-task list --status "TO DO"\`
 ${statusStepNumber}. If at least one task exists, post a brief status comment on your first task: setup complete + assumptions.
    - If no task exists, explicitly note that and continue.
 ${deleteStepNumber}. Delete this \`BOOTSTRAP.md\` after setup is complete (even when no tasks exist).
