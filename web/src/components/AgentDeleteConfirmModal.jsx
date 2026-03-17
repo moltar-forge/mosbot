@@ -1,6 +1,6 @@
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { ExclamationTriangleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 export default function AgentDeleteConfirmModal({
   isOpen,
@@ -8,6 +8,7 @@ export default function AgentDeleteConfirmModal({
   onConfirm,
   agent,
   isSubmitting = false,
+  errorMessage = '',
 }) {
   const [confirmText, setConfirmText] = useState('');
   const [forceDelete, setForceDelete] = useState(false);
@@ -98,6 +99,12 @@ export default function AgentDeleteConfirmModal({
                       Force delete if active sessions exist
                     </label>
 
+                    {errorMessage && (
+                      <div className="mt-4 rounded-lg border border-red-500/40 bg-red-600/10 px-3 py-2 text-xs text-red-200">
+                        {errorMessage}
+                      </div>
+                    )}
+
                     <div className="flex justify-end gap-3 mt-5">
                       <button
                         type="button"
@@ -111,9 +118,10 @@ export default function AgentDeleteConfirmModal({
                         type="button"
                         onClick={handleConfirm}
                         disabled={!canConfirm}
-                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 inline-flex items-center gap-2"
                       >
-                        {isSubmitting ? 'Deleting…' : 'Delete Agent'}
+                        {isSubmitting && <ArrowPathIcon className="h-4 w-4 animate-spin" />}
+                        <span>{isSubmitting ? 'Deleting…' : 'Delete Agent'}</span>
                       </button>
                     </div>
                   </div>

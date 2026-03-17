@@ -54,6 +54,7 @@ export default function Agents() {
   const [rebootstrappingByAgentId, setRebootstrappingByAgentId] = useState({});
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeletingAgent, setIsDeletingAgent] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const rebootstrappingRef = useRef(new Set());
   const { user } = useAuthStore();
   const { showToast } = useToastStore();
@@ -141,17 +142,20 @@ export default function Agents() {
 
   const handleDeleteAgent = (agent) => {
     if (!agent || agent.id === 'main') return;
+    setDeleteError('');
     setDeleteTarget(agent);
   };
 
   const handleConfirmDeleteAgent = async ({ force = false } = {}) => {
     if (!deleteTarget?.id) return;
 
+    setDeleteError('');
     setIsDeletingAgent(true);
     try {
       const result = await deleteAgent(deleteTarget.id, { force });
       await loadConfig();
       setDeleteTarget(null);
+      setDeleteError('');
 
       if (result?.alreadyDeleted) {
         showToast(`${deleteTarget.id} was already removed`, 'success');
@@ -160,9 +164,8 @@ export default function Agents() {
       }
     } catch (err) {
       logger.error('Failed to delete agent', { agentId: deleteTarget.id, error: err.message });
-      showToast(
+      setDeleteError(
         err?.response?.data?.error?.message || err.message || `Failed to delete ${deleteTarget.id}`,
-        'error',
       );
     } finally {
       setIsDeletingAgent(false);
@@ -509,10 +512,15 @@ export default function Agents() {
 
       <AgentDeleteConfirmModal
         isOpen={Boolean(deleteTarget)}
-        onClose={() => (isDeletingAgent ? null : setDeleteTarget(null))}
+        onClose={() => {
+          if (isDeletingAgent) return;
+          setDeleteError('');
+          setDeleteTarget(null);
+        }}
         onConfirm={handleConfirmDeleteAgent}
         agent={deleteTarget}
         isSubmitting={isDeletingAgent}
+        errorMessage={deleteError}
       />
 
       <div className="flex-1 p-3 md:p-6 overflow-auto">
