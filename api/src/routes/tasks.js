@@ -7,6 +7,22 @@ const { validateAndNormalizeTags } = require('../utils/tags');
 const { getJwtSecret } = require('../utils/jwt');
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EXECUTION_STATES = ['ack', 'progress', 'blocker', 'done'];
+const EXECUTION_EVENT_MAP = {
+  ack: 'AGENT_ACK',
+  progress: 'AGENT_PROGRESS',
+  blocker: 'AGENT_BLOCKER',
+  done: 'AGENT_DONE',
+};
+const EXECUTION_METADATA_FIELDS = [
+  'last_agent_id',
+  'last_session_key',
+  'last_run_id',
+  'last_branch',
+  'last_pr_url',
+  'last_reported_at',
+];
+const EXECUTION_ROLE_ALLOWLIST = ['admin', 'owner', 'agent'];
 
 // Middleware to validate UUID
 const validateUUID = (paramName) => (req, res, next) => {
@@ -32,11 +48,45 @@ const validateTaskKey = (paramName) => (req, res, next) => {
 };
 
 // Optional auth middleware - sets req.user if valid token present, but doesn't reject
-const optionalAuth = (req, res, next) => {
+const optionalAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
+
+    if (token.startsWith('mba_')) {
+      try {
+        const result = await pool.query(
+          `SELECT a.id AS agent_db_id, a.agent_id, a.name, a.status, a.active,
+                  k.id AS key_id
+             FROM agent_api_keys k
+             JOIN agents a ON a.agent_id = k.agent_id
+            WHERE k.key_hash = encode(digest($1, 'sha256'), 'hex')
+              AND k.revoked_at IS NULL
+            LIMIT 1`,
+          [token],
+        );
+
+        if (result.rows.length > 0) {
+          const row = result.rows[0];
+          if (row.active && row.status !== 'deprecated') {
+            req.user = {
+              id: null,
+              agent_db_id: row.agent_db_id,
+              role: 'agent',
+              name: row.name,
+              agent_id: row.agent_id,
+              auth_type: 'api_key',
+            };
+          }
+        }
+      } catch (_err) {
+        // Ignore optional auth failures; route-level auth checks enforce access.
+      }
+
+      return next();
+    }
+
     try {
       const decoded = jwt.verify(token, getJwtSecret());
       req.user = decoded;
@@ -109,6 +159,22 @@ function sanitizeProjectMetadataForAuth(task, user) {
     project_docs_path: null,
     project_default_branch: null,
   };
+}
+
+function normalizeOptionalExecutionString(value, field, maxLength) {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (value === null) return { ok: true, value: null };
+  if (typeof value !== 'string') {
+    return { ok: false, error: `${field} must be a string` };
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { ok: false, error: `${field} must be a non-empty string or null` };
+  }
+  if (trimmed.length > maxLength) {
+    return { ok: false, error: `${field} must be ${maxLength} characters or less` };
+  }
+  return { ok: true, value: trimmed };
 }
 
 function computeTaskDiff(oldTask, newTask) {
@@ -614,7 +680,32 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
       agent_model,
       agent_model_provider,
       preferred_model,
+      last_agent_id,
+      last_session_key,
+      last_run_id,
+      last_branch,
+      last_pr_url,
+      last_reported_at,
     } = req.body;
+
+    const hasExecutionMetadataUpdate = EXECUTION_METADATA_FIELDS.some(
+      (field) => req.body?.[field] !== undefined,
+    );
+
+    if (hasExecutionMetadataUpdate) {
+      if (!req.user) {
+        return res.status(401).json({ error: { message: 'Authorization required', status: 401 } });
+      }
+
+      if (!EXECUTION_ROLE_ALLOWLIST.includes(req.user.role)) {
+        return res.status(403).json({
+          error: {
+            message: 'Only agent/admin/owner can update execution metadata fields',
+            status: 403,
+          },
+        });
+      }
+    }
 
     await client.query('BEGIN');
 
@@ -705,6 +796,105 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
         return res.status(400).json({
           error: { message: 'preferred_model must be 200 characters or less', status: 400 },
         });
+      }
+    }
+
+    const normalizedLastAgentIdResult = normalizeOptionalExecutionString(
+      last_agent_id,
+      'last_agent_id',
+      100,
+    );
+    if (!normalizedLastAgentIdResult.ok) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: { message: normalizedLastAgentIdResult.error, status: 400 },
+      });
+    }
+
+    const normalizedLastSessionKeyResult = normalizeOptionalExecutionString(
+      last_session_key,
+      'last_session_key',
+      255,
+    );
+    if (!normalizedLastSessionKeyResult.ok) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: { message: normalizedLastSessionKeyResult.error, status: 400 },
+      });
+    }
+
+    const normalizedLastRunIdResult = normalizeOptionalExecutionString(
+      last_run_id,
+      'last_run_id',
+      255,
+    );
+    if (!normalizedLastRunIdResult.ok) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: { message: normalizedLastRunIdResult.error, status: 400 },
+      });
+    }
+
+    const normalizedLastBranchResult = normalizeOptionalExecutionString(
+      last_branch,
+      'last_branch',
+      255,
+    );
+    if (!normalizedLastBranchResult.ok) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: { message: normalizedLastBranchResult.error, status: 400 },
+      });
+    }
+
+    const normalizedLastPrUrlResult = normalizeOptionalExecutionString(last_pr_url, 'last_pr_url', 500);
+    if (!normalizedLastPrUrlResult.ok) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: { message: normalizedLastPrUrlResult.error, status: 400 },
+      });
+    }
+
+    if (
+      normalizedLastPrUrlResult.value !== undefined &&
+      normalizedLastPrUrlResult.value !== null &&
+      !/^https?:\/\//i.test(normalizedLastPrUrlResult.value)
+    ) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: { message: 'last_pr_url must be a valid http(s) URL', status: 400 },
+      });
+    }
+
+    if (req.user?.role === 'agent') {
+      if (!req.user.agent_id) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          error: { message: 'Agent identity missing from auth context', status: 403 },
+        });
+      }
+
+      if (normalizedLastAgentIdResult.value && normalizedLastAgentIdResult.value !== req.user.agent_id) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          error: { message: 'Agents cannot set execution metadata for another agent', status: 403 },
+        });
+      }
+    }
+
+    let normalizedLastReportedAt = undefined;
+    if (last_reported_at !== undefined) {
+      if (last_reported_at === null || last_reported_at === '') {
+        normalizedLastReportedAt = null;
+      } else {
+        const parsedLastReported = new Date(last_reported_at);
+        if (Number.isNaN(parsedLastReported.getTime())) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            error: { message: 'last_reported_at must be a valid datetime', status: 400 },
+          });
+        }
+        normalizedLastReportedAt = parsedLastReported.toISOString();
       }
     }
 
@@ -953,6 +1143,42 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
       paramCount++;
     }
 
+    if (last_agent_id !== undefined) {
+      updates.push(`last_agent_id = $${paramCount}`);
+      params.push(normalizedLastAgentIdResult.value);
+      paramCount++;
+    }
+
+    if (last_session_key !== undefined) {
+      updates.push(`last_session_key = $${paramCount}`);
+      params.push(normalizedLastSessionKeyResult.value);
+      paramCount++;
+    }
+
+    if (last_run_id !== undefined) {
+      updates.push(`last_run_id = $${paramCount}`);
+      params.push(normalizedLastRunIdResult.value);
+      paramCount++;
+    }
+
+    if (last_branch !== undefined) {
+      updates.push(`last_branch = $${paramCount}`);
+      params.push(normalizedLastBranchResult.value);
+      paramCount++;
+    }
+
+    if (last_pr_url !== undefined) {
+      updates.push(`last_pr_url = $${paramCount}`);
+      params.push(normalizedLastPrUrlResult.value);
+      paramCount++;
+    }
+
+    if (last_reported_at !== undefined) {
+      updates.push(`last_reported_at = $${paramCount}`);
+      params.push(normalizedLastReportedAt);
+      paramCount++;
+    }
+
     // Handle status transitions for done_at and archived_at
     if (status !== undefined && status !== currentStatus) {
       // Transition to DONE: set done_at
@@ -1053,6 +1279,199 @@ router.patch('/:id', validateUUID('id'), async (req, res, next) => {
   // Reuse PUT logic for PATCH
   req.method = 'PUT';
   return router.handle(req, res, next);
+});
+
+// POST /api/v1/tasks/:id/execution - Record agent execution heartbeat/progress metadata
+router.post('/:id/execution', optionalAuth, validateUUID('id'), async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: { message: 'Authorization required', status: 401 } });
+    }
+
+    if (!EXECUTION_ROLE_ALLOWLIST.includes(req.user.role)) {
+      return res.status(403).json({
+        error: {
+          message: 'Only agent/admin/owner can record execution metadata',
+          status: 403,
+        },
+      });
+    }
+
+    const { id } = req.params;
+    const { state = 'progress', agent_id, session_key, run_id, branch, pr_url, note } = req.body || {};
+
+    if (!EXECUTION_STATES.includes(state)) {
+      return res.status(400).json({
+        error: {
+          message: `state must be one of: ${EXECUTION_STATES.join(', ')}`,
+          status: 400,
+        },
+      });
+    }
+
+    const normalizedAgentIdResult = normalizeOptionalExecutionString(agent_id, 'agent_id', 100);
+    if (!normalizedAgentIdResult.ok) {
+      return res.status(400).json({
+        error: { message: normalizedAgentIdResult.error, status: 400 },
+      });
+    }
+
+    const normalizedSessionKeyResult = normalizeOptionalExecutionString(
+      session_key,
+      'session_key',
+      255,
+    );
+    if (!normalizedSessionKeyResult.ok) {
+      return res.status(400).json({
+        error: { message: normalizedSessionKeyResult.error, status: 400 },
+      });
+    }
+
+    const normalizedRunIdResult = normalizeOptionalExecutionString(run_id, 'run_id', 255);
+    if (!normalizedRunIdResult.ok) {
+      return res.status(400).json({
+        error: { message: normalizedRunIdResult.error, status: 400 },
+      });
+    }
+
+    const normalizedBranchResult = normalizeOptionalExecutionString(branch, 'branch', 255);
+    if (!normalizedBranchResult.ok) {
+      return res.status(400).json({
+        error: { message: normalizedBranchResult.error, status: 400 },
+      });
+    }
+
+    const normalizedPrUrlResult = normalizeOptionalExecutionString(pr_url, 'pr_url', 500);
+    if (!normalizedPrUrlResult.ok) {
+      return res.status(400).json({
+        error: { message: normalizedPrUrlResult.error, status: 400 },
+      });
+    }
+
+    if (
+      normalizedPrUrlResult.value !== undefined &&
+      normalizedPrUrlResult.value !== null &&
+      !/^https?:\/\//i.test(normalizedPrUrlResult.value)
+    ) {
+      return res.status(400).json({
+        error: { message: 'pr_url must be a valid http(s) URL up to 500 chars', status: 400 },
+      });
+    }
+
+    await client.query('BEGIN');
+
+    const existing = await client.query('SELECT id FROM tasks WHERE id = $1', [id]);
+    if (existing.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: { message: 'Task not found', status: 404 } });
+    }
+
+    let normalizedAgentId = normalizedAgentIdResult.value;
+    if (req.user.role === 'agent') {
+      if (!req.user.agent_id) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          error: { message: 'Agent identity missing from auth context', status: 403 },
+        });
+      }
+      if (normalizedAgentId && normalizedAgentId !== req.user.agent_id) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          error: { message: 'Agents cannot report execution as another agent', status: 403 },
+        });
+      }
+      normalizedAgentId = req.user.agent_id;
+    }
+
+    const normalizedSessionKey = normalizedSessionKeyResult.value;
+    const normalizedRunId = normalizedRunIdResult.value;
+    const normalizedBranch = normalizedBranchResult.value;
+    const normalizedPrUrl = normalizedPrUrlResult.value;
+
+    const updates = ['last_reported_at = NOW()'];
+    const params = [];
+    let paramCount = 1;
+
+    if (normalizedAgentId !== undefined) {
+      updates.push(`last_agent_id = $${paramCount}`);
+      params.push(normalizedAgentId || null);
+      paramCount++;
+    }
+    if (normalizedSessionKey !== undefined) {
+      updates.push(`last_session_key = $${paramCount}`);
+      params.push(normalizedSessionKey || null);
+      paramCount++;
+    }
+    if (normalizedRunId !== undefined) {
+      updates.push(`last_run_id = $${paramCount}`);
+      params.push(normalizedRunId || null);
+      paramCount++;
+    }
+    if (normalizedBranch !== undefined) {
+      updates.push(`last_branch = $${paramCount}`);
+      params.push(normalizedBranch || null);
+      paramCount++;
+    }
+    if (normalizedPrUrl !== undefined) {
+      updates.push(`last_pr_url = $${paramCount}`);
+      params.push(normalizedPrUrl || null);
+      paramCount++;
+    }
+
+    params.push(id);
+
+    await client.query(
+      `UPDATE tasks SET ${updates.join(', ')} WHERE id = $${paramCount}`,
+      params,
+    );
+
+    await logTaskEvent(client, id, EXECUTION_EVENT_MAP[state], 'api', req.user?.id, null, null, {
+      state,
+      agent_id: normalizedAgentId ?? null,
+      session_key: normalizedSessionKey ?? null,
+      run_id: normalizedRunId ?? null,
+      branch: normalizedBranch ?? null,
+      pr_url: normalizedPrUrl ?? null,
+      note: note ? String(note).trim().slice(0, 2000) : null,
+    });
+
+    await client.query('COMMIT');
+
+    const completeTask = await client.query(
+      `
+      SELECT
+        t.*,
+        u_reporter.name as reporter_name,
+        u_reporter.email as reporter_email,
+        u_assignee.name as assignee_name,
+        u_assignee.email as assignee_email,
+        parent_task.task_number as parent_task_number,
+        parent_task.title as parent_task_title,
+        p.slug AS project_slug,
+        p.name AS project_name,
+        p.root_path AS project_root_path,
+        p.contract_path AS project_contract_path,
+        p.repo_url AS project_repo_url,
+        p.docs_path AS project_docs_path,
+        p.default_branch AS project_default_branch
+      FROM tasks t
+      LEFT JOIN users u_reporter ON t.reporter_id = u_reporter.id
+      LEFT JOIN users u_assignee ON t.assignee_id = u_assignee.id
+      LEFT JOIN tasks parent_task ON t.parent_task_id = parent_task.id
+      LEFT JOIN projects p ON t.project_id = p.id
+      WHERE t.id = $1
+    `,
+      [id],
+    );
+
+    res.json({ data: sanitizeProjectMetadataForAuth(completeTask.rows[0], req.user) });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    next(error);
+  } finally {
+    client.release();
+  }
 });
 
 // GET /api/v1/tasks/:id/history - Get history/audit log for a task
