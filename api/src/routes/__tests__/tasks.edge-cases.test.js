@@ -17,9 +17,9 @@ const pool = require('../../db/pool');
 const tasksRouter = require('../tasks');
 
 // Helper to get JWT token for a user
-function getToken(userId, role, email = 'test@example.com', name = 'Test User') {
+function getToken(userId, role, email = 'test@example.com', name = 'Test User', extras = {}) {
   const jwtSecret = process.env.JWT_SECRET || 'test-only-jwt-secret-not-for-production';
-  return jwt.sign({ id: userId, role, email, name }, jwtSecret, {
+  return jwt.sign({ id: userId, role, email, name, ...extras }, jwtSecret, {
     expiresIn: '1h',
   });
 }
@@ -309,6 +309,33 @@ describe('Tasks Route Edge Cases', () => {
       expect(response.status).toBe(400);
       expect(response.body.error.message).toBe('Project not found');
     });
+
+    it('should return 401 when updating execution metadata fields without authorization', async () => {
+      const response = await request(app)
+        .patch('/api/v1/tasks/11111111-1111-1111-1111-111111111111')
+        .send({
+          last_agent_id: 'cto',
+        });
+
+      expect(response.status).toBe(401);
+      expect(response.body.error.message).toBe('Authorization required');
+    });
+
+    it('should return 403 when non-agent/admin/owner updates execution metadata fields', async () => {
+      const token = getToken('user-123', 'user');
+
+      const response = await request(app)
+        .patch('/api/v1/tasks/11111111-1111-1111-1111-111111111111')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          last_agent_id: 'cto',
+        });
+
+      expect(response.status).toBe(403);
+      expect(response.body.error.message).toBe(
+        'Only agent/admin/owner can update execution metadata fields',
+      );
+    });
   });
 
   describe('Task Execution Metadata Edge Cases', () => {
@@ -321,8 +348,22 @@ describe('Tasks Route Edge Cases', () => {
       expect(response.body.error.message).toBe('Authorization required');
     });
 
-    it('should return 400 when execution state is invalid', async () => {
+    it('should return 403 when non-agent/admin/owner records execution metadata', async () => {
       const token = getToken('user-123', 'user');
+
+      const response = await request(app)
+        .post('/api/v1/tasks/11111111-1111-1111-1111-111111111111/execution')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ state: 'progress' });
+
+      expect(response.status).toBe(403);
+      expect(response.body.error.message).toBe('Only agent/admin/owner can record execution metadata');
+    });
+
+    it('should return 400 when execution state is invalid', async () => {
+      const token = getToken('agent-123', 'agent', 'agent@example.com', 'Agent User', {
+        agent_id: 'cto',
+      });
 
       const response = await request(app)
         .post('/api/v1/tasks/11111111-1111-1111-1111-111111111111/execution')
@@ -334,7 +375,9 @@ describe('Tasks Route Edge Cases', () => {
     });
 
     it('should record execution metadata and return updated task', async () => {
-      const token = getToken('user-123', 'user');
+      const token = getToken('agent-123', 'agent', 'agent@example.com', 'Agent User', {
+        agent_id: 'cto',
+      });
       mockClient.query
         .mockResolvedValueOnce({}) // BEGIN
         .mockResolvedValueOnce({ rows: [{ id: '11111111-1111-1111-1111-111111111111' }] }) // task exists
