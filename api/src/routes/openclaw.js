@@ -246,12 +246,35 @@ async function cleanupProvisionedApiKeyArtifacts({
   }
 }
 
-async function upsertWorkspaceFile(path, content, encoding = 'utf8') {
+async function upsertWorkspaceFile(path, content, encoding = 'utf8', mode = null) {
+  const payload = { path, content, encoding, ...(mode != null ? { mode } : {}) };
+
+  const writeWithMethod = async (method, body) => {
+    try {
+      return await makeOpenClawRequest(method, '/files', body);
+    } catch (error) {
+      if (
+        mode != null &&
+        (error?.status === 400 || error?.status === 422) &&
+        typeof error?.message === 'string' &&
+        error.message.toLowerCase().includes('mode')
+      ) {
+        logger.warn('Workspace service does not support file mode; retrying without mode', {
+          path,
+          method,
+          status: error.status,
+        });
+        return makeOpenClawRequest(method, '/files', { path, content, encoding });
+      }
+      throw error;
+    }
+  };
+
   try {
-    return await makeOpenClawRequest('PUT', '/files', { path, content, encoding });
+    return await writeWithMethod('PUT', payload);
   } catch (error) {
     if (error?.status === 404) {
-      return makeOpenClawRequest('POST', '/files', { path, content, encoding });
+      return writeWithMethod('POST', payload);
     }
     throw error;
   }
@@ -572,13 +595,13 @@ This toolkit is generated into each agent workspace at \`./tools\`.
 
 1. Ensure \`mosbot.env\` exists in your workspace root.
 2. Export \`MOSBOT_ENV_FILE\` if your env file is in a non-default path.
-3. Use helper scripts directly:
+3. Use helper scripts directly (provisioned with executable permissions):
 
 \`\`\`bash
-bash ./tools/mosbot-task list --status "TO DO"
-bash ./tools/mosbot-task create "Example task" --priority "Medium"
-bash ./tools/mosbot-task update <task-id> --status "IN PROGRESS"
-bash ./tools/mosbot-task comment <task-id> "Progress note"
+./tools/mosbot-task list --status "TO DO"
+./tools/mosbot-task create "Example task" --priority "Medium"
+./tools/mosbot-task update <task-id> --status "IN PROGRESS"
+./tools/mosbot-task comment <task-id> "Progress note"
 \`\`\`
 `;
 
@@ -590,15 +613,15 @@ Local workspace notes for this agent.
 
 - \`./tools/mosbot-auth\`: Reads \`mosbot.env\` and returns a usable bearer token.
 - \`./tools/mosbot-task\`: Minimal task board CLI wrapper around \`/api/v1/tasks\` endpoints.
-- Run with \`bash ./tools/mosbot-task ...\` (workspace service writes files without executable bits).
+- Scripts are provisioned with \`+x\`, so run directly: \`./tools/mosbot-task ...\`.
 
 Default env file path: \`$PWD/mosbot.env\`.
 Override with: \`export MOSBOT_ENV_FILE=/path/to/mosbot.env\`.
 `;
 
   return [
-    { path: `${workspaceRoot}/tools/mosbot-auth`, content: mosbotAuthScript },
-    { path: `${workspaceRoot}/tools/mosbot-task`, content: mosbotTaskScript },
+    { path: `${workspaceRoot}/tools/mosbot-auth`, content: mosbotAuthScript, mode: 0o755 },
+    { path: `${workspaceRoot}/tools/mosbot-task`, content: mosbotTaskScript, mode: 0o755 },
     { path: `${workspaceRoot}/tools/INTEGRATION.md`, content: integrationDoc },
     { path: `${workspaceRoot}/TOOLS.md`, content: toolsDoc },
   ];
@@ -607,7 +630,7 @@ Override with: \`export MOSBOT_ENV_FILE=/path/to/mosbot.env\`.
 async function writeAgentToolkit(workspaceRoot) {
   const files = buildAgentToolkitFiles(workspaceRoot);
   for (const file of files) {
-    await upsertWorkspaceFile(file.path, file.content);
+    await upsertWorkspaceFile(file.path, file.content, 'utf8', file.mode ?? null);
   }
 }
 
@@ -692,7 +715,7 @@ ${projectScopeSection}
    - \`AGENTS.md\`: operating rules, workspace conventions, safety reminders
 4. Confirm \`mosbot.env\` exists in workspace root.
 ${projectChecklistStep}${queueStepNumber}. Pull your queue:
-   - \`bash ./tools/mosbot-task list --status "TO DO"\`
+   - \`./tools/mosbot-task list --status "TO DO"\`
 ${statusStepNumber}. If at least one task exists, post a brief status comment on your first task: setup complete + assumptions.
    - If no task exists, explicitly note that and continue.
 ${deleteStepNumber}. Delete this \`BOOTSTRAP.md\` after setup is complete (even when no tasks exist).

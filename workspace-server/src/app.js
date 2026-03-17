@@ -278,6 +278,25 @@ function createApp(opts) {
     return fileInfo;
   }
 
+  function parseFileMode(rawMode) {
+    if (rawMode == null) return null;
+
+    if (typeof rawMode === "number" && Number.isInteger(rawMode)) {
+      if (rawMode < 0 || rawMode > 0o777) return null;
+      return rawMode;
+    }
+
+    if (typeof rawMode === "string") {
+      const trimmed = rawMode.trim();
+      if (!/^[0-7]{3,4}$/.test(trimmed)) return null;
+      const parsed = Number.parseInt(trimmed, 8);
+      if (!Number.isInteger(parsed) || parsed < 0 || parsed > 0o777) return null;
+      return parsed;
+    }
+
+    return null;
+  }
+
   async function listDirectory(dirPath, relativePath, rootPath, recursive = false) {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
     const results = [];
@@ -646,16 +665,24 @@ function createApp(opts) {
 
   app.post("/files", optionalAuth, async (req, res, next) => {
     try {
-      const { path: relativePath, content, encoding = "utf8" } = req.body;
+      const { path: relativePath, content, encoding = "utf8", mode = null } = req.body;
 
       if (!relativePath || content === undefined) {
         return res.status(400).json({ error: "Path and content are required" });
+      }
+
+      const parsedMode = parseFileMode(mode);
+      if (mode != null && parsedMode == null) {
+        return res.status(400).json({ error: "Invalid mode" });
       }
 
       const context = resolvePathContext(relativePath);
       const dirPath = path.dirname(context.resolvedPath);
       await fs.mkdir(dirPath, { recursive: true });
       await fs.writeFile(context.resolvedPath, content, encoding);
+      if (parsedMode != null) {
+        await fs.chmod(context.resolvedPath, parsedMode);
+      }
 
       const info = await getFileInfo(
         context.resolvedPath,
@@ -674,10 +701,15 @@ function createApp(opts) {
 
   app.put("/files", optionalAuth, async (req, res, next) => {
     try {
-      const { path: relativePath, content, encoding = "utf8" } = req.body;
+      const { path: relativePath, content, encoding = "utf8", mode = null } = req.body;
 
       if (!relativePath || content === undefined) {
         return res.status(400).json({ error: "Path and content are required" });
+      }
+
+      const parsedMode = parseFileMode(mode);
+      if (mode != null && parsedMode == null) {
+        return res.status(400).json({ error: "Invalid mode" });
       }
 
       const context = resolvePathContext(relativePath);
@@ -689,6 +721,9 @@ function createApp(opts) {
       }
 
       await fs.writeFile(context.resolvedPath, content, encoding);
+      if (parsedMode != null) {
+        await fs.chmod(context.resolvedPath, parsedMode);
+      }
       const info = await getFileInfo(
         context.resolvedPath,
         context.normalizedPath,

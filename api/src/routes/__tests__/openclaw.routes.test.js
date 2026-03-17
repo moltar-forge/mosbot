@@ -1175,6 +1175,74 @@ describe('OpenClaw Routes', () => {
       expect(ensureDocsLinkIfMissing).toHaveBeenCalledWith('new-agent');
     });
 
+    it('provisions toolkit scripts with executable mode and falls back when mode is unsupported', async () => {
+      const token = getToken('admin-id', 'admin');
+      const writes = [];
+
+      global.fetch = jest.fn().mockImplementation(async (url, options) => {
+        if (options?.method === 'GET') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              content: JSON.stringify({
+                leadership: [],
+                agents: { list: [] },
+              }),
+            }),
+            text: async () => 'OK',
+          };
+        }
+
+        if ((options?.method === 'PUT' || options?.method === 'POST') && String(url).endsWith('/files')) {
+          const body = JSON.parse(options.body || '{}');
+          writes.push({ method: options.method, path: body.path, mode: body.mode });
+
+          // Simulate older workspace service behavior: rejects mode payloads.
+          if (body.path?.endsWith('/tools/mosbot-auth') && body.mode != null) {
+            return {
+              ok: false,
+              status: 400,
+              text: async () => 'Invalid mode',
+            };
+          }
+
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ created: true }),
+            text: async () => 'OK',
+          };
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+          text: async () => 'OK',
+        };
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'new-agent',
+          title: 'New Agent',
+          displayName: 'New Agent Display Name',
+        });
+
+      expect(response.status).toBe(201);
+
+      const authWrites = writes.filter((w) => w.path === '/workspace-new-agent/tools/mosbot-auth');
+      expect(authWrites.length).toBeGreaterThanOrEqual(2);
+      expect(authWrites[0].mode).toBe(0o755);
+      expect(authWrites.some((w) => w.mode == null)).toBe(true);
+
+      const taskWrite = writes.find((w) => w.path === '/workspace-new-agent/tools/mosbot-task');
+      expect(taskWrite?.mode).toBe(0o755);
+    });
+
     it('includes project onboarding context in create bootstrap when assigned projects exist', async () => {
       const token = getToken('admin-id', 'admin');
       let bootstrapContent = '';
