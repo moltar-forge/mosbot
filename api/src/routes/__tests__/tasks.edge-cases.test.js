@@ -18,10 +18,15 @@ const tasksRouter = require('../tasks');
 
 // Helper to get JWT token for a user
 function getToken(userId, role, email = 'test@example.com', name = 'Test User', extras = {}) {
-  const jwtSecret = process.env.JWT_SECRET || 'test-only-jwt-secret-not-for-production';
-  return jwt.sign({ id: userId, role, email, name, ...extras }, jwtSecret, {
-    expiresIn: '1h',
-  });
+  const payload = { id: userId, role, email, name, ...extras };
+  try {
+    // Keep token generation aligned with app runtime config.
+    // eslint-disable-next-line global-require
+    return require('../../utils/jwt').signToken(payload).token;
+  } catch (_err) {
+    const jwtSecret = process.env.JWT_SECRET || 'test-only-jwt-secret-not-for-production';
+    return jwt.sign(payload, jwtSecret, { expiresIn: '1h' });
+  }
 }
 
 // Existing task fixture for update route tests
@@ -336,6 +341,24 @@ describe('Tasks Route Edge Cases', () => {
         'Only agent/admin/owner can update execution metadata fields',
       );
     });
+
+    it('should return 403 when agent role token lacks agent_id for execution metadata update', async () => {
+      const token = getToken('agent-123', 'agent', 'agent@example.com', 'Agent User');
+      mockClient.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [existingTask] }) // SELECT existing task
+        .mockResolvedValueOnce({}); // ROLLBACK
+
+      const response = await request(app)
+        .patch('/api/v1/tasks/11111111-1111-1111-1111-111111111111')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          last_agent_id: 'cto',
+        });
+
+      expect(response.status).toBe(403);
+      expect(response.body.error.message).toBe('Agent identity missing from auth context');
+    });
   });
 
   describe('Task Execution Metadata Edge Cases', () => {
@@ -350,6 +373,9 @@ describe('Tasks Route Edge Cases', () => {
 
     it('should return 403 when non-agent/admin/owner records execution metadata', async () => {
       const token = getToken('user-123', 'user');
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: 'user-123', name: 'Test User', email: 'test@example.com', role: 'user', active: true }],
+      });
 
       const response = await request(app)
         .post('/api/v1/tasks/11111111-1111-1111-1111-111111111111/execution')
@@ -364,6 +390,17 @@ describe('Tasks Route Edge Cases', () => {
       const token = getToken('agent-123', 'agent', 'agent@example.com', 'Agent User', {
         agent_id: 'cto',
       });
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'agent-123',
+            name: 'Agent User',
+            email: 'agent@example.com',
+            role: 'agent',
+            active: true,
+          },
+        ],
+      });
 
       const response = await request(app)
         .post('/api/v1/tasks/11111111-1111-1111-1111-111111111111/execution')
@@ -377,6 +414,17 @@ describe('Tasks Route Edge Cases', () => {
     it('should record execution metadata and return updated task', async () => {
       const token = getToken('agent-123', 'agent', 'agent@example.com', 'Agent User', {
         agent_id: 'cto',
+      });
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'agent-123',
+            name: 'Agent User',
+            email: 'agent@example.com',
+            role: 'agent',
+            active: true,
+          },
+        ],
       });
       mockClient.query
         .mockResolvedValueOnce({}) // BEGIN

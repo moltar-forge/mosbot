@@ -48,11 +48,45 @@ const validateTaskKey = (paramName) => (req, res, next) => {
 };
 
 // Optional auth middleware - sets req.user if valid token present, but doesn't reject
-const optionalAuth = (req, res, next) => {
+const optionalAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
+
+    if (token.startsWith('mba_')) {
+      try {
+        const result = await pool.query(
+          `SELECT a.id AS agent_db_id, a.agent_id, a.name, a.status, a.active,
+                  k.id AS key_id
+             FROM agent_api_keys k
+             JOIN agents a ON a.agent_id = k.agent_id
+            WHERE k.key_hash = encode(digest($1, 'sha256'), 'hex')
+              AND k.revoked_at IS NULL
+            LIMIT 1`,
+          [token],
+        );
+
+        if (result.rows.length > 0) {
+          const row = result.rows[0];
+          if (row.active && row.status !== 'deprecated') {
+            req.user = {
+              id: null,
+              agent_db_id: row.agent_db_id,
+              role: 'agent',
+              name: row.name,
+              agent_id: row.agent_id,
+              auth_type: 'api_key',
+            };
+          }
+        }
+      } catch (_err) {
+        // Ignore optional auth failures; route-level auth checks enforce access.
+      }
+
+      return next();
+    }
+
     try {
       const decoded = jwt.verify(token, getJwtSecret());
       req.user = decoded;
@@ -125,6 +159,22 @@ function sanitizeProjectMetadataForAuth(task, user) {
     project_docs_path: null,
     project_default_branch: null,
   };
+}
+
+function normalizeOptionalExecutionString(value, field, maxLength) {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (value === null) return { ok: true, value: null };
+  if (typeof value !== 'string') {
+    return { ok: false, error: `${field} must be a string` };
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { ok: false, error: `${field} must be a non-empty string or null` };
+  }
+  if (trimmed.length > maxLength) {
+    return { ok: false, error: `${field} must be ${maxLength} characters or less` };
+  }
+  return { ok: true, value: trimmed };
 }
 
 function computeTaskDiff(oldTask, newTask) {
@@ -749,22 +799,6 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
       }
     }
 
-    const normalizeOptionalExecutionString = (value, field, maxLength) => {
-      if (value === undefined) return { ok: true, value: undefined };
-      if (value === null) return { ok: true, value: null };
-      if (typeof value !== 'string') {
-        return { ok: false, error: `${field} must be a string` };
-      }
-      const trimmed = value.trim();
-      if (!trimmed) {
-        return { ok: false, error: `${field} must be a non-empty string or null` };
-      }
-      if (trimmed.length > maxLength) {
-        return { ok: false, error: `${field} must be ${maxLength} characters or less` };
-      }
-      return { ok: true, value: trimmed };
-    };
-
     const normalizedLastAgentIdResult = normalizeOptionalExecutionString(
       last_agent_id,
       'last_agent_id',
@@ -832,16 +866,20 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
       });
     }
 
-    if (
-      req.user?.role === 'agent' &&
-      normalizedLastAgentIdResult.value &&
-      req.user.agent_id &&
-      normalizedLastAgentIdResult.value !== req.user.agent_id
-    ) {
-      await client.query('ROLLBACK');
-      return res.status(403).json({
-        error: { message: 'Agents cannot set execution metadata for another agent', status: 403 },
-      });
+    if (req.user?.role === 'agent') {
+      if (!req.user.agent_id) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          error: { message: 'Agent identity missing from auth context', status: 403 },
+        });
+      }
+
+      if (normalizedLastAgentIdResult.value && normalizedLastAgentIdResult.value !== req.user.agent_id) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          error: { message: 'Agents cannot set execution metadata for another agent', status: 403 },
+        });
+      }
     }
 
     let normalizedLastReportedAt = undefined;
@@ -1271,22 +1309,6 @@ router.post('/:id/execution', optionalAuth, validateUUID('id'), async (req, res,
         },
       });
     }
-
-    const normalizeOptionalExecutionString = (value, field, maxLength) => {
-      if (value === undefined) return { ok: true, value: undefined };
-      if (value === null) return { ok: true, value: null };
-      if (typeof value !== 'string') {
-        return { ok: false, error: `${field} must be a string` };
-      }
-      const trimmed = value.trim();
-      if (!trimmed) {
-        return { ok: false, error: `${field} must be a non-empty string or null` };
-      }
-      if (trimmed.length > maxLength) {
-        return { ok: false, error: `${field} must be ${maxLength} characters or less` };
-      }
-      return { ok: true, value: trimmed };
-    };
 
     const normalizedAgentIdResult = normalizeOptionalExecutionString(agent_id, 'agent_id', 100);
     if (!normalizedAgentIdResult.ok) {
