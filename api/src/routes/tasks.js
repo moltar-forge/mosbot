@@ -6,12 +6,13 @@ const logger = require('../utils/logger');
 const { validateAndNormalizeTags } = require('../utils/tags');
 const { getJwtSecret } = require('../utils/jwt');
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Middleware to validate UUID
 const validateUUID = (paramName) => (req, res, next) => {
   const id = req.params[paramName];
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  if (!uuidRegex.test(id)) {
+  if (!UUID_REGEX.test(id)) {
     return res.status(400).json({ error: { message: 'Invalid UUID format', status: 400 } });
   }
   next();
@@ -47,6 +48,30 @@ const optionalAuth = (req, res, next) => {
   next();
 };
 
+async function validateProjectContext(projectId, queryClient = pool) {
+  if (projectId === undefined) {
+    return { ok: true };
+  }
+
+  if (projectId !== null && !UUID_REGEX.test(String(projectId))) {
+    return { ok: false, status: 400, message: 'project_id must be a valid UUID or null' };
+  }
+
+  if (projectId === null) {
+    return { ok: true };
+  }
+
+  const projectResult = await queryClient.query('SELECT 1 FROM projects WHERE id = $1', [
+    projectId,
+  ]);
+
+  if (projectResult.rows.length === 0) {
+    return { ok: false, status: 400, message: 'Project not found' };
+  }
+
+  return { ok: true };
+}
+
 // Helper to log task events
 async function logTaskEvent(
   client,
@@ -76,6 +101,16 @@ async function logTaskEvent(
 }
 
 // Helper to compute diff between old and new task objects
+function sanitizeProjectMetadataForAuth(task, user) {
+  if (user || !task) return task;
+  return {
+    ...task,
+    project_repo_url: null,
+    project_docs_path: null,
+    project_default_branch: null,
+  };
+}
+
 function computeTaskDiff(oldTask, newTask) {
   const oldValues = {};
   const newValues = {};
@@ -93,6 +128,7 @@ function computeTaskDiff(oldTask, newTask) {
     'archived_at',
     'tags',
     'parent_task_id',
+    'project_id',
     'preferred_model',
   ];
 
@@ -152,11 +188,19 @@ router.get('/', optionalAuth, async (req, res, next) => {
         u_assignee.name as assignee_name,
         u_assignee.email as assignee_email,
         parent_task.task_number as parent_task_number,
-        parent_task.title as parent_task_title
+        parent_task.title as parent_task_title,
+        p.slug AS project_slug,
+        p.name AS project_name,
+        p.root_path AS project_root_path,
+        p.contract_path AS project_contract_path,
+        p.repo_url AS project_repo_url,
+        p.docs_path AS project_docs_path,
+        p.default_branch AS project_default_branch
       FROM tasks t
       LEFT JOIN users u_reporter ON t.reporter_id = u_reporter.id
       LEFT JOIN users u_assignee ON t.assignee_id = u_assignee.id
       LEFT JOIN tasks parent_task ON t.parent_task_id = parent_task.id
+      LEFT JOIN projects p ON t.project_id = p.id
       WHERE 1=1
     `;
 
@@ -214,9 +258,10 @@ router.get('/', optionalAuth, async (req, res, next) => {
     params.push(limitNum, offsetNum);
 
     const result = await pool.query(query, params);
+    const data = result.rows.map((row) => sanitizeProjectMetadataForAuth(row, req.user));
 
     res.json({
-      data: result.rows,
+      data,
       pagination: {
         limit: limitNum,
         offset: offsetNum,
@@ -244,11 +289,19 @@ router.get('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
         u_assignee.email as assignee_email,
         u_assignee.avatar_url as assignee_avatar,
         parent_task.task_number as parent_task_number,
-        parent_task.title as parent_task_title
+        parent_task.title as parent_task_title,
+        p.slug AS project_slug,
+        p.name AS project_name,
+        p.root_path AS project_root_path,
+        p.contract_path AS project_contract_path,
+        p.repo_url AS project_repo_url,
+        p.docs_path AS project_docs_path,
+        p.default_branch AS project_default_branch
       FROM tasks t
       LEFT JOIN users u_reporter ON t.reporter_id = u_reporter.id
       LEFT JOIN users u_assignee ON t.assignee_id = u_assignee.id
       LEFT JOIN tasks parent_task ON t.parent_task_id = parent_task.id
+      LEFT JOIN projects p ON t.project_id = p.id
       WHERE t.id = $1
     `,
       [id],
@@ -258,7 +311,7 @@ router.get('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
       return res.status(404).json({ error: { message: 'Task not found', status: 404 } });
     }
 
-    res.json({ data: result.rows[0] });
+    res.json({ data: sanitizeProjectMetadataForAuth(result.rows[0], req.user) });
   } catch (error) {
     next(error);
   }
@@ -280,10 +333,18 @@ router.get('/key/:key', optionalAuth, validateTaskKey('key'), async (req, res, n
         u_reporter.avatar_url as reporter_avatar,
         u_assignee.name as assignee_name,
         u_assignee.email as assignee_email,
-        u_assignee.avatar_url as assignee_avatar
+        u_assignee.avatar_url as assignee_avatar,
+        p.slug AS project_slug,
+        p.name AS project_name,
+        p.root_path AS project_root_path,
+        p.contract_path AS project_contract_path,
+        p.repo_url AS project_repo_url,
+        p.docs_path AS project_docs_path,
+        p.default_branch AS project_default_branch
       FROM tasks t
       LEFT JOIN users u_reporter ON t.reporter_id = u_reporter.id
       LEFT JOIN users u_assignee ON t.assignee_id = u_assignee.id
+      LEFT JOIN projects p ON t.project_id = p.id
       WHERE t.task_number = $1
     `,
       [taskNumber],
@@ -293,7 +354,7 @@ router.get('/key/:key', optionalAuth, validateTaskKey('key'), async (req, res, n
       return res.status(404).json({ error: { message: 'Task not found', status: 404 } });
     }
 
-    res.json({ data: result.rows[0] });
+    res.json({ data: sanitizeProjectMetadataForAuth(result.rows[0], req.user) });
   } catch (error) {
     next(error);
   }
@@ -315,6 +376,7 @@ router.post('/', optionalAuth, async (req, res, next) => {
       due_date,
       tags,
       parent_task_id,
+      project_id,
       agent_cost_usd,
       agent_tokens_input,
       agent_tokens_input_cache,
@@ -416,10 +478,17 @@ router.post('/', optionalAuth, async (req, res, next) => {
 
     // Validate parent_task_id if provided
     if (parent_task_id) {
-      const parentResult = await pool.query('SELECT id FROM tasks WHERE id = $1', [parent_task_id]);
+      const parentResult = await client.query('SELECT id FROM tasks WHERE id = $1', [parent_task_id]);
       if (parentResult.rows.length === 0) {
         return res.status(400).json({ error: { message: 'Parent task not found', status: 400 } });
       }
+    }
+
+    const projectValidation = await validateProjectContext(project_id, client);
+    if (!projectValidation.ok) {
+      return res
+        .status(projectValidation.status)
+        .json({ error: { message: projectValidation.message, status: projectValidation.status } });
     }
 
     // Auto-set reporter_id to authenticated user if not provided
@@ -429,10 +498,10 @@ router.post('/', optionalAuth, async (req, res, next) => {
 
     const result = await client.query(
       `
-      INSERT INTO tasks (title, summary, description, status, priority, type, reporter_id, assignee_id, due_date, tags, parent_task_id, 
-        agent_cost_usd, agent_tokens_input, agent_tokens_input_cache, agent_tokens_output, agent_tokens_output_cache, 
+      INSERT INTO tasks (title, summary, description, status, priority, type, reporter_id, assignee_id, due_date, tags, parent_task_id, project_id,
+        agent_cost_usd, agent_tokens_input, agent_tokens_input_cache, agent_tokens_output, agent_tokens_output_cache,
         agent_model, agent_model_provider, preferred_model)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       RETURNING *
     `,
       [
@@ -447,6 +516,7 @@ router.post('/', optionalAuth, async (req, res, next) => {
         due_date,
         normalizedTags,
         parent_task_id || null,
+        project_id || null,
         agent_cost_usd ?? null,
         agent_tokens_input ?? null,
         agent_tokens_input_cache ?? null,
@@ -473,6 +543,7 @@ router.post('/', optionalAuth, async (req, res, next) => {
       due_date: newTask.due_date,
       tags: newTask.tags,
       parent_task_id: newTask.parent_task_id,
+      project_id: newTask.project_id,
       preferred_model: newTask.preferred_model,
     };
 
@@ -490,17 +561,25 @@ router.post('/', optionalAuth, async (req, res, next) => {
         u_assignee.name as assignee_name,
         u_assignee.email as assignee_email,
         parent_task.task_number as parent_task_number,
-        parent_task.title as parent_task_title
+        parent_task.title as parent_task_title,
+        p.slug AS project_slug,
+        p.name AS project_name,
+        p.root_path AS project_root_path,
+        p.contract_path AS project_contract_path,
+        p.repo_url AS project_repo_url,
+        p.docs_path AS project_docs_path,
+        p.default_branch AS project_default_branch
       FROM tasks t
       LEFT JOIN users u_reporter ON t.reporter_id = u_reporter.id
       LEFT JOIN users u_assignee ON t.assignee_id = u_assignee.id
       LEFT JOIN tasks parent_task ON t.parent_task_id = parent_task.id
+      LEFT JOIN projects p ON t.project_id = p.id
       WHERE t.id = $1
     `,
       [newTask.id],
     );
 
-    res.status(201).json({ data: completeTask.rows[0] });
+    res.status(201).json({ data: sanitizeProjectMetadataForAuth(completeTask.rows[0], req.user) });
   } catch (error) {
     await client.query('ROLLBACK');
     next(error);
@@ -526,6 +605,7 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
       due_date,
       tags,
       parent_task_id,
+      project_id,
       agent_cost_usd,
       agent_tokens_input,
       agent_tokens_input_cache,
@@ -540,7 +620,7 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
 
     // Fetch full existing task for diff computation
     const existing = await client.query(
-      'SELECT id, title, summary, description, status, priority, type, reporter_id, assignee_id, due_date, done_at, archived_at, tags, parent_task_id, preferred_model FROM tasks WHERE id = $1',
+      'SELECT id, title, summary, description, status, priority, type, reporter_id, assignee_id, due_date, done_at, archived_at, tags, parent_task_id, project_id, preferred_model FROM tasks WHERE id = $1',
       [id],
     );
     if (existing.rows.length === 0) {
@@ -644,6 +724,14 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
           .status(400)
           .json({ error: { message: 'Task cannot be its own parent', status: 400 } });
       }
+    }
+
+    const projectValidation = await validateProjectContext(project_id, client);
+    if (!projectValidation.ok) {
+      await client.query('ROLLBACK');
+      return res
+        .status(projectValidation.status)
+        .json({ error: { message: projectValidation.message, status: projectValidation.status } });
     }
 
     // Hard blocking: Check dependencies before allowing status change to IN PROGRESS or DONE
@@ -810,6 +898,12 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
       paramCount++;
     }
 
+    if (project_id !== undefined) {
+      updates.push(`project_id = $${paramCount}`);
+      params.push(project_id);
+      paramCount++;
+    }
+
     // Handle agent usage fields
     if (agent_cost_usd !== undefined) {
       updates.push(`agent_cost_usd = $${paramCount}`);
@@ -927,17 +1021,25 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
         u_assignee.name as assignee_name,
         u_assignee.email as assignee_email,
         parent_task.task_number as parent_task_number,
-        parent_task.title as parent_task_title
+        parent_task.title as parent_task_title,
+        p.slug AS project_slug,
+        p.name AS project_name,
+        p.root_path AS project_root_path,
+        p.contract_path AS project_contract_path,
+        p.repo_url AS project_repo_url,
+        p.docs_path AS project_docs_path,
+        p.default_branch AS project_default_branch
       FROM tasks t
       LEFT JOIN users u_reporter ON t.reporter_id = u_reporter.id
       LEFT JOIN users u_assignee ON t.assignee_id = u_assignee.id
       LEFT JOIN tasks parent_task ON t.parent_task_id = parent_task.id
+      LEFT JOIN projects p ON t.project_id = p.id
       WHERE t.id = $1
     `,
       [id],
     );
 
-    res.json({ data: completeTask.rows[0] });
+    res.json({ data: sanitizeProjectMetadataForAuth(completeTask.rows[0], req.user) });
   } catch (error) {
     await client.query('ROLLBACK');
     next(error);

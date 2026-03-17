@@ -1370,7 +1370,8 @@ router.use(
 router.get('/projects', requireAuth, async (req, res, next) => {
   try {
     const result = await pool.query(
-      `SELECT p.id, p.slug, p.name, p.description, p.root_path, p.contract_path, p.status,
+      `SELECT p.id, p.slug, p.name, p.description, p.root_path, p.contract_path,
+              p.repo_url, p.docs_path, p.default_branch, p.status,
               p.created_at, p.updated_at,
               COUNT(apa.agent_id)::int AS assigned_agents,
               COALESCE(
@@ -1583,15 +1584,30 @@ router.post('/projects', requireAuth, requireAdmin, async (req, res, next) => {
     const contractPath = normalizeProjectContractPath(body.contractPath, rootPath);
 
     const result = await pool.query(
-      `INSERT INTO projects (slug, name, description, root_path, contract_path, status, created_by_user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, slug, name, description, root_path, contract_path, status, created_at, updated_at`,
+      `INSERT INTO projects (
+          slug,
+          name,
+          description,
+          root_path,
+          contract_path,
+          repo_url,
+          docs_path,
+          default_branch,
+          status,
+          created_by_user_id
+        )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, slug, name, description, root_path, contract_path, repo_url, docs_path,
+                 default_branch, status, created_at, updated_at`,
       [
         slug,
         name,
         body.description || '',
         rootPath,
         contractPath,
+        body.repoUrl || null,
+        body.docsPath || null,
+        body.defaultBranch || 'main',
         body.status === 'archived' ? 'archived' : 'active',
         req.user.id,
       ],
@@ -1660,6 +1676,26 @@ router.put('/projects/:projectId', requireAuth, requireAdmin, async (req, res, n
         ? normalizeProjectContractPath(null, rootPath)
         : current.contract_path;
 
+    const normalizeNullableString = (value, fallback = null) => {
+      if (value === undefined) return fallback;
+      if (value === null) return null;
+      const trimmed = String(value).trim();
+      return trimmed.length > 0 ? trimmed : null;
+    };
+
+    const normalizedRepoUrl =
+      body.repoUrl === undefined
+        ? current.repo_url
+        : normalizeNullableString(body.repoUrl, current.repo_url);
+    const normalizedDocsPath =
+      body.docsPath === undefined
+        ? current.docs_path
+        : normalizeNullableString(body.docsPath, current.docs_path);
+    const normalizedDefaultBranch =
+      body.defaultBranch === undefined
+        ? current.default_branch || 'main'
+        : normalizeNullableString(body.defaultBranch, current.default_branch || 'main') || 'main';
+
     const result = await pool.query(
       `UPDATE projects
           SET slug = $2,
@@ -1667,10 +1703,14 @@ router.put('/projects/:projectId', requireAuth, requireAdmin, async (req, res, n
               description = $4,
               root_path = $5,
               contract_path = $6,
-              status = $7,
+              repo_url = $7,
+              docs_path = $8,
+              default_branch = $9,
+              status = $10,
               updated_at = NOW()
         WHERE id = $1
-      RETURNING id, slug, name, description, root_path, contract_path, status, created_at, updated_at`,
+      RETURNING id, slug, name, description, root_path, contract_path, repo_url, docs_path,
+                default_branch, status, created_at, updated_at`,
       [
         projectId,
         slug,
@@ -1678,6 +1718,9 @@ router.put('/projects/:projectId', requireAuth, requireAdmin, async (req, res, n
         body.description ?? current.description,
         rootPath,
         contractPath,
+        normalizedRepoUrl,
+        normalizedDocsPath,
+        normalizedDefaultBranch,
         body.status === 'archived' ? 'archived' : body.status === 'active' ? 'active' : current.status,
       ],
     );

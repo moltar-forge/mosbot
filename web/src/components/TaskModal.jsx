@@ -37,7 +37,7 @@ import {
   STATUS_CONFIG,
   TASK_TYPE_CONFIG,
 } from '../utils/constants';
-import { api, getTaskSubagents } from '../api/client';
+import { api, getTaskSubagents, getProjects } from '../api/client';
 import { formatDateTimeLocal, classNames } from '../utils/helpers';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -115,6 +115,10 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
 
+  // Projects for task context
+  const [projects, setProjects] = useState([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+
   // Epic tasks for parent epic dropdown
   const [epicTasks, setEpicTasks] = useState([]);
   const [loadingEpics, setLoadingEpics] = useState(false);
@@ -154,6 +158,7 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
     dueDate: '',
     assignee_id: '',
     parent_task_id: '',
+    project_id: '',
     preferred_model: '',
     tags: [],
   });
@@ -201,6 +206,19 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
       setModels([]);
     } finally {
       setLoadingModels(false);
+    }
+  };
+
+  const fetchProjects = async () => {
+    setLoadingProjects(true);
+    try {
+      const data = await getProjects();
+      setProjects(Array.isArray(data) ? data : []);
+    } catch (error) {
+      logger.error('Failed to fetch projects', error);
+      setProjects([]);
+    } finally {
+      setLoadingProjects(false);
     }
   };
 
@@ -266,6 +284,9 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
       // Fetch models for AI model dropdown
       fetchModels();
 
+      // Fetch projects for task context
+      fetchProjects();
+
       // Fetch existing tags for autocomplete
       fetchExistingTags();
 
@@ -302,6 +323,7 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
           dueDate: task.due_date ? new Date(task.due_date).toISOString().split('T')[0] : '',
           assignee_id: task.assignee_id || '',
           parent_task_id: task.parent_task_id || '',
+          project_id: task.project_id || '',
           preferred_model: task.preferred_model || '',
           tags: taskTags,
         });
@@ -339,6 +361,7 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
           dueDate: '',
           assignee_id: '',
           parent_task_id: '',
+          project_id: '',
           preferred_model: '',
           tags: [],
         });
@@ -668,6 +691,7 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
       due_date: formData.dueDate || null,
       assignee_id: formData.assignee_id || null,
       parent_task_id: formData.parent_task_id || null,
+      project_id: formData.project_id || null,
       preferred_model: formData.preferred_model || null,
       tags: tags && tags.length > 0 ? tags : null,
     };
@@ -697,6 +721,7 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
             : '',
           assignee_id: mergedTask.assignee_id || '',
           parent_task_id: mergedTask.parent_task_id || '',
+          project_id: mergedTask.project_id || '',
           preferred_model: mergedTask.preferred_model || '',
           tags: tags,
         });
@@ -1285,6 +1310,22 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
                                 <p className="text-dark-100">
                                   {users.find((u) => u.id === formData.assignee_id)?.name ||
                                     'Unknown'}
+                                </p>
+                              </div>
+                            )}
+
+                            {formData.project_id && (
+                              <div className="border-t border-dark-700 pt-4">
+                                <label className="block text-xs font-medium text-dark-500 mb-1 uppercase tracking-wider">
+                                  Project
+                                </label>
+                                <p className="text-dark-100">
+                                  {internalTask?.project_slug
+                                    ? `${internalTask.project_slug} — ${
+                                        internalTask.project_name || 'Unknown'
+                                      }`
+                                    : projects.find((p) => p.id === formData.project_id)?.name ||
+                                      'Unknown'}
                                 </p>
                               </div>
                             )}
@@ -2539,6 +2580,34 @@ export default function TaskModal({ isOpen, onClose, task = null }) {
                                 epicTasks.map((epic) => (
                                   <option key={epic.id} value={epic.id}>
                                     TASK-{epic.task_number} - {epic.title}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          </div>
+
+                          {/* Project */}
+                          <div>
+                            <label
+                              htmlFor="project_id"
+                              className="block text-xs font-medium text-dark-500 mb-2 uppercase tracking-wider"
+                            >
+                              Project
+                            </label>
+                            <select
+                              id="project_id"
+                              name="project_id"
+                              value={formData.project_id}
+                              onChange={handleChange}
+                              className="input-field"
+                            >
+                              <option value="">None</option>
+                              {loadingProjects ? (
+                                <option disabled>Loading projects...</option>
+                              ) : (
+                                projects.map((project) => (
+                                  <option key={project.id} value={project.id}>
+                                    {project.slug} — {project.name}
                                   </option>
                                 ))
                               )}

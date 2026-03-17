@@ -176,6 +176,37 @@ describe('Tasks Route Edge Cases', () => {
       expect(response.status).toBe(400);
       expect(response.body.error.message).toBe('Parent task not found');
     });
+
+    it('should return 400 when creating task with invalid project_id format', async () => {
+      const token = getToken('user-123', 'user');
+
+      const response = await request(app)
+        .post('/api/v1/tasks')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          title: 'Test Task',
+          project_id: 'not-a-uuid',
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toBe('project_id must be a valid UUID or null');
+    });
+
+    it('should return 400 when creating task with project_id that does not exist', async () => {
+      const token = getToken('user-123', 'user');
+      pool.query.mockResolvedValueOnce({ rows: [] }); // Project lookup
+
+      const response = await request(app)
+        .post('/api/v1/tasks')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          title: 'Test Task',
+          project_id: '22222222-2222-2222-2222-222222222222',
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toBe('Project not found');
+    });
   });
 
   describe('Task Update Edge Cases', () => {
@@ -243,6 +274,40 @@ describe('Tasks Route Edge Cases', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.error.message).toBe('Invalid type');
+    });
+
+    it('should return 400 when updating task with invalid project_id format', async () => {
+      const token = getToken('user-123', 'user');
+      setupUpdateMocks();
+
+      const response = await request(app)
+        .patch('/api/v1/tasks/11111111-1111-1111-1111-111111111111')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          project_id: 'not-a-uuid',
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toBe('project_id must be a valid UUID or null');
+    });
+
+    it('should return 400 when updating task with project_id that does not exist', async () => {
+      const token = getToken('user-123', 'user');
+      mockClient.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: [existingTask] }) // SELECT existing task
+        .mockResolvedValueOnce({ rows: [] }) // validateProjectContext lookup
+        .mockResolvedValueOnce({}); // ROLLBACK
+
+      const response = await request(app)
+        .patch('/api/v1/tasks/11111111-1111-1111-1111-111111111111')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          project_id: '22222222-2222-2222-2222-222222222222',
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toBe('Project not found');
     });
   });
 
