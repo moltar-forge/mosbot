@@ -258,17 +258,6 @@ async function upsertWorkspaceFile(path, content, encoding = 'utf8') {
   }
 }
 
-async function ensureExecutableMode(filePath) {
-  try {
-    await fs.chmod(filePath, 0o755);
-  } catch (error) {
-    logger.warn('Failed to set executable bit on workspace file (non-fatal)', {
-      path: filePath,
-      error: error.message,
-    });
-  }
-}
-
 async function workspaceFileExists(filePath) {
   const normalizedFilePath = normalizeAndValidateWorkspacePath(filePath);
   const parentPath = path.posix.dirname(normalizedFilePath);
