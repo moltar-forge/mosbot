@@ -188,6 +188,19 @@ describe('admin agents API key routes', () => {
     });
   });
 
+  it('returns 429 when config.apply is rate-limited', async () => {
+    parseOpenClawConfig.mockReturnValue({ agents: { list: [{ id: 'coo' }] } });
+
+    const rateLimitError = new Error('rate limit exceeded for config.apply; retry after 30s');
+    gatewayWsRpc.mockRejectedValue(rateLimitError);
+
+    const res = await request(app).delete('/api/v1/admin/agents/coo');
+
+    expect(res.status).toBe(429);
+    expect(res.body.error.message).toContain('retry after 30s');
+    expect(pool.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
   it('deletes an agent end-to-end with runtime + DB cleanup', async () => {
     parseOpenClawConfig.mockReturnValue({
       agents: {

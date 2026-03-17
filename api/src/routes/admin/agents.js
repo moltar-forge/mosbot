@@ -16,6 +16,10 @@ router.use(requireManageUsers);
 const AGENT_ID_REGEX = /^[a-z0-9_-]+$/;
 const ACTIVE_SESSION_WINDOW_MS = 30 * 60 * 1000;
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function parseBooleanParam(value) {
   if (value === undefined || value === null || value === '') return false;
   if (typeof value === 'boolean') return value;
@@ -69,6 +73,41 @@ function isActiveSession(session, nowMs = Date.now()) {
   if (!updatedAtMs) return true;
 
   return nowMs - updatedAtMs <= ACTIVE_SESSION_WINDOW_MS;
+}
+
+function parseRetryAfterSecondsFromError(error) {
+  const message = String(error?.message || '');
+  const match = message.match(/retry after\s+(\d+)s/i);
+  if (!match) return null;
+  const seconds = Number.parseInt(match[1], 10);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
+async function applyConfigWithRateLimitRetry({ raw, note, maxRetries = 1 }) {
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    try {
+      return await gatewayWsRpc('config.apply', { raw, note });
+    } catch (error) {
+      const retryAfterSeconds = parseRetryAfterSecondsFromError(error);
+      const isRateLimit = Boolean(retryAfterSeconds);
+      if (!isRateLimit || attempt >= maxRetries) {
+        if (isRateLimit) {
+          error.status = 429;
+          error.code = 'RATE_LIMITED';
+          error.retryAfterSeconds = retryAfterSeconds;
+        }
+        throw error;
+      }
+
+      logger.warn('config.apply rate-limited during agent delete; retrying', {
+        retryAfterSeconds,
+      });
+      const waitMs = process.env.NODE_ENV === 'test' ? 0 : retryAfterSeconds * 1000;
+      await sleep(waitMs);
+      attempt += 1;
+    }
+  }
 }
 
 // POST /api/v1/admin/agents/sync
@@ -277,7 +316,7 @@ router.delete('/:agentId', async (req, res, next) => {
 
       openclawConfig.agents.list = nextAgents;
       const openclawContent = JSON.stringify(openclawConfig, null, 2) + '\n';
-      await gatewayWsRpc('config.apply', {
+      await applyConfigWithRateLimitRetry({
         raw: openclawContent,
         note: `Delete agent ${agentId} from runtime config`,
       });
