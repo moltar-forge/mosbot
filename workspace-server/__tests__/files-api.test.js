@@ -37,7 +37,10 @@ describe("Files API", () => {
     await fs.writeFile(path.join(configRoot, "projects", "project.txt"), "project");
     await fs.writeFile(path.join(configRoot, "skills", "skill.txt"), "skill");
     await fs.writeFile(path.join(configRoot, "docs", "readme.md"), "docs");
-    await fs.writeFile(path.join(configRoot, "_archive", "archived-new.txt"), "new archive content");
+    await fs.writeFile(
+      path.join(configRoot, "_archive", "archived-new.txt"),
+      "new archive content",
+    );
     await fs.writeFile(
       path.join(configRoot, "_archived_workspace_main", "archived.txt"),
       "archived content",
@@ -211,7 +214,9 @@ describe("Files API", () => {
     });
 
     it("returns content for canonical archived workspace files from config root", async () => {
-      const res = await request(app).get("/files/content?path=/_archive/archived-new.txt");
+      const res = await request(app).get(
+        "/files/content?path=/_archive/archived-new.txt",
+      );
       expect(res.status).toBe(200);
       expect(res.body.content).toBe("new archive content");
     });
