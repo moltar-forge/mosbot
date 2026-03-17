@@ -101,6 +101,16 @@ async function logTaskEvent(
 }
 
 // Helper to compute diff between old and new task objects
+function sanitizeProjectMetadataForAuth(task, user) {
+  if (user || !task) return task;
+  return {
+    ...task,
+    project_repo_url: null,
+    project_docs_path: null,
+    project_default_branch: null,
+  };
+}
+
 function computeTaskDiff(oldTask, newTask) {
   const oldValues = {};
   const newValues = {};
@@ -248,14 +258,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
     params.push(limitNum, offsetNum);
 
     const result = await pool.query(query, params);
-    const data = req.user
-      ? result.rows
-      : result.rows.map((row) => ({
-          ...row,
-          project_repo_url: null,
-          project_docs_path: null,
-          project_default_branch: null,
-        }));
+    const data = result.rows.map((row) => sanitizeProjectMetadataForAuth(row, req.user));
 
     res.json({
       data,
@@ -308,7 +311,7 @@ router.get('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
       return res.status(404).json({ error: { message: 'Task not found', status: 404 } });
     }
 
-    res.json({ data: result.rows[0] });
+    res.json({ data: sanitizeProjectMetadataForAuth(result.rows[0], req.user) });
   } catch (error) {
     next(error);
   }
@@ -351,7 +354,7 @@ router.get('/key/:key', optionalAuth, validateTaskKey('key'), async (req, res, n
       return res.status(404).json({ error: { message: 'Task not found', status: 404 } });
     }
 
-    res.json({ data: result.rows[0] });
+    res.json({ data: sanitizeProjectMetadataForAuth(result.rows[0], req.user) });
   } catch (error) {
     next(error);
   }
@@ -475,13 +478,13 @@ router.post('/', optionalAuth, async (req, res, next) => {
 
     // Validate parent_task_id if provided
     if (parent_task_id) {
-      const parentResult = await pool.query('SELECT id FROM tasks WHERE id = $1', [parent_task_id]);
+      const parentResult = await client.query('SELECT id FROM tasks WHERE id = $1', [parent_task_id]);
       if (parentResult.rows.length === 0) {
         return res.status(400).json({ error: { message: 'Parent task not found', status: 400 } });
       }
     }
 
-    const projectValidation = await validateProjectContext(project_id);
+    const projectValidation = await validateProjectContext(project_id, client);
     if (!projectValidation.ok) {
       return res
         .status(projectValidation.status)
@@ -576,7 +579,7 @@ router.post('/', optionalAuth, async (req, res, next) => {
       [newTask.id],
     );
 
-    res.status(201).json({ data: completeTask.rows[0] });
+    res.status(201).json({ data: sanitizeProjectMetadataForAuth(completeTask.rows[0], req.user) });
   } catch (error) {
     await client.query('ROLLBACK');
     next(error);
@@ -1036,7 +1039,7 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
       [id],
     );
 
-    res.json({ data: completeTask.rows[0] });
+    res.json({ data: sanitizeProjectMetadataForAuth(completeTask.rows[0], req.user) });
   } catch (error) {
     await client.query('ROLLBACK');
     next(error);
