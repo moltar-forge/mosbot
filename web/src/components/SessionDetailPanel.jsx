@@ -26,12 +26,39 @@ function CopyableId({ label, value }) {
   const isUuid = UUID_RE.test(value);
   const display = isUuid ? `${value.slice(0, 8)}…` : value;
 
-  const handleCopy = (e) => {
+  const markCopied = () => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const handleCopy = async (e) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(value).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        markCopied();
+        return;
+      }
+
+      // Fallback for non-secure contexts where navigator.clipboard is unavailable.
+      const textarea = document.createElement('textarea');
+      textarea.value = value;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textarea);
+
+      if (ok) {
+        markCopied();
+      }
+    } catch (error) {
+      logger.warn('SessionDetailPanel copy failed', { label, error: error?.message });
+    }
   };
 
   return (
