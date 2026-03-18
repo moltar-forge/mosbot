@@ -533,10 +533,16 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
                             <Dialog.Title className="text-lg font-semibold text-dark-100 truncate">
                               {session?.label || 'Session Details'}
                             </Dialog.Title>
-                            {(session?.id ||
+                            {(session?.key ||
+                              session?.id ||
                               (session?.kind === 'cron' && getCronJobIdFromKey(session?.key))) && (
                               <div className="mt-0.5 flex items-center gap-3 flex-wrap">
-                                {session?.id && <CopyableId label="Session" value={session.id} />}
+                                {(session?.key || session?.id) && (
+                                  <CopyableId
+                                    label="Session"
+                                    value={session?.key || session?.id}
+                                  />
+                                )}
                                 {(session?.jobId ||
                                   (session?.kind === 'cron' &&
                                     getCronJobIdFromKey(session?.key))) && (
