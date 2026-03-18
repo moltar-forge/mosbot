@@ -670,6 +670,7 @@ function buildAgentBootstrapContent(agentData = {}) {
     heartbeatEnabled: agentData.heartbeatEnabled === true,
     heartbeatEvery: agentData.heartbeatEvery || '',
     heartbeatModel: agentData.heartbeatModel || '',
+    heartbeatPrompt: agentData.heartbeatPrompt || '',
   };
 
   const projectOnboarding = {
@@ -2489,6 +2490,11 @@ router.put('/agents/config/:agentId', requireAuth, requireAdmin, async (req, res
             ackMaxChars: existing.heartbeat?.ackMaxChars || 200,
           };
           if (agentData.heartbeatModel) existing.heartbeat.model = agentData.heartbeatModel;
+          if (agentData.heartbeatPrompt !== undefined) {
+            const prompt = String(agentData.heartbeatPrompt || '').trim();
+            if (prompt) existing.heartbeat.prompt = prompt;
+            else delete existing.heartbeat.prompt;
+          }
         } else if (agentData.heartbeatEnabled === false) {
           delete existing.heartbeat;
         }
@@ -2806,6 +2812,10 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
           ackMaxChars: 200,
         };
         if (agentData.heartbeatModel) newAgent.heartbeat.model = agentData.heartbeatModel;
+        if (agentData.heartbeatPrompt) {
+          const prompt = String(agentData.heartbeatPrompt).trim();
+          if (prompt) newAgent.heartbeat.prompt = prompt;
+        }
       }
 
       // Ensure explicit main entry exists in agents.list for MosBot/OpenClaw consistency.
@@ -3249,6 +3259,8 @@ router.post(
         },
       });
     }
+
+    await ensureDocsLinkIfMissing(agentData.id);
 
     try {
       const assignedProjects = await getAssignedProjectsForAgent(agentData.id);

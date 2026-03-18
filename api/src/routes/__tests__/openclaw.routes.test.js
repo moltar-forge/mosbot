@@ -1087,6 +1087,33 @@ describe('OpenClaw Routes', () => {
       expect(cfg.agents.list.some((a) => a.id === 'main')).toBe(true);
     });
 
+    it('should persist heartbeat prompt on agent update when provided', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      gatewayWsRpc.mockImplementation((method, params) => {
+        if (method === 'config.get') return Promise.resolve({ hash: 'h1' });
+        if (method === 'config.apply') return Promise.resolve({ hash: 'h2', appliedRaw: params?.raw });
+        return Promise.resolve({});
+      });
+
+      const response = await request(app)
+        .put('/api/v1/openclaw/agents/config/coo')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          displayName: 'Updated COO',
+          heartbeatEnabled: true,
+          heartbeatEvery: '30m',
+          heartbeatPrompt: 'Check MosBot queue and pick top-priority task.',
+        });
+
+      expect(response.status).toBe(200);
+      const applyCall = gatewayWsRpc.mock.calls.find((c) => c[0] === 'config.apply');
+      expect(applyCall).toBeDefined();
+      const cfg = JSON.parse(applyCall[1]?.raw || '{}');
+      const coo = cfg.agents.list.find((a) => a.id === 'coo');
+      expect(coo?.heartbeat?.prompt).toBe('Check MosBot queue and pick top-priority task.');
+    });
+
     it('should update main metadata without requiring agents.json', async () => {
       const token = getToken('admin-id', 'admin');
 
@@ -1226,6 +1253,37 @@ describe('OpenClaw Routes', () => {
         }),
       );
       expect(ensureDocsLinkIfMissing).toHaveBeenCalledWith('new-agent');
+    });
+
+    it('should persist heartbeat prompt on agent create when provided', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      gatewayWsRpc.mockImplementation((method, params) => {
+        if (method === 'config.get') return Promise.resolve({ hash: 'h1' });
+        if (method === 'config.apply') return Promise.resolve({ hash: 'h2', appliedRaw: params?.raw });
+        return Promise.resolve({});
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'new-agent',
+          title: 'New Agent',
+          displayName: 'New Agent Display Name',
+          heartbeatEnabled: true,
+          heartbeatEvery: '30m',
+          heartbeatPrompt: 'Check your assigned MosBot tasks and start the top priority ready item.',
+        });
+
+      expect(response.status).toBe(201);
+      const applyCall = gatewayWsRpc.mock.calls.find((c) => c[0] === 'config.apply');
+      expect(applyCall).toBeDefined();
+      const cfg = JSON.parse(applyCall[1]?.raw || '{}');
+      const created = cfg.agents.list.find((a) => a.id === 'new-agent');
+      expect(created?.heartbeat?.prompt).toBe(
+        'Check your assigned MosBot tasks and start the top priority ready item.',
+      );
     });
 
     it('provisions toolkit scripts with executable mode and falls back when mode is unsupported', async () => {
@@ -1918,6 +1976,7 @@ describe('OpenClaw Routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.data.agentId).toBe('coo');
+      expect(ensureDocsLinkIfMissing).toHaveBeenCalledWith('coo');
       expect(response.body.data.updatedFiles).toContain('/workspace-custom-coo/BOOTSTRAP.md');
       expect(writePaths).toEqual(
         expect.arrayContaining([

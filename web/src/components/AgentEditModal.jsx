@@ -42,6 +42,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
     heartbeatEnabled: false,
     heartbeatEvery: '60m',
     heartbeatModel: DEFAULT_HEARTBEAT_MODEL,
+    heartbeatPrompt: '',
   });
 
   const [availableLeaders, setAvailableLeaders] = useState([]);
@@ -82,6 +83,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
       heartbeatEnabled: false,
       heartbeatEvery: '60m',
       heartbeatModel: DEFAULT_HEARTBEAT_MODEL,
+      heartbeatPrompt: '',
     });
   };
 
@@ -172,9 +174,10 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
       // Model values from enriched agent entry (already merged with agents.defaults server-side).
       // Use ?? '' so unset fields show blank — never fall back to a hardcoded UI default.
       const configuredModelPrimary = agentEntry?.model?.primary ?? '';
-      const configuredFallback1   = agentEntry?.model?.fallbacks?.[0] ?? '';
-      const configuredFallback2   = agentEntry?.model?.fallbacks?.[1] ?? '';
-      const configuredHbModel     = agentEntry?.heartbeat?.model ?? '';
+      const configuredFallback1 = agentEntry?.model?.fallbacks?.[0] ?? '';
+      const configuredFallback2 = agentEntry?.model?.fallbacks?.[1] ?? '';
+      const configuredHbModel = agentEntry?.heartbeat?.model ?? '';
+      const configuredHbPrompt = agentEntry?.heartbeat?.prompt ?? '';
 
       // Inject any configured model IDs that aren't in AVAILABLE_MODELS so the selects
       // render the correct value. Do this after loadModels() may have run by merging here.
@@ -213,6 +216,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
         heartbeatEnabled: !!agentEntry?.heartbeat,
         heartbeatEvery: agentEntry?.heartbeat?.every || '60m',
         heartbeatModel: configuredHbModel,
+        heartbeatPrompt: configuredHbPrompt,
       });
     } catch (error) {
       logger.error('Failed to load agent data', error, {
@@ -272,6 +276,7 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
         heartbeatEnabled: formData.heartbeatEnabled,
         heartbeatEvery: formData.heartbeatEvery,
         heartbeatModel: formData.heartbeatModel,
+        heartbeatPrompt: formData.heartbeatPrompt,
       };
 
       logger.info('Saving agent via API', {
@@ -628,6 +633,23 @@ export default function AgentEditModal({ isOpen, onClose, onSave, agentId = null
                                   </option>
                                 ))}
                               </select>
+                            </div>
+
+                            <div className="col-span-2">
+                              <label className="block text-sm font-medium text-dark-300 mb-2">
+                                Prompt
+                              </label>
+                              <textarea
+                                value={formData.heartbeatPrompt}
+                                onChange={(e) => handleChange('heartbeatPrompt', e.target.value)}
+                                disabled={isSaving}
+                                rows={4}
+                                placeholder="Optional custom heartbeat prompt for this agent"
+                                className="input-field w-full disabled:opacity-50"
+                              />
+                              <p className="text-xs text-dark-500 mt-1">
+                                Leave blank to use default heartbeat behavior.
+                              </p>
                             </div>
                           </div>
                         </>
