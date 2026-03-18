@@ -71,6 +71,7 @@ import {
   getOpenClawSessionStatus,
   getOpenClawSessions,
   deleteSession,
+  rebootstrapAgent,
   getSessionMessages,
   getUsageAnalytics,
   resetUsageData,
@@ -513,6 +514,12 @@ describe('api client', () => {
       await expect(deleteSession('agent:coo:main')).resolves.toBeUndefined();
       expect(api.delete).toHaveBeenLastCalledWith('/openclaw/sessions', {
         params: { key: 'agent:coo:main' },
+      });
+
+      api.post.mockResolvedValueOnce({ data: { data: { runId: 'r1' } } });
+      await expect(rebootstrapAgent('chat')).resolves.toEqual({ runId: 'r1' });
+      expect(api.post).toHaveBeenLastCalledWith('/openclaw/agents/config/chat/rebootstrap', {}, {
+        timeout: 30000,
       });
     });
 

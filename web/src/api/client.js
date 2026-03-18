@@ -182,7 +182,7 @@ export const deleteAgent = async (agentId, { force = false } = {}) => {
 export const rebootstrapAgent = async (agentId) => {
   const response = await api.post(
     `/openclaw/agents/config/${encodeURIComponent(agentId)}/rebootstrap`,
-    null,
+    {},
     { timeout: OPENCLAW_TIMEOUT },
   );
   return response.data.data;
