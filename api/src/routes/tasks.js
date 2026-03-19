@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const logger = require('../utils/logger');
 const { validateAndNormalizeTags } = require('../utils/tags');
 const { getJwtSecret } = require('../utils/jwt');
@@ -56,15 +57,16 @@ const optionalAuth = async (req, res, next) => {
 
     if (token.startsWith('mba_')) {
       try {
+        const keyHash = crypto.createHash('sha256').update(token).digest('hex');
         const result = await pool.query(
           `SELECT a.id AS agent_db_id, a.agent_id, a.name, a.status, a.active,
                   k.id AS key_id
              FROM agent_api_keys k
              JOIN agents a ON a.agent_id = k.agent_id
-            WHERE k.key_hash = encode(digest($1, 'sha256'), 'hex')
+            WHERE k.key_hash = $1
               AND k.revoked_at IS NULL
             LIMIT 1`,
-          [token],
+          [keyHash],
         );
 
         if (result.rows.length > 0) {
@@ -1667,9 +1669,11 @@ router.post('/:id/comments', optionalAuth, validateUUID('id'), async (req, res, 
       return res.status(400).json({ error: { message: 'Comment body is required', status: 400 } });
     }
 
-    if (!req.user?.id) {
+    if (!req.user) {
       return res.status(401).json({ error: { message: 'Authorization required', status: 401 } });
     }
+
+    const authorId = req.user.id || null;
 
     if (commentBody.length > 5000) {
       return res
@@ -1693,7 +1697,7 @@ router.post('/:id/comments', optionalAuth, validateUUID('id'), async (req, res, 
         VALUES ($1, $2, $3)
         RETURNING *
       `,
-      [id, req.user.id, commentBody],
+      [id, authorId, commentBody],
     );
 
     const inserted = insertResult.rows[0];
@@ -1713,9 +1717,11 @@ router.post('/:id/comments', optionalAuth, validateUUID('id'), async (req, res, 
     );
 
     // Log comment creation to task_logs
-    await logTaskEvent(client, id, 'COMMENT_CREATED', 'api', req.user.id, null, null, {
+    await logTaskEvent(client, id, 'COMMENT_CREATED', 'api', authorId, null, null, {
       comment_id: inserted.id,
       comment_body: commentBody,
+      agent_id: req.user?.agent_id || null,
+      auth_type: req.user?.auth_type || 'jwt',
     });
 
     await client.query('COMMIT');
