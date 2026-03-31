@@ -114,6 +114,20 @@ describe('workspaceStore', () => {
       expect(result.files[1].path).toBe('/external/file.txt');
     });
 
+    it('honors rawPath for absolute listing refreshes', async () => {
+      useWorkspaceStore.getState().setWorkspaceRootPath('/workspaces/main');
+      api.get.mockResolvedValue({ data: { data: { files: [] } } });
+
+      await useWorkspaceStore.getState().fetchListing({
+        path: '/workspace-coo/docs',
+        rawPath: true,
+      });
+
+      expect(api.get).toHaveBeenCalledWith('/openclaw/workspace/files', {
+        params: { path: '/workspace-coo/docs', recursive: 'false' },
+      });
+    });
+
     it('sets listing error with fallback message when request fails', async () => {
       api.get.mockRejectedValue(new Error('Network down'));
 
@@ -263,6 +277,23 @@ describe('workspaceStore', () => {
       expect(useWorkspaceStore.getState().listings['coo:/src:true']).toBeUndefined();
     });
 
+    it('createFile honors rawPath for absolute workspace destinations', async () => {
+      useWorkspaceStore.getState().setWorkspaceRootPath('/workspaces/main');
+      api.post.mockResolvedValue({ data: { data: { path: '/workspace-coo/src/new.js' } } });
+
+      await useWorkspaceStore.getState().createFile({
+        path: '/workspace-coo/src/new.js',
+        content: 'console.log(1)',
+        rawPath: true,
+      });
+
+      expect(api.post).toHaveBeenCalledWith('/openclaw/workspace/files', {
+        path: '/workspace-coo/src/new.js',
+        content: 'console.log(1)',
+        encoding: 'utf8',
+      });
+    });
+
     it('updateFile updates content and invalidates related caches', async () => {
       useWorkspaceStore.setState({
         listings: {
@@ -289,6 +320,23 @@ describe('workspaceStore', () => {
       expect(useWorkspaceStore.getState().fileContents['coo:/src/new.js']).toBeUndefined();
       expect(useWorkspaceStore.getState().listings['coo:/src:false']).toBeUndefined();
       expect(useWorkspaceStore.getState().listings['coo:/src:true']).toBeUndefined();
+    });
+
+    it('updateFile honors rawPath for absolute workspace destinations', async () => {
+      useWorkspaceStore.getState().setWorkspaceRootPath('/workspaces/main');
+      api.put.mockResolvedValue({ data: { data: { updated: true } } });
+
+      await useWorkspaceStore.getState().updateFile({
+        path: '/workspace-coo/src/new.js',
+        content: 'new',
+        rawPath: true,
+      });
+
+      expect(api.put).toHaveBeenCalledWith('/openclaw/workspace/files', {
+        path: '/workspace-coo/src/new.js',
+        content: 'new',
+        encoding: 'utf8',
+      });
     });
 
     it('deleteFile clears selected file and caches', async () => {

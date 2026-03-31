@@ -14,6 +14,7 @@ import {
   ChevronUpDownIcon,
   EyeIcon,
   EyeSlashIcon,
+  ArrowUpTrayIcon,
 } from '@heroicons/react/24/outline';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useAuthStore } from '../stores/authStore';
@@ -27,6 +28,10 @@ import CreateFolderModal from './CreateFolderModal';
 import RenameModal from './RenameModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import { classNames, isPathInsideSymlink, isFileOrPathInsideSymlink } from '../utils/helpers';
+import {
+  extractAgentIdFromWorkspacePath,
+  isAbsoluteWorkspacePath,
+} from '../utils/workspacePaths';
 import { useAgentStore } from '../stores/agentStore';
 
 /**
@@ -74,6 +79,9 @@ export default function WorkspaceExplorer({
     setWorkspaceRootPath,
     clearErrors,
     moveFile,
+    createFile,
+    updateFile,
+    fetchFileContent,
   } = useWorkspaceStore();
 
   const { isAdmin } = useAuthStore();
@@ -101,6 +109,8 @@ export default function WorkspaceExplorer({
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState(null);
+  const [uploadTargetPath, setUploadTargetPath] = useState('/');
+  const fileUploadInputRef = useRef(null);
 
   const canModify = isAdmin();
 
@@ -550,6 +560,192 @@ export default function WorkspaceExplorer({
     setContextMenu(null);
   };
 
+  const readBrowserFileAsBase64 = (browserFile) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || '');
+        const base64 = result.includes(',') ? result.split(',')[1] : result;
+        resolve(base64);
+      };
+      reader.onerror = () => reject(new Error(`Failed to read ${browserFile.name}`));
+      reader.readAsDataURL(browserFile);
+    });
+
+  const triggerUpload = (file) => {
+    const targetPath = file?.type === 'directory' ? file.path : currentPath;
+
+    if (isPathInsideSymlink(targetPath, childrenCache, agentId)) {
+      showToast('Cannot upload files inside symlink directories', 'error');
+      return;
+    }
+
+    if (!canModify) {
+      showToast('Admin access required to upload files', 'error');
+      return;
+    }
+
+    setUploadTargetPath(targetPath);
+    fileUploadInputRef.current?.click();
+  };
+
+  const handleUploadFiles = async (event) => {
+    const fileList = Array.from(event.target.files || []);
+    event.target.value = '';
+
+    if (!fileList.length) return;
+
+    if (isPathInsideSymlink(uploadTargetPath, childrenCache, agentId)) {
+      showToast('Cannot upload files inside symlink directories', 'error');
+      return;
+    }
+
+    let uploadedCount = 0;
+    let failedCount = 0;
+
+    for (const browserFile of fileList) {
+      const destinationPath =
+        uploadTargetPath === '/'
+          ? `/${browserFile.name}`
+          : `${uploadTargetPath}/${browserFile.name}`;
+      const rawPath = isAbsoluteWorkspacePath(destinationPath);
+      const destinationAgentId = extractAgentIdFromWorkspacePath(destinationPath) || agentId;
+
+      try {
+        const base64Content = await readBrowserFileAsBase64(browserFile);
+
+        try {
+          await createFile({
+            path: destinationPath,
+            content: base64Content,
+            encoding: 'base64',
+            agentId: destinationAgentId,
+            rawPath,
+          });
+        } catch (error) {
+          const isConflict =
+            error?.message?.includes('already exists') || error?.message?.includes('FILE_EXISTS');
+
+          if (!isConflict) {
+            throw error;
+          }
+
+          const shouldOverwrite = window.confirm(
+            `"${browserFile.name}" already exists. Overwrite it?`,
+          );
+          if (!shouldOverwrite) {
+            failedCount += 1;
+            continue;
+          }
+
+          await updateFile({
+            path: destinationPath,
+            content: base64Content,
+            encoding: 'base64',
+            agentId: destinationAgentId,
+            rawPath,
+          });
+        }
+
+        uploadedCount += 1;
+      } catch {
+        failedCount += 1;
+      }
+    }
+
+    // Refresh absolute workspace directories without re-prepending workspaceRootPath.
+    await fetchListing({
+      path: uploadTargetPath,
+      recursive: false,
+      force: true,
+      agentId: extractAgentIdFromWorkspacePath(uploadTargetPath) || agentId,
+      rawPath: isAbsoluteWorkspacePath(uploadTargetPath),
+    });
+
+    if (uploadedCount > 0) {
+      showToast(
+        failedCount > 0
+          ? `Uploaded ${uploadedCount} file(s), ${failedCount} failed`
+          : `Uploaded ${uploadedCount} file(s)`,
+        failedCount > 0 ? 'info' : 'success',
+      );
+    } else {
+      showToast('No files were uploaded', 'error');
+    }
+  };
+
+  const decodeBase64ToUint8Array = (value) => {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  };
+
+  const handleDownloadFile = async (file) => {
+    if (!file || file.type !== 'file') return;
+
+    try {
+      const isWorkspacePath = isAbsoluteWorkspacePath(file.path);
+      const fileAgentId =
+        file.agentId ||
+        (isWorkspacePath ? extractAgentIdFromWorkspacePath(file.path) : null) ||
+        agentId;
+      const fileData = await fetchFileContent({
+        path: file.path,
+        force: true,
+        agentId: fileAgentId,
+        rawPath: !!file.fullPath || isWorkspacePath,
+      });
+      const encoding = fileData?.encoding || 'utf8';
+      const rawContent = fileData?.content || '';
+
+      const blob =
+        encoding === 'base64'
+          ? new Blob([decodeBase64ToUint8Array(rawContent)], {
+              type: 'application/octet-stream',
+            })
+          : new Blob([rawContent], { type: 'text/plain;charset=utf-8' });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast(`Downloaded ${file.name}`, 'success');
+    } catch (error) {
+      showToast(error?.message || 'Failed to download file', 'error');
+    }
+  };
+
+  const toWorkspaceRelativePath = (filePath) => {
+    if (!filePath || typeof filePath !== 'string') return null;
+
+    // Preserve workspace-root relative paths as-is (e.g. /docs/README.md)
+    if (!filePath.startsWith('/workspace')) return filePath;
+
+    // If path includes a virtual workspace root prefix (e.g. /workspace-main/foo),
+    // strip it to keep clipboard values portable across pods/hosts.
+    const stripped = filePath.replace(/^\/workspace(?:-[^/]+)?/, '');
+    return stripped || '/';
+  };
+
+  const handleCopyPath = async (file) => {
+    const workspaceRelativePath = toWorkspaceRelativePath(file?.path);
+    if (!workspaceRelativePath) return;
+
+    try {
+      await navigator.clipboard.writeText(workspaceRelativePath);
+      showToast('Workspace path copied to clipboard', 'success');
+    } catch {
+      showToast('Failed to copy workspace path', 'error');
+    }
+  };
+
   // CRUD handlers
   const handleNewFile = (file) => {
     const targetPath = file?.type === 'directory' ? file.path : currentPath;
@@ -867,6 +1063,21 @@ export default function WorkspaceExplorer({
               <FolderPlusIcon className="w-4 h-4" />
               <span>New Folder</span>
             </button>
+            <button
+              onClick={() => triggerUpload(null)}
+              disabled={!canModify || isCurrentPathInsideSymlink}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-dark-700 text-dark-100 rounded hover:bg-dark-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-dark-700"
+              title={
+                isCurrentPathInsideSymlink
+                  ? 'Cannot upload files inside symlink directories'
+                  : canModify
+                    ? 'Upload files to current folder'
+                    : 'Admin access required to upload files'
+              }
+            >
+              <ArrowUpTrayIcon className="w-4 h-4" />
+              <span>Upload</span>
+            </button>
             <div className="w-px h-6 bg-dark-700" />
 
             {/* Search */}
@@ -1115,11 +1326,22 @@ export default function WorkspaceExplorer({
           onRename={handleRename}
           onDelete={handleDelete}
           onView={handleView}
+          onDownload={handleDownloadFile}
+          onUpload={triggerUpload}
+          onCopyPath={handleCopyPath}
           canModify={canModify}
           childrenCache={childrenCache}
           agentId={agentId}
         />
       )}
+
+      <input
+        ref={fileUploadInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleUploadFiles}
+      />
 
       {/* Modals */}
       <CreateFileModal

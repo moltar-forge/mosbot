@@ -48,10 +48,17 @@ export const useWorkspaceStore = create((set, get) => ({
   },
 
   // Fetch workspace file listing
-  fetchListing: async ({ path = '/', recursive = false, force = false, agentId = 'coo' }) => {
+  fetchListing: async ({
+    path = '/',
+    recursive = false,
+    force = false,
+    agentId = 'coo',
+    rawPath = false,
+  }) => {
     const state = get();
     const rootPath = state.workspaceRootPath;
-    const fullPath = rootPath && !path.startsWith(rootPath) ? `${rootPath}${path}` : path;
+    const fullPath =
+      rawPath || !rootPath || path.startsWith(rootPath) ? path : `${rootPath}${path}`;
     const cacheKey = `${agentId}:${path}:${recursive}`;
 
     // Return cached if available and not forced
@@ -265,11 +272,12 @@ export const useWorkspaceStore = create((set, get) => ({
   },
 
   // Create a new file
-  createFile: async ({ path, content = '', encoding = 'utf8', agentId = 'coo' }) => {
+  createFile: async ({ path, content = '', encoding = 'utf8', agentId = 'coo', rawPath = false }) => {
     try {
       const state = get();
       const rootPath = state.workspaceRootPath;
-      const fullPath = rootPath && !path.startsWith(rootPath) ? `${rootPath}${path}` : path;
+      const fullPath =
+        rawPath || !rootPath || path.startsWith(rootPath) ? path : `${rootPath}${path}`;
 
       const response = await api.post('/openclaw/workspace/files', {
         path: fullPath,
@@ -291,11 +299,12 @@ export const useWorkspaceStore = create((set, get) => ({
   },
 
   // Update an existing file
-  updateFile: async ({ path, content, encoding = 'utf8', agentId = 'coo' }) => {
+  updateFile: async ({ path, content, encoding = 'utf8', agentId = 'coo', rawPath = false }) => {
     try {
       const state = get();
       const rootPath = state.workspaceRootPath;
-      const fullPath = rootPath && !path.startsWith(rootPath) ? `${rootPath}${path}` : path;
+      const fullPath =
+        rawPath || !rootPath || path.startsWith(rootPath) ? path : `${rootPath}${path}`;
 
       const response = await api.put('/openclaw/workspace/files', {
         path: fullPath,
