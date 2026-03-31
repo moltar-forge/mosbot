@@ -664,7 +664,30 @@ async function cronList() {
     });
   }
 
-  // Attempt 3: Read the persisted jobs.json from the workspace service
+  // Attempt 3: Gateway native WS RPC (works even when /tools/invoke doesn't expose cron tools)
+  try {
+    const result = await gatewayWsRpc('cron.list', { includeDisabled: true });
+    if (result) {
+      const jobs = extractJobsArray(result);
+      if (jobs.length > 0) {
+        logger.info('cron.list returned jobs via WS RPC', {
+          count: jobs.length,
+        });
+        return jobs;
+      }
+    }
+  } catch (error) {
+    if (error.code === 'SERVICE_NOT_CONFIGURED' || error.code === 'SERVICE_UNAVAILABLE') {
+      logger.warn('OpenClaw gateway not available for cron.list WS RPC, returning empty array');
+      return [];
+    }
+    logger.warn('cron.list WS RPC failed, trying jobs.json fallback', {
+      error: error.message,
+      code: error.code,
+    });
+  }
+
+  // Attempt 4: Read the persisted jobs.json from the workspace service
   // OpenClaw stores cron jobs at ~/.openclaw/cron/jobs.json on the gateway host.
   // In containerized setups this is typically at /home/node/.openclaw/cron/jobs.json
   // which may be accessible via the workspace service.
