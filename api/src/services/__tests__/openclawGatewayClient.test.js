@@ -921,6 +921,64 @@ describe('openclawGatewayClient', () => {
       expect(result).toEqual([]);
     });
 
+    it('should return jobs via WS RPC fallback when tool invoke paths are unavailable', async () => {
+      jest.useRealTimers();
+      const deviceAuth = configureDeviceAuth();
+
+      // Both /tools/invoke attempts return 404 (non-retryable), forcing WS RPC fallback.
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 404,
+        text: async () =>
+          JSON.stringify({ ok: false, error: { type: 'not_found', message: 'Tool not available' } }),
+      });
+
+      mockWebSocket.send.mockImplementation((payload) => {
+        const message = JSON.parse(payload);
+        if (message.method === 'connect') {
+          originalSetTimeout(() => {
+            emitWs(
+              'message',
+              JSON.stringify({ type: 'res', id: message.id, ok: true, payload: {} }),
+            );
+          }, 0);
+          return;
+        }
+        if (message.method === 'cron.list') {
+          originalSetTimeout(() => {
+            emitWs(
+              'message',
+              JSON.stringify({
+                type: 'res',
+                id: message.id,
+                ok: true,
+                payload: { jobs: [{ id: 'ws-1' }, { id: 'ws-2' }] },
+              }),
+            );
+          }, 0);
+        }
+      });
+
+      const promise = cronList({ wsRpcOptions: { deviceAuth } });
+
+      // cronList performs two invoke-tool attempts first; emit WS handshake/events after a tick.
+      originalSetTimeout(() => {
+        emitWs('open');
+        emitWs(
+          'message',
+          JSON.stringify({
+            type: 'event',
+            event: 'connect.challenge',
+            payload: { nonce: 'nonce-123' },
+          }),
+        );
+      }, 10);
+
+      await expect(promise).resolves.toEqual([{ id: 'ws-1' }, { id: 'ws-2' }]);
+      expect(getFileContent).not.toHaveBeenCalled();
+      jest.useFakeTimers({ legacyFakeTimers: false });
+    }, 10000);
+
     it('should fallback to jobs.json when cron.list fails', async () => {
       const error = new Error('Tool failed');
       global.fetch.mockRejectedValueOnce(error);
@@ -933,7 +991,7 @@ describe('openclawGatewayClient', () => {
       expect(result).toEqual([{ id: '1' }, { id: '2' }]);
       expect(getFileContent).toHaveBeenCalledWith('/cron/jobs.json');
       expect(logger.warn).toHaveBeenCalledWith(
-        'cron.list tool invocation failed, trying jobs.json fallback',
+        'cron.list tool invocation failed, trying WS RPC fallback',
         expect.any(Object),
       );
     });

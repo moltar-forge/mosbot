@@ -611,11 +611,12 @@ async function sessionsHistory({ sessionKey, limit, includeTools } = {}) {
 
 /**
  * List cron jobs from the OpenClaw Gateway scheduler.
- * Tries the cron.list tool first (via /tools/invoke), then falls back to
- * reading the persisted jobs.json from the workspace service.
+ * Tries /tools/invoke first (cron, then cron.list), then native WS RPC
+ * (cron.list), and finally falls back to persisted jobs.json via workspace.
  * @returns {Promise<Array>} Array of cron job objects
  */
-async function cronList() {
+async function cronList(options = {}) {
+  const wsRpcOptions = options?.wsRpcOptions || {};
   // Attempt 1: Try modern cron tool contract via /tools/invoke
   // Tool schema: tool='cron' with args={ action: 'list', includeDisabled: true }
   try {
@@ -631,13 +632,15 @@ async function cronList() {
     }
   } catch (error) {
     if (error.code === 'SERVICE_NOT_CONFIGURED' || error.code === 'SERVICE_UNAVAILABLE') {
-      logger.warn('OpenClaw gateway not available for cron list, returning empty array');
-      return [];
+      logger.warn('OpenClaw gateway not available for cron tool invoke, trying legacy cron.list', {
+        code: error.code,
+      });
+    } else {
+      logger.warn('cron tool invocation failed, trying legacy cron.list', {
+        error: error.message,
+        code: error.code,
+      });
     }
-    logger.warn('cron tool invocation failed, trying legacy cron.list', {
-      error: error.message,
-      code: error.code,
-    });
   }
 
   // Attempt 2: Backward-compatible legacy tool name
@@ -654,17 +657,48 @@ async function cronList() {
     }
   } catch (error) {
     if (error.code === 'SERVICE_NOT_CONFIGURED' || error.code === 'SERVICE_UNAVAILABLE') {
-      logger.warn('OpenClaw gateway not available for cron.list, returning empty array');
-      return [];
+      logger.warn('OpenClaw gateway not available for cron.list invoke, trying WS RPC fallback', {
+        code: error.code,
+      });
+    } else {
+      // Log and fall through to WS RPC fallback
+      logger.warn('cron.list tool invocation failed, trying WS RPC fallback', {
+        error: error.message,
+        code: error.code,
+      });
     }
-    // Log and fall through to fallback
-    logger.warn('cron.list tool invocation failed, trying jobs.json fallback', {
-      error: error.message,
-      code: error.code,
-    });
   }
 
-  // Attempt 3: Read the persisted jobs.json from the workspace service
+  // Attempt 3: Gateway native WS RPC (works even when /tools/invoke doesn't expose cron tools)
+  try {
+    const result = await gatewayWsRpc('cron.list', { includeDisabled: true }, wsRpcOptions);
+    if (result) {
+      const jobs = extractJobsArray(result);
+      if (jobs.length > 0) {
+        logger.info('cron.list returned jobs via WS RPC', {
+          count: jobs.length,
+        });
+        return jobs;
+      }
+    }
+  } catch (error) {
+    if (error.code === 'SERVICE_NOT_CONFIGURED' || error.code === 'SERVICE_UNAVAILABLE') {
+      logger.warn('OpenClaw gateway not available for cron.list WS RPC, trying jobs.json fallback', {
+        code: error.code ?? error.rpcCode,
+        rpcCode: error.rpcCode,
+        rpcDetails: error.rpcDetails,
+      });
+    } else {
+      logger.warn('cron.list WS RPC failed, trying jobs.json fallback', {
+        error: error.message,
+        code: error.code ?? error.rpcCode,
+        rpcCode: error.rpcCode,
+        rpcDetails: error.rpcDetails,
+      });
+    }
+  }
+
+  // Attempt 4: Read the persisted jobs.json from the workspace service
   // OpenClaw stores cron jobs at ~/.openclaw/cron/jobs.json on the gateway host.
   // In containerized setups this is typically at /home/node/.openclaw/cron/jobs.json
   // which may be accessible via the workspace service.
