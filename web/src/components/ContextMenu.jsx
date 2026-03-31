@@ -5,6 +5,9 @@ import {
   PencilIcon,
   TrashIcon,
   EyeIcon,
+  ArrowDownTrayIcon,
+  ArrowUpTrayIcon,
+  ClipboardDocumentIcon,
 } from '@heroicons/react/24/outline';
 import { isFileOrPathInsideSymlink } from '../utils/helpers';
 
@@ -18,6 +21,9 @@ export default function ContextMenu({
   onRename,
   onDelete,
   onView,
+  onDownload,
+  onUpload,
+  onCopyPath,
   canModify,
   childrenCache = {},
   agentId = 'coo',
@@ -74,8 +80,58 @@ export default function ContextMenu({
         </button>
       )}
 
+      {/* Download option - files only */}
+      {!isDirectory && (
+        <button
+          onClick={() => {
+            onDownload(file);
+            onClose();
+          }}
+          className="w-full flex items-center gap-3 px-4 py-2 text-sm text-dark-300 hover:bg-dark-800 hover:text-dark-100 transition-colors"
+        >
+          <ArrowDownTrayIcon className="w-4 h-4" />
+          <span>Download</span>
+        </button>
+      )}
+
+      {/* Upload option - directories only */}
+      {isDirectory && (
+        <button
+          onClick={() => {
+            if (canModify && !isInsideSymlink) {
+              onUpload(file);
+              onClose();
+            }
+          }}
+          disabled={!canModify || isInsideSymlink}
+          className="w-full flex items-center gap-3 px-4 py-2 text-sm text-dark-300 hover:bg-dark-800 hover:text-dark-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-dark-300"
+          title={
+            isInsideSymlink
+              ? 'Cannot upload files inside symlink directories'
+              : canModify
+                ? 'Upload files to this folder'
+                : 'Admin access required'
+          }
+        >
+          <ArrowUpTrayIcon className="w-4 h-4" />
+          <span>Upload Files</span>
+        </button>
+      )}
+
+      {/* Copy path option - available to all users */}
+      <button
+        onClick={() => {
+          onCopyPath(file);
+          onClose();
+        }}
+        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-dark-300 hover:bg-dark-800 hover:text-dark-100 transition-colors"
+      >
+        <ClipboardDocumentIcon className="w-4 h-4" />
+        <span>Copy Workspace Path</span>
+      </button>
+
       {/* Separator */}
-      {!isDirectory && <div className="my-1 border-t border-dark-800" />}
+      <div className="my-1 border-t border-dark-800" />
 
       {/* Modification options - visible to all, disabled for non-admin or symlinks */}
       {/* New File - only for directories */}
