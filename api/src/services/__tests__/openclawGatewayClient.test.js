@@ -933,7 +933,7 @@ describe('openclawGatewayClient', () => {
       expect(result).toEqual([{ id: '1' }, { id: '2' }]);
       expect(getFileContent).toHaveBeenCalledWith('/cron/jobs.json');
       expect(logger.warn).toHaveBeenCalledWith(
-        'cron.list tool invocation failed, trying jobs.json fallback',
+        'cron.list tool invocation failed, trying WS RPC fallback',
         expect.any(Object),
       );
     });
