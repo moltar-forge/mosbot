@@ -54,7 +54,10 @@ export default function SessionRow({ session, onClick, statusDisplay }) {
     if (lower.includes('gemini-2.5-flash-lite')) return 'Gemini Flash Lite';
     if (lower.includes('gemini-2.5-flash')) return 'Gemini Flash';
     if (lower.includes('gemini-2.5')) return 'Gemini 2.5';
-    if (lower.includes('gpt-5')) return 'GPT-5.2';
+    if (lower.includes('gpt-5.4')) return 'GPT-5.4';
+    if (lower.includes('gpt-5.3')) return lower.includes('codex') ? 'GPT-5.3 Codex' : 'GPT-5.3';
+    if (lower.includes('gpt-5.2')) return 'GPT-5.2';
+    if (lower.includes('gpt-5')) return 'GPT-5';
     if (lower.includes('deepseek')) return 'DeepSeek';
     return modelPart;
   };

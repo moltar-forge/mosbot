@@ -90,7 +90,10 @@ function formatModel(model) {
   if (l.includes('gemini-2.5-flash-lite')) return 'Gemini Flash Lite';
   if (l.includes('gemini-2.5-flash')) return 'Gemini Flash';
   if (l.includes('gemini-2.5')) return 'Gemini 2.5';
-  if (l.includes('gpt-5')) return 'GPT-5.2';
+  if (l.includes('gpt-5.4')) return 'GPT-5.4';
+  if (l.includes('gpt-5.3')) return l.includes('codex') ? 'GPT-5.3 Codex' : 'GPT-5.3';
+  if (l.includes('gpt-5.2')) return 'GPT-5.2';
+  if (l.includes('gpt-5')) return 'GPT-5';
   if (l.includes('deepseek')) return 'DeepSeek';
   return part;
 }
