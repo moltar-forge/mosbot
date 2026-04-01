@@ -84,7 +84,10 @@ function formatRelativeTime(timestamp) {
 
 function formatModel(model) {
   if (!model) return null;
-  const modelPart = model.includes('/') ? model.split('/').pop() : model;
+  const modelValue =
+    typeof model === 'string' ? model : model?.id || model?.model || model?.name || null;
+  if (!modelValue || typeof modelValue !== 'string') return null;
+  const modelPart = modelValue.includes('/') ? modelValue.split('/').pop() : modelValue;
   const lower = modelPart.toLowerCase();
   if (lower.includes('kimi-k2')) return 'Kimi K2.5';
   if (lower.includes('opus-4')) return 'Opus 4';

@@ -81,7 +81,10 @@ function formatCost(cost) {
 
 function formatModel(model) {
   if (!model) return null;
-  const part = model.includes('/') ? model.split('/').pop() : model;
+  const modelValue =
+    typeof model === 'string' ? model : model?.id || model?.model || model?.name || null;
+  if (!modelValue || typeof modelValue !== 'string') return null;
+  const part = modelValue.includes('/') ? modelValue.split('/').pop() : modelValue;
   const l = part.toLowerCase();
   if (l.includes('kimi-k2')) return 'Kimi K2.5';
   if (l.includes('opus-4')) return 'Opus 4';

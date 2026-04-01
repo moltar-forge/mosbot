@@ -43,8 +43,11 @@ export default function SessionRow({ session, onClick, statusDisplay }) {
 
   const formatModelName = (model) => {
     if (!model) return null;
+    const modelValue =
+      typeof model === 'string' ? model : model?.id || model?.model || model?.name || null;
+    if (!modelValue || typeof modelValue !== 'string') return null;
     // Handle provider/model format (e.g., "moonshotai/kimi-k2.5")
-    const modelPart = model.includes('/') ? model.split('/').pop() : model;
+    const modelPart = modelValue.includes('/') ? modelValue.split('/').pop() : modelValue;
     // Simplify known model names
     const lower = modelPart.toLowerCase();
     if (lower.includes('kimi-k2')) return 'Kimi K2.5';
