@@ -11,6 +11,19 @@ function isUuid(str) {
   return typeof str === 'string' && UUID_RE.test(str);
 }
 
+function resolveJobEntry(jobs, identifier) {
+  if (!jobs || !identifier) return null;
+  if (jobs[identifier]) return { key: identifier, job: jobs[identifier] };
+
+  for (const [key, job] of Object.entries(jobs)) {
+    if (job?.jobId === identifier || job?.id === identifier) {
+      return { key, job };
+    }
+  }
+
+  return null;
+}
+
 /**
  * Compute the next run timestamp (ms) for a cron job based on its schedule.
  * Returns null if the schedule cannot be parsed.
@@ -940,17 +953,41 @@ async function triggerCronJob(jobId) {
     });
   }
 
+  // Try Gateway cron.run via WebSocket RPC before file fallback
+  try {
+    const { gatewayWsRpc } = require('./openclawGatewayClient');
+    const result = await gatewayWsRpc('cron.run', { jobId });
+    if (result) {
+      logger.info('Cron job triggered via Gateway WS RPC', { jobId });
+      const job = result.job || result;
+      return fromOfficialFormat({
+        ...job,
+        jobId: job.jobId || jobId,
+        source: 'gateway',
+      });
+    }
+  } catch (wsErr) {
+    if (wsErr.code === 'SERVICE_NOT_CONFIGURED' || wsErr.code === 'SERVICE_UNAVAILABLE') {
+      throw wsErr;
+    }
+    logger.warn('Gateway cron.run WS RPC failed, falling back to file trigger', {
+      error: wsErr.message,
+      code: wsErr.code,
+    });
+  }
+
   // Fallback: set nextRunAtMs to near-immediate so the Gateway fires it
   const jobs = await readCronJobs();
 
-  if (!jobs[jobId]) {
+  const resolved = resolveJobEntry(jobs, jobId);
+  if (!resolved) {
     const err = new Error(`Cron job not found: ${jobId}`);
     err.status = 404;
     err.code = 'NOT_FOUND';
     throw err;
   }
 
-  const job = jobs[jobId];
+  const { key: mapKey, job } = resolved;
 
   if (job.enabled === false) {
     const err = new Error('Cannot trigger a disabled cron job. Enable it first.');
@@ -962,7 +999,7 @@ async function triggerCronJob(jobId) {
   // Set nextRunAtMs to 3 seconds from now — the Gateway picks it up on
   // its next 60 s timer tick and fires the job.
   job.state = { ...(job.state || {}), nextRunAtMs: Date.now() + 3000 };
-  jobs[jobId] = job;
+  jobs[mapKey] = job;
   await writeCronJobs(jobs);
 
   logger.info('Cron job trigger requested via file fallback (nextRunAtMs set to now)', {
