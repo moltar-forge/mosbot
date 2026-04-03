@@ -11,6 +11,19 @@ function createHttpError(status, message, code, details) {
   return error;
 }
 
+function normalizeRawConfig(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return '';
+    }
+  }
+  return String(value);
+}
+
 function restoreRedactedPlaceholders({ submittedRaw, currentRaw, userId }) {
   if (!submittedRaw.includes('__OPENCLAW_REDACTED__') || !currentRaw) {
     return submittedRaw;
@@ -74,7 +87,7 @@ function restoreRedactedPlaceholders({ submittedRaw, currentRaw, userId }) {
 async function getConfig() {
   const result = await gatewayWsRpc('config.get', {});
   return {
-    raw: result.raw || result.config || '',
+    raw: normalizeRawConfig(result.raw ?? result.config),
     hash: result.hash || null,
   };
 }
@@ -104,7 +117,7 @@ async function applyConfig({ userId, userRole, raw, baseHash, note }) {
   }
 
   const currentHash = currentConfig.hash || null;
-  const currentRaw = currentConfig.raw || currentConfig.config || '';
+  const currentRaw = normalizeRawConfig(currentConfig.raw ?? currentConfig.config);
 
   if (currentHash && baseHash !== currentHash) {
     const conflict = createHttpError(
