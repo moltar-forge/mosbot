@@ -222,6 +222,7 @@ function getStatusBadge(
   lastRunAtMs,
   cronExpr = null,
   cronTz = null,
+  isHeartbeat = false,
 ) {
   if (enabled === false) {
     return {
@@ -230,7 +231,7 @@ function getStatusBadge(
       label: 'disabled',
     };
   }
-  if (enabled !== false && !nextRunAtMs && !lastRunAtMs) {
+  if (enabled !== false && !nextRunAtMs && !lastRunAtMs && !isHeartbeat) {
     return {
       classes: 'bg-yellow-600/10 text-yellow-500 border-yellow-500/20',
       icon: ExclamationTriangleIcon,
@@ -297,9 +298,17 @@ function CronJobRow({
   const cronExpr = schedule.kind === 'cron' ? schedule.expr : null;
   const cronTz = schedule.tz || null;
 
-  const badge = getStatusBadge(lastStatus, job.enabled, nextRunAtMs, lastRunAtMs, cronExpr, cronTz);
-  const BadgeIcon = badge.icon;
   const isHeartbeat = job.source === 'config' || job.payload?.kind === 'heartbeat';
+  const badge = getStatusBadge(
+    lastStatus,
+    job.enabled,
+    nextRunAtMs,
+    lastRunAtMs,
+    cronExpr,
+    cronTz,
+    isHeartbeat,
+  );
+  const BadgeIcon = badge.icon;
 
   const prompt =
     job.payload?.message || job.payload?.text || job.payload?.prompt || job.prompt || null;

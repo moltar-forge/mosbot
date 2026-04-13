@@ -104,7 +104,7 @@ function formatModel(model) {
   return modelPart;
 }
 
-function getStatusBadge(status, enabled, nextRunAt, lastRunAt) {
+function getStatusBadge(status, enabled, nextRunAt, lastRunAt, isHeartbeat = false) {
   if (enabled === false) {
     return {
       classes: 'bg-dark-600/10 text-dark-400 border-dark-600/20',
@@ -114,7 +114,7 @@ function getStatusBadge(status, enabled, nextRunAt, lastRunAt) {
   }
 
   // Check if enabled but has never been scheduled (no next or last run)
-  if (enabled !== false && !nextRunAt && !lastRunAt) {
+  if (enabled !== false && !nextRunAt && !lastRunAt && !isHeartbeat) {
     return {
       classes: 'bg-yellow-600/10 text-yellow-500 border-yellow-500/20',
       icon: ExclamationTriangleIcon,
@@ -151,9 +151,9 @@ function getStatusBadge(status, enabled, nextRunAt, lastRunAt) {
 }
 
 function CronJobRow({ job }) {
-  const badge = getStatusBadge(job.status, job.enabled, job.nextRunAt, job.lastRunAt);
-  const BadgeIcon = badge.icon;
   const isHeartbeat = job.source === 'config' || job.payload?.kind === 'heartbeat';
+  const badge = getStatusBadge(job.status, job.enabled, job.nextRunAt, job.lastRunAt, isHeartbeat);
+  const BadgeIcon = badge.icon;
 
   // Extract prompt from payload
   const prompt = job.payload?.message || job.payload?.text || job.prompt || null;
