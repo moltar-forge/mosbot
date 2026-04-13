@@ -362,7 +362,7 @@ export default function OpenClawConfigSettings() {
     setConflictData(null);
   };
 
-  const hasRedactedValues = raw.includes('__OPENCLAW_REDACTED__');
+  const hasRedactedValues = typeof raw === 'string' && raw.includes('__OPENCLAW_REDACTED__');
 
   const handleSave = async () => {
     if (isSaving || !canEdit) return;
