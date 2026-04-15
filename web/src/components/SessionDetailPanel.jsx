@@ -322,7 +322,9 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
   const [latestRun, setLatestRun] = useState(null);
   const scrollContainerRef = useRef(null);
   const refreshTimerRef = useRef(null);
-  const refreshInFlightRef = useRef(false);
+  const refreshInFlightByIdentityRef = useRef(new Map());
+  const activeSessionIdentityRef = useRef('');
+  const latestRequestIdRef = useRef(0);
 
   const getAgentById = useAgentStore((state) => state.getAgentById);
   const agent = session?.agent ? getAgentById(session.agent) : null;
@@ -335,11 +337,28 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
   // latestRunOnly: only show the last run's messages (used by Task Manager)
   const runs = latestRunOnly && allRuns ? allRuns.slice(-1) : allRuns;
 
+  const sessionIdentity =
+    session?.kind === 'cron'
+      ? `cron:${session?.jobId || getCronJobIdFromKey(session?.key) || ''}`
+      : `session:${session?.key || ''}`;
+
+  const isRequestStale = useCallback((requestId, identity) => {
+    return requestId !== latestRequestIdRef.current || identity !== activeSessionIdentityRef.current;
+  }, []);
+
   // Load cron run history and fetch messages from the latest run
   const loadCronRunHistory = useCallback(
     async ({ silent = false } = {}) => {
-      if (refreshInFlightRef.current) return;
-      refreshInFlightRef.current = true;
+      const identity =
+        session?.kind === 'cron'
+          ? `cron:${session?.jobId || getCronJobIdFromKey(session?.key) || ''}`
+          : `session:${session?.key || ''}`;
+
+      if (!identity || identity === 'cron:' || identity === 'session:') return;
+      if (refreshInFlightByIdentityRef.current.get(identity)) return;
+
+      const requestId = ++latestRequestIdRef.current;
+      refreshInFlightByIdentityRef.current.set(identity, true);
 
       if (!silent) {
         setIsLoading(true);
@@ -352,13 +371,17 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
       try {
         const jobId = session?.jobId || getCronJobIdFromKey(session?.key);
         if (!jobId) {
-          setError('Could not determine cron job ID from session.');
+          if (!isRequestStale(requestId, identity)) {
+            setError('Could not determine cron job ID from session.');
+          }
           return;
         }
 
         logger.info('Fetching cron run history', { jobId, silent });
         const runsData = await getCronJobRuns(jobId, { limit: 25 });
         const cronRuns = runsData.runs || [];
+
+        if (isRequestStale(requestId, identity)) return;
 
         if (cronRuns.length === 0) {
           setLatestRun(null);
@@ -390,6 +413,8 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
             includeTools: true,
           });
 
+          if (isRequestStale(requestId, identity)) return;
+
           const nextMessages = messagesData.messages || [];
           setMessages((prev) =>
             getMessageFingerprint(prev) === getMessageFingerprint(nextMessages) ? prev : nextMessages,
@@ -406,22 +431,27 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
           logger.warn('Latest run has no sessionKey', { run: latest });
         }
       } catch (err) {
+        if (isRequestStale(requestId, identity)) return;
         logger.error('Failed to load cron run history', err);
         setError('Failed to load cron run history. Please try again.');
       } finally {
-        refreshInFlightRef.current = false;
-        if (!silent) {
+        refreshInFlightByIdentityRef.current.delete(identity);
+        if (!silent && !isRequestStale(requestId, identity)) {
           setIsLoading(false);
         }
       }
     },
-    [session?.jobId, session?.key],
+    [isRequestStale, session?.jobId, session?.key, session?.kind],
   );
 
   const loadMessages = useCallback(
     async ({ silent = false } = {}) => {
-      if (!session?.key || refreshInFlightRef.current) return;
-      refreshInFlightRef.current = true;
+      const identity = `session:${session?.key || ''}`;
+      if (!session?.key || identity === 'session:') return;
+      if (refreshInFlightByIdentityRef.current.get(identity)) return;
+
+      const requestId = ++latestRequestIdRef.current;
+      refreshInFlightByIdentityRef.current.set(identity, true);
 
       if (!silent) {
         setIsLoading(true);
@@ -432,6 +462,7 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
       try {
         logger.info('Fetching session messages', { sessionKey: session.key, silent });
         const data = await getSessionMessages(session.key, { limit: 100, includeTools: true });
+        if (isRequestStale(requestId, identity)) return;
         const nextMessages = data.messages || [];
 
         setMessages((prev) =>
@@ -443,6 +474,7 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
 
         logger.info('Session messages loaded', { messageCount: nextMessages.length, silent });
       } catch (err) {
+        if (isRequestStale(requestId, identity)) return;
         logger.error('Failed to load session messages', err);
 
         // Check for agent-to-agent access error
@@ -458,18 +490,20 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
           setError('Failed to load session messages. Please try again.');
         }
       } finally {
-        refreshInFlightRef.current = false;
-        if (!silent) {
+        refreshInFlightByIdentityRef.current.delete(identity);
+        if (!silent && !isRequestStale(requestId, identity)) {
           setIsLoading(false);
         }
       }
     },
-    [session?.key],
+    [isRequestStale, session?.key],
   );
 
   // Initial load + live refresh while the drawer is open.
   useEffect(() => {
     if (!isOpen) return undefined;
+    activeSessionIdentityRef.current = sessionIdentity;
+    const inFlightMap = refreshInFlightByIdentityRef.current;
 
     const load = async (silent = false) => {
       if (session?.kind === 'cron') {
@@ -483,10 +517,28 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
 
     const hasLiveStreamTarget = session?.kind === 'cron' || Boolean(session?.key);
     if (hasLiveStreamTarget) {
-      const intervalMs = session?.kind === 'cron' ? CRON_REFRESH_INTERVAL_MS : SESSION_REFRESH_INTERVAL_MS;
+      const intervalMs =
+        session?.kind === 'cron' ? CRON_REFRESH_INTERVAL_MS : SESSION_REFRESH_INTERVAL_MS;
       refreshTimerRef.current = setInterval(() => {
+        if (document.visibilityState !== 'visible') return;
         load(true);
       }, intervalMs);
+
+      const onVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          load(true);
+        }
+      };
+      document.addEventListener('visibilitychange', onVisibilityChange);
+
+      return () => {
+        if (refreshTimerRef.current) {
+          clearInterval(refreshTimerRef.current);
+          refreshTimerRef.current = null;
+        }
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        inFlightMap.clear();
+      };
     }
 
     return () => {
@@ -494,9 +546,9 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
         clearInterval(refreshTimerRef.current);
         refreshTimerRef.current = null;
       }
-      refreshInFlightRef.current = false;
+      inFlightMap.clear();
     };
-  }, [isOpen, session?.key, session?.kind, loadMessages, loadCronRunHistory]);
+  }, [isOpen, sessionIdentity, session?.key, session?.kind, loadMessages, loadCronRunHistory]);
 
   // Scroll to bottom when messages finish loading
   useEffect(() => {
