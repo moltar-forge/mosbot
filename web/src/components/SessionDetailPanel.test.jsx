@@ -245,4 +245,40 @@ describe('SessionDetailPanel live refresh', () => {
     expect(screen.getByText('B fresh')).toBeInTheDocument();
     expect(screen.queryByText('A stale')).not.toBeInTheDocument();
   });
+
+  it('appends only new tail messages during silent refresh', async () => {
+    getSessionMessages
+      .mockResolvedValueOnce({
+        messages: [{ role: 'assistant', content: 'first', timestamp: '2026-01-01T00:00:00.000Z' }],
+        session: null,
+        sessionNotLoaded: false,
+      })
+      .mockResolvedValueOnce({
+        messages: [
+          { role: 'assistant', content: 'first', timestamp: '2026-01-01T00:00:00.000Z' },
+          { role: 'assistant', content: 'second', timestamp: '2026-01-01T00:00:01.000Z' },
+        ],
+        session: null,
+        sessionNotLoaded: false,
+      });
+
+    render(
+      <SessionDetailPanel
+        isOpen
+        onClose={() => {}}
+        session={{ key: 'agent:main:main', kind: 'main', label: 'Main Session' }}
+      />,
+    );
+
+    await flush();
+    expect(screen.getByText('first')).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    await flush();
+    expect(screen.getByText('first')).toBeInTheDocument();
+    expect(screen.getByText('second')).toBeInTheDocument();
+  });
 });

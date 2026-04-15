@@ -18,6 +18,8 @@ import logger from '../utils/logger';
 const RUN_GAP_MS = 5 * 60 * 1000;
 const SESSION_REFRESH_INTERVAL_MS = 2000;
 const CRON_REFRESH_INTERVAL_MS = 5000;
+const INITIAL_MESSAGES_LIMIT = 100;
+const REFRESH_MESSAGES_LIMIT = 20;
 
 /** Short hash display with copy-on-click for UUIDs/IDs. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -110,17 +112,30 @@ function groupMessagesIntoRuns(messages) {
   return runs;
 }
 
-function getMessageFingerprint(list) {
-  if (!Array.isArray(list) || list.length === 0) return '0';
-  const last = list[list.length - 1];
-  const contentLength =
-    typeof last?.content === 'string'
-      ? last.content.length
-      : Array.isArray(last?.content)
-        ? last.content.length
-        : 0;
-  const blocksLength = Array.isArray(last?.blocks) ? last.blocks.length : 0;
-  return `${list.length}|${last?.timestamp || ''}|${last?.role || ''}|${contentLength}|${blocksLength}`;
+function getMessageKey(message) {
+  if (!message || typeof message !== 'object') return '';
+  const content =
+    typeof message.content === 'string' ? message.content : JSON.stringify(message.content || '');
+  const model =
+    typeof message.model === 'string' ? message.model : JSON.stringify(message.model || '');
+  return `${message.timestamp || ''}|${message.role || ''}|${model}|${content}`;
+}
+
+function mergeMessages(prev, incoming) {
+  if (!Array.isArray(prev) || prev.length === 0) return Array.isArray(incoming) ? incoming : [];
+  if (!Array.isArray(incoming) || incoming.length === 0) return prev;
+
+  const seen = new Set(prev.map(getMessageKey));
+  const appended = [];
+
+  for (const msg of incoming) {
+    const key = getMessageKey(msg);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    appended.push(msg);
+  }
+
+  return appended.length > 0 ? [...prev, ...appended] : prev;
 }
 
 /** Helper to format tool call summary for display. */
@@ -409,16 +424,14 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
         if (latest.sessionKey) {
           logger.info('Fetching latest run messages', { sessionKey: latest.sessionKey, silent });
           const messagesData = await getSessionMessages(latest.sessionKey, {
-            limit: 200,
+            limit: silent ? REFRESH_MESSAGES_LIMIT : INITIAL_MESSAGES_LIMIT,
             includeTools: true,
           });
 
           if (isRequestStale(requestId, identity)) return;
 
           const nextMessages = messagesData.messages || [];
-          setMessages((prev) =>
-            getMessageFingerprint(prev) === getMessageFingerprint(nextMessages) ? prev : nextMessages,
-          );
+          setMessages((prev) => (silent ? mergeMessages(prev, nextMessages) : nextMessages));
 
           setError(null);
           logger.info('Latest run messages loaded', {
@@ -461,13 +474,14 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
 
       try {
         logger.info('Fetching session messages', { sessionKey: session.key, silent });
-        const data = await getSessionMessages(session.key, { limit: 100, includeTools: true });
+        const data = await getSessionMessages(session.key, {
+          limit: silent ? REFRESH_MESSAGES_LIMIT : INITIAL_MESSAGES_LIMIT,
+          includeTools: true,
+        });
         if (isRequestStale(requestId, identity)) return;
         const nextMessages = data.messages || [];
 
-        setMessages((prev) =>
-          getMessageFingerprint(prev) === getMessageFingerprint(nextMessages) ? prev : nextMessages,
-        );
+        setMessages((prev) => (silent ? mergeMessages(prev, nextMessages) : nextMessages));
         setSessionMetadata(data.session || null);
         setSessionNotLoaded(data.sessionNotLoaded === true);
         setError(null);
