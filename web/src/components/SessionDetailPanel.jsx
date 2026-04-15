@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useRef } from 'react';
+import { Fragment, useState, useEffect, useRef, useCallback } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import {
   XMarkIcon,
@@ -16,6 +16,8 @@ import logger from '../utils/logger';
 
 // Gap threshold for detecting a new isolated run boundary
 const RUN_GAP_MS = 5 * 60 * 1000;
+const SESSION_REFRESH_INTERVAL_MS = 2000;
+const CRON_REFRESH_INTERVAL_MS = 5000;
 
 /** Short hash display with copy-on-click for UUIDs/IDs. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -106,6 +108,19 @@ function groupMessagesIntoRuns(messages) {
     runs[runs.length - 1].messages.push(message);
   });
   return runs;
+}
+
+function getMessageFingerprint(list) {
+  if (!Array.isArray(list) || list.length === 0) return '0';
+  const last = list[list.length - 1];
+  const contentLength =
+    typeof last?.content === 'string'
+      ? last.content.length
+      : Array.isArray(last?.content)
+        ? last.content.length
+        : 0;
+  const blocksLength = Array.isArray(last?.blocks) ? last.blocks.length : 0;
+  return `${list.length}|${last?.timestamp || ''}|${last?.role || ''}|${contentLength}|${blocksLength}`;
 }
 
 /** Helper to format tool call summary for display. */
@@ -306,6 +321,10 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
   const [error, setError] = useState(null);
   const [latestRun, setLatestRun] = useState(null);
   const scrollContainerRef = useRef(null);
+  const refreshTimerRef = useRef(null);
+  const refreshInFlightByIdentityRef = useRef(new Map());
+  const activeSessionIdentityRef = useRef('');
+  const latestRequestIdRef = useRef(0);
 
   const getAgentById = useAgentStore((state) => state.getAgentById);
   const agent = session?.agent ? getAgentById(session.agent) : null;
@@ -318,15 +337,218 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
   // latestRunOnly: only show the last run's messages (used by Task Manager)
   const runs = latestRunOnly && allRuns ? allRuns.slice(-1) : allRuns;
 
-  // For cron sessions, fetch the latest run history first, then load its messages
+  const sessionIdentity =
+    session?.kind === 'cron'
+      ? `cron:${session?.jobId || getCronJobIdFromKey(session?.key) || ''}`
+      : `session:${session?.key || ''}`;
+
+  const isRequestStale = useCallback((requestId, identity) => {
+    return requestId !== latestRequestIdRef.current || identity !== activeSessionIdentityRef.current;
+  }, []);
+
+  // Load cron run history and fetch messages from the latest run
+  const loadCronRunHistory = useCallback(
+    async ({ silent = false } = {}) => {
+      const identity =
+        session?.kind === 'cron'
+          ? `cron:${session?.jobId || getCronJobIdFromKey(session?.key) || ''}`
+          : `session:${session?.key || ''}`;
+
+      if (!identity || identity === 'cron:' || identity === 'session:') return;
+      if (refreshInFlightByIdentityRef.current.get(identity)) return;
+
+      const requestId = ++latestRequestIdRef.current;
+      refreshInFlightByIdentityRef.current.set(identity, true);
+
+      if (!silent) {
+        setIsLoading(true);
+        setError(null);
+        setSessionNotLoaded(false);
+        setLatestRun(null);
+        setMessages([]);
+      }
+
+      try {
+        const jobId = session?.jobId || getCronJobIdFromKey(session?.key);
+        if (!jobId) {
+          if (!isRequestStale(requestId, identity)) {
+            setError('Could not determine cron job ID from session.');
+          }
+          return;
+        }
+
+        logger.info('Fetching cron run history', { jobId, silent });
+        const runsData = await getCronJobRuns(jobId, { limit: 25 });
+        const cronRuns = runsData.runs || [];
+
+        if (isRequestStale(requestId, identity)) return;
+
+        if (cronRuns.length === 0) {
+          setLatestRun(null);
+          setMessages([]);
+          setError('No run history found for this cron job.');
+          return;
+        }
+
+        // Get the latest run (last in array, as runs are in chronological order)
+        const latest = cronRuns[cronRuns.length - 1];
+        setLatestRun((prev) => {
+          if (
+            prev?.runId === latest?.runId &&
+            prev?.updatedAt === latest?.updatedAt &&
+            prev?.status === latest?.status &&
+            prev?.summary === latest?.summary &&
+            prev?.error === latest?.error
+          ) {
+            return prev;
+          }
+          return latest;
+        });
+
+        // If the latest run has a sessionKey, fetch its messages
+        if (latest.sessionKey) {
+          logger.info('Fetching latest run messages', { sessionKey: latest.sessionKey, silent });
+          const messagesData = await getSessionMessages(latest.sessionKey, {
+            limit: 200,
+            includeTools: true,
+          });
+
+          if (isRequestStale(requestId, identity)) return;
+
+          const nextMessages = messagesData.messages || [];
+          setMessages((prev) =>
+            getMessageFingerprint(prev) === getMessageFingerprint(nextMessages) ? prev : nextMessages,
+          );
+
+          setError(null);
+          logger.info('Latest run messages loaded', {
+            messageCount: nextMessages.length,
+            silent,
+          });
+        } else {
+          setMessages([]);
+          setError(null);
+          logger.warn('Latest run has no sessionKey', { run: latest });
+        }
+      } catch (err) {
+        if (isRequestStale(requestId, identity)) return;
+        logger.error('Failed to load cron run history', err);
+        setError('Failed to load cron run history. Please try again.');
+      } finally {
+        refreshInFlightByIdentityRef.current.delete(identity);
+        if (!silent && !isRequestStale(requestId, identity)) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [isRequestStale, session?.jobId, session?.key, session?.kind],
+  );
+
+  const loadMessages = useCallback(
+    async ({ silent = false } = {}) => {
+      const identity = `session:${session?.key || ''}`;
+      if (!session?.key || identity === 'session:') return;
+      if (refreshInFlightByIdentityRef.current.get(identity)) return;
+
+      const requestId = ++latestRequestIdRef.current;
+      refreshInFlightByIdentityRef.current.set(identity, true);
+
+      if (!silent) {
+        setIsLoading(true);
+        setError(null);
+        setSessionNotLoaded(false);
+      }
+
+      try {
+        logger.info('Fetching session messages', { sessionKey: session.key, silent });
+        const data = await getSessionMessages(session.key, { limit: 100, includeTools: true });
+        if (isRequestStale(requestId, identity)) return;
+        const nextMessages = data.messages || [];
+
+        setMessages((prev) =>
+          getMessageFingerprint(prev) === getMessageFingerprint(nextMessages) ? prev : nextMessages,
+        );
+        setSessionMetadata(data.session || null);
+        setSessionNotLoaded(data.sessionNotLoaded === true);
+        setError(null);
+
+        logger.info('Session messages loaded', { messageCount: nextMessages.length, silent });
+      } catch (err) {
+        if (isRequestStale(requestId, identity)) return;
+        logger.error('Failed to load session messages', err);
+
+        // Check for agent-to-agent access error
+        if (
+          err.response?.status === 403 &&
+          err.response?.data?.error?.code === 'AGENT_TO_AGENT_DISABLED'
+        ) {
+          setError(
+            'Agent session history is not accessible. Agent-to-agent access is disabled in OpenClaw Gateway. ' +
+              'Contact your administrator to enable this feature.',
+          );
+        } else {
+          setError('Failed to load session messages. Please try again.');
+        }
+      } finally {
+        refreshInFlightByIdentityRef.current.delete(identity);
+        if (!silent && !isRequestStale(requestId, identity)) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [isRequestStale, session?.key],
+  );
+
+  // Initial load + live refresh while the drawer is open.
   useEffect(() => {
-    if (isOpen && session?.kind === 'cron') {
-      loadCronRunHistory();
-    } else if (isOpen && session?.key) {
-      loadMessages();
+    if (!isOpen) return undefined;
+    activeSessionIdentityRef.current = sessionIdentity;
+    const inFlightMap = refreshInFlightByIdentityRef.current;
+
+    const load = async (silent = false) => {
+      if (session?.kind === 'cron') {
+        await loadCronRunHistory({ silent });
+      } else if (session?.key) {
+        await loadMessages({ silent });
+      }
+    };
+
+    load(false);
+
+    const hasLiveStreamTarget = session?.kind === 'cron' || Boolean(session?.key);
+    if (hasLiveStreamTarget) {
+      const intervalMs =
+        session?.kind === 'cron' ? CRON_REFRESH_INTERVAL_MS : SESSION_REFRESH_INTERVAL_MS;
+      refreshTimerRef.current = setInterval(() => {
+        if (document.visibilityState !== 'visible') return;
+        load(true);
+      }, intervalMs);
+
+      const onVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          load(true);
+        }
+      };
+      document.addEventListener('visibilitychange', onVisibilityChange);
+
+      return () => {
+        if (refreshTimerRef.current) {
+          clearInterval(refreshTimerRef.current);
+          refreshTimerRef.current = null;
+        }
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        inFlightMap.clear();
+      };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadMessages/loadCronRunHistory depend on session, which is in deps
-  }, [isOpen, session?.key, session?.kind]);
+
+    return () => {
+      if (refreshTimerRef.current) {
+        clearInterval(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+      inFlightMap.clear();
+    };
+  }, [isOpen, sessionIdentity, session?.key, session?.kind, loadMessages, loadCronRunHistory]);
 
   // Scroll to bottom when messages finish loading
   useEffect(() => {
@@ -337,91 +559,6 @@ export default function SessionDetailPanel({ isOpen, onClose, session, latestRun
       });
     }
   }, [isLoading, error, messages.length]);
-
-  // Load cron run history and fetch messages from the latest run
-  const loadCronRunHistory = async () => {
-    setIsLoading(true);
-    setError(null);
-    setSessionNotLoaded(false);
-    setLatestRun(null);
-    setMessages([]);
-
-    try {
-      const jobId = session?.jobId || getCronJobIdFromKey(session?.key);
-      if (!jobId) {
-        setError('Could not determine cron job ID from session.');
-        setIsLoading(false);
-        return;
-      }
-
-      logger.info('Fetching cron run history', { jobId });
-      const runsData = await getCronJobRuns(jobId, { limit: 25 });
-      const runs = runsData.runs || [];
-
-      if (runs.length === 0) {
-        setError('No run history found for this cron job.');
-        setIsLoading(false);
-        return;
-      }
-
-      // Get the latest run (last in array, as runs are in chronological order)
-      const latest = runs[runs.length - 1];
-      setLatestRun(latest);
-
-      // If the latest run has a sessionKey, fetch its messages
-      if (latest.sessionKey) {
-        logger.info('Fetching latest run messages', { sessionKey: latest.sessionKey });
-        const messagesData = await getSessionMessages(latest.sessionKey, {
-          limit: 200,
-          includeTools: true,
-        });
-        setMessages(messagesData.messages || []);
-        logger.info('Latest run messages loaded', {
-          messageCount: messagesData.messages?.length || 0,
-        });
-      } else {
-        setMessages([]);
-        logger.warn('Latest run has no sessionKey', { run: latest });
-      }
-    } catch (err) {
-      logger.error('Failed to load cron run history', err);
-      setError('Failed to load cron run history. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadMessages = async () => {
-    setIsLoading(true);
-    setError(null);
-    setSessionNotLoaded(false);
-
-    try {
-      logger.info('Fetching session messages', { sessionKey: session.key });
-      const data = await getSessionMessages(session.key, { limit: 100, includeTools: true });
-      setMessages(data.messages || []);
-      setSessionMetadata(data.session || null);
-      setSessionNotLoaded(data.sessionNotLoaded === true);
-      logger.info('Session messages loaded', { messageCount: data.messages?.length || 0 });
-    } catch (err) {
-      logger.error('Failed to load session messages', err);
-
-      // Check for agent-to-agent access error
-      if (
-        err.response?.status === 403 &&
-        err.response?.data?.error?.code === 'AGENT_TO_AGENT_DISABLED'
-      ) {
-        setError(
-          'Agent session history is not accessible. Agent-to-agent access is disabled in OpenClaw Gateway. ' +
-            'Contact your administrator to enable this feature.',
-        );
-      } else {
-        setError('Failed to load session messages. Please try again.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const getStatusColor = (status) => {
     switch (status) {
