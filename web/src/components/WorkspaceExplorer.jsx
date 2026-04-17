@@ -33,6 +33,7 @@ import {
   isAbsoluteWorkspacePath,
 } from '../utils/workspacePaths';
 import { useAgentStore } from '../stores/agentStore';
+import logger from '../utils/logger';
 
 /**
  * Normalize a URL path segment to a workspace path.
@@ -734,14 +735,44 @@ export default function WorkspaceExplorer({
     return stripped || '/';
   };
 
+  const copyTextToClipboard = async (text) => {
+    if (!text) return false;
+
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+
+    // Fallback for non-secure contexts where navigator.clipboard is unavailable.
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+
+    const ok = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return ok;
+  };
+
   const handleCopyPath = async (file) => {
-    const workspaceRelativePath = toWorkspaceRelativePath(file?.path);
+    const sourcePath = file?.path || file?.fullPath;
+    const workspaceRelativePath = toWorkspaceRelativePath(sourcePath);
     if (!workspaceRelativePath) return;
 
     try {
-      await navigator.clipboard.writeText(workspaceRelativePath);
+      const copied = await copyTextToClipboard(workspaceRelativePath);
+      if (!copied) throw new Error('Copy command failed');
       showToast('Workspace path copied to clipboard', 'success');
-    } catch {
+    } catch (error) {
+      logger.warn('Workspace path copy failed', {
+        path: sourcePath,
+        secureContext: window.isSecureContext,
+        hasClipboardApi: !!navigator?.clipboard?.writeText,
+        error: error?.message,
+      });
       showToast('Failed to copy workspace path', 'error');
     }
   };
