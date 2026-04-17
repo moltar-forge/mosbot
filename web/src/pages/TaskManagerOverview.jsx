@@ -21,6 +21,9 @@ import { useSchedulerStore } from '../stores/schedulerStore';
 import { getCronJobs, getSchedulerStats } from '../api/client';
 import logger from '../utils/logger';
 import { classNames, formatTokens } from '../utils/helpers';
+
+const MONITOR_REFRESH_INTERVAL_MS = 15000;
+
 const SESSION_TYPES = [
   { id: 'main', label: 'Agent' },
   { id: 'subagent', label: 'Subagent' },
@@ -45,7 +48,10 @@ export default function TaskManagerOverview() {
   const [activeTab, setActiveTab] = useState('live');
   const [filterTypes, setFilterTypes] = useState([]);
   const [filterAgents, setFilterAgents] = useState([]);
+  const [activityFilter, setActivityFilter] = useState('all'); // all | non-idle | running | active
   const [groupBy, setGroupBy] = useState('kind'); // 'agent', 'kind', or 'none'
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const refreshInFlightRef = useRef(false);
 
   // Deep-link support: ?sessionKey=<key> auto-selects and opens the session detail panel
   const [searchParams, setSearchParams] = useSearchParams();
@@ -261,13 +267,24 @@ export default function TaskManagerOverview() {
     }
   }, [deepLinkSessionKey, sessions, sessionsLoaded, setSearchParams]);
 
+  const refreshOverview = useCallback(async () => {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+
+    try {
+      await Promise.all([
+        fetchSessions(),
+        loadRecentActivity(),
+        fetchTodaySummary(),
+        loadSchedulerStats(),
+      ]);
+    } finally {
+      refreshInFlightRef.current = false;
+    }
+  }, [fetchSessions, loadRecentActivity, fetchTodaySummary, loadSchedulerStats]);
+
   const handleRefresh = async () => {
-    await Promise.all([
-      fetchSessions(),
-      loadRecentActivity(),
-      fetchTodaySummary(),
-      loadSchedulerStats(),
-    ]);
+    await refreshOverview();
   };
 
   const handleSessionClick = useCallback((session) => {
@@ -283,13 +300,38 @@ export default function TaskManagerOverview() {
     (session) => {
       const sessionKind = session.kind || 'main';
       const sessionAgent = session.agent || session.agentId || null;
+      const sessionStatus = (session.status || 'idle').toLowerCase();
       const typeMatch = filterTypes.length === 0 || filterTypes.includes(sessionKind);
       const agentMatch =
         filterAgents.length === 0 || (sessionAgent && filterAgents.includes(sessionAgent));
-      return typeMatch && agentMatch;
+      const activityMatch =
+        activityFilter === 'all'
+          ? true
+          : activityFilter === 'non-idle'
+            ? sessionStatus !== 'idle'
+            : sessionStatus === activityFilter;
+      return typeMatch && agentMatch && activityMatch;
     },
-    [filterTypes, filterAgents],
+    [filterTypes, filterAgents, activityFilter],
   );
+
+  useEffect(() => {
+    if (!autoRefreshEnabled) return undefined;
+
+    const runIfVisible = () => {
+      if (document.visibilityState === 'visible') {
+        refreshOverview();
+      }
+    };
+
+    const interval = setInterval(runIfVisible, MONITOR_REFRESH_INTERVAL_MS);
+    document.addEventListener('visibilitychange', runIfVisible);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', runIfVisible);
+    };
+  }, [autoRefreshEnabled, refreshOverview]);
 
   // All live sessions (running + active + idle) passing current filters
   const liveSessions = useMemo(() => sessions.filter(passesFilters), [sessions, passesFilters]);
@@ -467,6 +509,59 @@ export default function TaskManagerOverview() {
 
               {/* Grouping toggle — pinned to the right on md+ */}
               <div className="flex items-center gap-2 md:ml-auto">
+                <span className="text-xs font-medium text-dark-500 flex-shrink-0">Activity</span>
+                <div className="flex items-center gap-1 bg-dark-700 rounded-lg p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setActivityFilter('all')}
+                    className={classNames(
+                      'px-2 py-1 text-xs font-medium rounded transition-colors',
+                      activityFilter === 'all'
+                        ? 'bg-primary-600 text-white'
+                        : 'text-dark-400 hover:text-dark-200',
+                    )}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActivityFilter('non-idle')}
+                    className={classNames(
+                      'px-2 py-1 text-xs font-medium rounded transition-colors',
+                      activityFilter === 'non-idle'
+                        ? 'bg-primary-600 text-white'
+                        : 'text-dark-400 hover:text-dark-200',
+                    )}
+                  >
+                    Non-idle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActivityFilter('running')}
+                    className={classNames(
+                      'px-2 py-1 text-xs font-medium rounded transition-colors',
+                      activityFilter === 'running'
+                        ? 'bg-primary-600 text-white'
+                        : 'text-dark-400 hover:text-dark-200',
+                    )}
+                  >
+                    Running
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActivityFilter('active')}
+                    className={classNames(
+                      'px-2 py-1 text-xs font-medium rounded transition-colors',
+                      activityFilter === 'active'
+                        ? 'bg-primary-600 text-white'
+                        : 'text-dark-400 hover:text-dark-200',
+                    )}
+                  >
+                    Active
+                  </button>
+                </div>
+
+                <div className="hidden md:block w-px h-6 bg-dark-600 flex-shrink-0" aria-hidden />
                 <Squares2X2Icon className="w-4 h-4 text-dark-500 flex-shrink-0" aria-hidden />
                 <span className="text-xs font-medium text-dark-500 flex-shrink-0">Group by</span>
                 <div className="flex items-center gap-1 bg-dark-700 rounded-lg p-0.5">
@@ -507,6 +602,22 @@ export default function TaskManagerOverview() {
                     None
                   </button>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setAutoRefreshEnabled((v) => !v)}
+                  className={classNames(
+                    'px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors',
+                    autoRefreshEnabled
+                      ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-600/30'
+                      : 'bg-dark-700 text-dark-400 border-dark-600 hover:text-dark-200 hover:border-dark-500',
+                  )}
+                  title={`Auto-refresh ${autoRefreshEnabled ? 'enabled' : 'disabled'} (${Math.round(
+                    MONITOR_REFRESH_INTERVAL_MS / 1000,
+                  )}s)`}
+                >
+                  Auto {autoRefreshEnabled ? 'On' : 'Off'}
+                </button>
               </div>
             </div>
           </div>
