@@ -61,10 +61,21 @@ export default function TaskManagerOverview() {
   // Recent cron/heartbeat activity
   const [recentJobs, setRecentJobs] = useState([]);
   const [jobsLoaded, setJobsLoaded] = useState(false);
+  const isMountedRef = useRef(false);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const loadRecentActivity = useCallback(async () => {
     try {
       const jobs = await getCronJobs();
+      // Auto-refresh can finish after navigation; ignore late local state writes.
+      if (!isMountedRef.current) return;
       // Filter to jobs that have actually run, sorted by lastRunAt descending
       const ranJobs = (jobs || [])
         .filter((j) => j.lastRunAt)
@@ -326,6 +337,7 @@ export default function TaskManagerOverview() {
 
     const interval = setInterval(runIfVisible, MONITOR_REFRESH_INTERVAL_MS);
     document.addEventListener('visibilitychange', runIfVisible);
+    runIfVisible();
 
     return () => {
       clearInterval(interval);
@@ -343,6 +355,8 @@ export default function TaskManagerOverview() {
   const runningCount = liveSessions.filter((s) => s.status === 'running').length;
   const activeCount = liveSessions.filter((s) => s.status === 'active').length;
   const idleCount = liveSessions.filter((s) => s.status === 'idle').length;
+  const hasActiveFilters =
+    filterTypes.length > 0 || filterAgents.length > 0 || activityFilter !== 'all';
 
   if (!sessionsLoaded && sessions.length === 0) {
     return (
@@ -489,7 +503,7 @@ export default function TaskManagerOverview() {
               </div>
 
               {/* Clear — only visible when filters are active */}
-              {(filterTypes.length > 0 || filterAgents.length > 0) && (
+              {hasActiveFilters && (
                 <>
                   <div className="hidden md:block w-px h-6 bg-dark-600 flex-shrink-0" aria-hidden />
                   <button
@@ -497,6 +511,7 @@ export default function TaskManagerOverview() {
                     onClick={() => {
                       setFilterTypes([]);
                       setFilterAgents([]);
+                      setActivityFilter('all');
                     }}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-dark-400 hover:text-dark-200 transition-colors rounded-lg hover:bg-dark-700 flex-shrink-0"
                   >
@@ -662,9 +677,7 @@ export default function TaskManagerOverview() {
               sessions={liveSessions}
               title="Sessions"
               emptyMessage={
-                filterTypes.length > 0 || filterAgents.length > 0
-                  ? 'No sessions match the current filters'
-                  : 'No sessions'
+                hasActiveFilters ? 'No sessions match the current filters' : 'No sessions'
               }
               onSessionClick={handleSessionClick}
               groupBy={groupBy}
@@ -685,7 +698,7 @@ export default function TaskManagerOverview() {
                   sessions={filteredRecentActivitySessions}
                   title="Recent Activity"
                   emptyMessage={
-                    filterTypes.length > 0 || filterAgents.length > 0
+                    hasActiveFilters
                       ? 'No recent activity matches the current filters'
                       : 'No recent cron or heartbeat activity'
                   }
