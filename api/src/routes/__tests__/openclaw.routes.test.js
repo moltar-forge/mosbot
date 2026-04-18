@@ -1286,6 +1286,59 @@ describe('OpenClaw Routes', () => {
       );
     });
 
+    it('persists a default workspace path in openclaw.json on create', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      gatewayWsRpc.mockImplementation((method, params) => {
+        if (method === 'config.get') return Promise.resolve({ hash: 'h1' });
+        if (method === 'config.apply') return Promise.resolve({ hash: 'h2', appliedRaw: params?.raw });
+        return Promise.resolve({});
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'new-agent',
+          title: 'New Agent',
+          displayName: 'New Agent Display Name',
+        });
+
+      expect(response.status).toBe(201);
+      const applyCall = gatewayWsRpc.mock.calls.find((c) => c[0] === 'config.apply');
+      expect(applyCall).toBeDefined();
+      const cfg = JSON.parse(applyCall[1]?.raw || '{}');
+      const created = cfg.agents.list.find((a) => a.id === 'new-agent');
+      expect(created?.workspace).toBe('/workspace-new-agent');
+    });
+
+    it('persists custom workspace path on create when provided', async () => {
+      const token = getToken('admin-id', 'admin');
+
+      gatewayWsRpc.mockImplementation((method, params) => {
+        if (method === 'config.get') return Promise.resolve({ hash: 'h1' });
+        if (method === 'config.apply') return Promise.resolve({ hash: 'h2', appliedRaw: params?.raw });
+        return Promise.resolve({});
+      });
+
+      const response = await request(app)
+        .post('/api/v1/openclaw/agents/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'new-agent',
+          title: 'New Agent',
+          displayName: 'New Agent Display Name',
+          workspace: '/workspace-custom-new-agent',
+        });
+
+      expect(response.status).toBe(201);
+      const applyCall = gatewayWsRpc.mock.calls.find((c) => c[0] === 'config.apply');
+      expect(applyCall).toBeDefined();
+      const cfg = JSON.parse(applyCall[1]?.raw || '{}');
+      const created = cfg.agents.list.find((a) => a.id === 'new-agent');
+      expect(created?.workspace).toBe('/workspace-custom-new-agent');
+    });
+
     it('provisions toolkit scripts with executable mode and falls back when mode is unsupported', async () => {
       const token = getToken('admin-id', 'admin');
       const writes = [];

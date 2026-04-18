@@ -2791,8 +2791,13 @@ router.post('/agents/config', requireAuth, requireAdmin, async (req, res, next) 
       const fallbacks = [agentData.modelFallback1, agentData.modelFallback2].filter(Boolean);
       const newAgent = {
         id: agentData.id,
-        // Intentionally omit `workspace` to let OpenClaw derive it from CONFIG_ROOT
-        // (workspace-<agentId>) and avoid hard-coding absolute host paths.
+        // Always persist workspace in openclaw.json so UI/API consumers can rely on
+        // a concrete value immediately after create.
+        workspace: resolveAgentWorkspacePath({
+          id: agentData.id,
+          workspace: agentData.workspace,
+          default: agentData.id === 'main',
+        }),
         identity: {
           name: agentData.identityName || agentData.displayName,
           theme: agentData.identityTheme || agentData.description || '',
