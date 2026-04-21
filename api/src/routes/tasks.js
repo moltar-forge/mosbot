@@ -125,6 +125,20 @@ async function validateProjectContext(projectId, queryClient = pool) {
 }
 
 // Helper to log task events
+function buildTaskActorMeta(user, meta = null) {
+  const mergedMeta = meta && typeof meta === 'object' && !Array.isArray(meta) ? { ...meta } : {};
+
+  if (user?.agent_id) {
+    mergedMeta.actor_type = 'agent';
+    mergedMeta.actor_agent_id = mergedMeta.actor_agent_id || user.agent_id;
+    mergedMeta.actor_name = mergedMeta.actor_name || user.name || user.agent_id;
+  } else if (user?.id) {
+    mergedMeta.actor_type = mergedMeta.actor_type || 'user';
+  }
+
+  return Object.keys(mergedMeta).length > 0 ? mergedMeta : null;
+}
+
 async function logTaskEvent(
   client,
   taskId,
@@ -615,7 +629,16 @@ router.post('/', optionalAuth, async (req, res, next) => {
       preferred_model: newTask.preferred_model,
     };
 
-    await logTaskEvent(client, newTask.id, 'CREATED', 'api', req.user?.id, null, newValues);
+    await logTaskEvent(
+      client,
+      newTask.id,
+      'CREATED',
+      'api',
+      req.user?.id,
+      null,
+      newValues,
+      buildTaskActorMeta(req.user),
+    );
 
     await client.query('COMMIT');
 
@@ -964,7 +987,7 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
               actorId,
               JSON.stringify({ status: currentStatus }),
               JSON.stringify({ attempted_status: status }),
-              JSON.stringify({ blocking_tasks: blockingTaskKeys }),
+              JSON.stringify(buildTaskActorMeta(req.user, { blocking_tasks: blockingTaskKeys })),
             ],
           );
         } catch (logError) {
@@ -1235,7 +1258,16 @@ router.put('/:id', optionalAuth, validateUUID('id'), async (req, res, next) => {
       }
     }
 
-    await logTaskEvent(client, id, eventType, 'api', req.user?.id, oldValues, newValues);
+    await logTaskEvent(
+      client,
+      id,
+      eventType,
+      'api',
+      req.user?.id,
+      oldValues,
+      newValues,
+      buildTaskActorMeta(req.user),
+    );
 
     await client.query('COMMIT');
 
@@ -1428,15 +1460,24 @@ router.post('/:id/execution', optionalAuth, validateUUID('id'), async (req, res,
       params,
     );
 
-    await logTaskEvent(client, id, EXECUTION_EVENT_MAP[state], 'api', req.user?.id, null, null, {
-      state,
-      agent_id: normalizedAgentId ?? null,
-      session_key: normalizedSessionKey ?? null,
-      run_id: normalizedRunId ?? null,
-      branch: normalizedBranch ?? null,
-      pr_url: normalizedPrUrl ?? null,
-      note: note ? String(note).trim().slice(0, 2000) : null,
-    });
+    await logTaskEvent(
+      client,
+      id,
+      EXECUTION_EVENT_MAP[state],
+      'api',
+      req.user?.id,
+      null,
+      null,
+      buildTaskActorMeta(req.user, {
+        state,
+        agent_id: normalizedAgentId ?? null,
+        session_key: normalizedSessionKey ?? null,
+        run_id: normalizedRunId ?? null,
+        branch: normalizedBranch ?? null,
+        pr_url: normalizedPrUrl ?? null,
+        note: note ? String(note).trim().slice(0, 2000) : null,
+      }),
+    );
 
     await client.query('COMMIT');
 
@@ -1492,11 +1533,19 @@ router.get('/:id/history', optionalAuth, validateUUID('id'), async (req, res, ne
       `
       SELECT 
         tl.*,
-        u.name as actor_name,
+        COALESCE(
+          u.name,
+          actor_agent.name,
+          tl.meta->>'actor_name',
+          tl.meta->>'actor_agent_id',
+          tl.meta->>'agent_id'
+        ) as actor_name,
         u.email as actor_email,
         u.avatar_url as actor_avatar
       FROM task_logs tl
       LEFT JOIN users u ON tl.actor_id = u.id
+      LEFT JOIN agents actor_agent
+        ON actor_agent.agent_id = COALESCE(tl.meta->>'actor_agent_id', tl.meta->>'agent_id')
       WHERE tl.task_id = $1
       ORDER BY tl.occurred_at DESC
       LIMIT $2 OFFSET $3
@@ -1590,7 +1639,13 @@ router.get('/:id/timeline', optionalAuth, validateUUID('id'), async (req, res, n
            'event' AS type,
            tl.event_type,
            tl.actor_id,
-           u.name  AS actor_name,
+           COALESCE(
+             u.name,
+             actor_agent.name,
+             tl.meta->>'actor_name',
+             tl.meta->>'actor_agent_id',
+             tl.meta->>'agent_id'
+           ) AS actor_name,
            u.email AS actor_email,
            tl.occurred_at,
            tl.meta,
@@ -1600,6 +1655,8 @@ router.get('/:id/timeline', optionalAuth, validateUUID('id'), async (req, res, n
            tl.occurred_at AS occurred_at
          FROM task_logs tl
          LEFT JOIN users u ON u.id = tl.actor_id
+         LEFT JOIN agents actor_agent
+           ON actor_agent.agent_id = COALESCE(tl.meta->>'actor_agent_id', tl.meta->>'agent_id')
          WHERE tl.task_id = $1
            AND tl.event_type NOT IN ('COMMENT_CREATED', 'COMMENT_UPDATED', 'COMMENT_DELETED')`,
         [id],
