@@ -175,7 +175,11 @@ CONSTRAINT check_done_at_with_status CHECK (
         AND done_at IS NOT NULL
     )
     OR (
-        status != 'DONE'
+        status = 'ARCHIVE'
+        AND done_at IS NOT NULL
+    )
+    OR (
+        status NOT IN ('DONE', 'ARCHIVE')
         AND done_at IS NULL
     )
 ),

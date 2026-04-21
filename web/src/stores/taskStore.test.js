@@ -396,6 +396,34 @@ describe('taskStore', () => {
       expect(api.get).toHaveBeenCalledWith('/tasks');
     });
 
+    it('removes an archived task from the active store immediately', async () => {
+      const existingTask = { id: 1, title: 'Task 1', status: 'DONE' };
+      useTaskStore.setState({ tasks: [existingTask] });
+
+      const updatedTask = { ...existingTask, status: 'ARCHIVE', archived_at: '2026-04-21T10:00:00Z' };
+
+      api.patch.mockResolvedValue({
+        data: {
+          data: updatedTask,
+        },
+      });
+      api.get.mockResolvedValue({
+        data: {
+          data: [],
+          pagination: { page: 1, limit: 10, total: 0 },
+        },
+      });
+
+      const result = await useTaskStore.getState().updateTask(1, { status: 'ARCHIVE' });
+
+      expect(result).toEqual(updatedTask);
+      expect(useTaskStore.getState().tasks).toEqual([]);
+
+      vi.advanceTimersByTime(500);
+      await vi.runOnlyPendingTimersAsync();
+      expect(api.get).toHaveBeenCalledWith('/tasks');
+    });
+
     it('handles update error and throws', async () => {
       const error = new Error('Failed to update task');
       api.patch.mockRejectedValue(error);
