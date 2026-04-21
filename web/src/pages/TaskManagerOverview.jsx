@@ -48,7 +48,7 @@ export default function TaskManagerOverview() {
   const [activeTab, setActiveTab] = useState('live');
   const [filterTypes, setFilterTypes] = useState([]);
   const [filterAgents, setFilterAgents] = useState([]);
-  const [activityFilter, setActivityFilter] = useState('all'); // all | non-idle | running | active
+  const [activityFilter, setActivityFilter] = useState('non-idle'); // all | non-idle | running | active
   const [groupBy, setGroupBy] = useState('kind'); // 'agent', 'kind', or 'none'
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const refreshInFlightRef = useRef(false);
