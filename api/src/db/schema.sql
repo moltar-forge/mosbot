@@ -115,7 +115,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- Status and timestamp consistency
   CONSTRAINT check_done_at_with_status CHECK (
     (status = 'DONE' AND done_at IS NOT NULL) OR
-    (status != 'DONE' AND done_at IS NULL)
+    (status = 'ARCHIVE' AND done_at IS NOT NULL) OR
+    (status NOT IN ('DONE', 'ARCHIVE') AND done_at IS NULL)
   ),
   CONSTRAINT check_archived_at_with_status CHECK (
     (status = 'ARCHIVE' AND archived_at IS NOT NULL) OR

@@ -141,7 +141,10 @@ export const useTaskStore = create((set, get) => ({
       // API returns { data: {...} }
       const updatedTask = response.data.data;
       set((state) => ({
-        tasks: state.tasks.map((task) => (task.id === taskId ? updatedTask : task)),
+        tasks:
+          updatedTask.status === 'ARCHIVE'
+            ? state.tasks.filter((task) => task.id !== taskId)
+            : state.tasks.map((task) => (task.id === taskId ? updatedTask : task)),
         isLoading: false,
       }));
 
