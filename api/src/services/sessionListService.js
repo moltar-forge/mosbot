@@ -26,7 +26,6 @@ async function getSessionsStatusData() {
     const wsResult = await sessionsListAllViaWs({
       includeGlobal: true,
       includeUnknown: false,
-      activeMinutes: 0,
       limit: 0,
     });
     if (Array.isArray(wsResult)) {
@@ -66,7 +65,6 @@ async function listSessionsData({ userId }) {
     const wsResult = await sessionsListAllViaWs({
       includeGlobal: true,
       includeUnknown: true,
-      activeMinutes: 0,
       limit: 0,
     });
 

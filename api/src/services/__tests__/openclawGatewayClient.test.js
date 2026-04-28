@@ -35,6 +35,7 @@ const mockConfig = {
   openclaw: {
     gatewayUrl: null,
     gatewayToken: null,
+    gatewayOrigin: null,
     gatewayTimeoutMs: 2000, // Reduced from 15000ms to 2000ms for faster tests
   },
 };
@@ -103,6 +104,7 @@ describe('openclawGatewayClient', () => {
     // Reset config defaults
     mockConfig.openclaw.gatewayUrl = 'http://test-gateway:18789';
     mockConfig.openclaw.gatewayToken = null;
+    mockConfig.openclaw.gatewayOrigin = null;
     mockConfig.openclaw.gatewayTimeoutMs = 15000;
 
     // Reset WebSocket mock
@@ -1273,6 +1275,32 @@ Line 2"}`;
       emitWs('close', 1006, 'abnormal');
 
       await expect(promise).rejects.toThrow('WebSocket closed (1006): abnormal');
+    });
+
+    it('should allow overriding the websocket Origin header', async () => {
+      jest.useRealTimers();
+      const WebSocket = require('ws');
+      const deviceAuth = configureDeviceAuth();
+      mockConfig.openclaw.gatewayUrl = 'http://host.containers.internal:18789';
+      mockConfig.openclaw.gatewayOrigin = 'https://moltar.spoved.io';
+
+      const promise = openclawGatewayClient.gatewayWsRpc('sessions.list', {}, { deviceAuth });
+
+      expect(WebSocket).toHaveBeenCalledWith(
+        'ws://host.containers.internal:18789',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Origin: 'https://moltar.spoved.io',
+            Host: 'host.containers.internal:18789',
+          }),
+        }),
+      );
+
+      emitWs('error', new Error('connection failed'));
+      await expect(promise).rejects.toMatchObject({
+        status: 503,
+        code: 'SERVICE_UNAVAILABLE',
+      });
     });
   });
 });

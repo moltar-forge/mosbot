@@ -380,7 +380,6 @@ router.delete('/:agentId', async (req, res, next) => {
     const sessionsPayload = await sessionsListAllViaWs({
       includeGlobal: true,
       includeUnknown: true,
-      activeMinutes: 0,
       limit: 0,
       messageLimit: 0,
     });
