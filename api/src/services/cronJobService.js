@@ -17,6 +17,12 @@ function parseInterval(str) {
   return value * (multipliers[unit] || 60000);
 }
 
+function getAgentWorkspaceBase(agent) {
+  if (agent.workspace) return agent.workspace;
+  if (agent.id === 'main') return '/home/node/.openclaw/workspace';
+  return `/home/node/.openclaw/workspace-${agent.id}`;
+}
+
 async function getHeartbeatJobsFromConfig() {
   try {
     const data = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
@@ -32,7 +38,7 @@ async function getHeartbeatJobsFromConfig() {
         let lastRunAt = null;
         let nextRunAt = null;
         try {
-          const workspaceBase = agent.workspace || `/home/node/.openclaw/workspace-${agent.id}`;
+          const workspaceBase = getAgentWorkspaceBase(agent);
           const relativePath = workspaceBase.replace(/^\/home\/node\/\.openclaw\//, '/');
           const hbData = await makeOpenClawRequest(
             'GET',
@@ -634,6 +640,7 @@ async function getCronJobRunsData({ userId, jobId, limit }) {
 
 module.exports = {
   parseInterval,
+  getAgentWorkspaceBase,
   getHeartbeatJobsFromConfig,
   getCronJobsData,
   getCronJobStatsData,

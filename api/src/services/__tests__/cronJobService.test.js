@@ -27,6 +27,7 @@ const { estimateCostFromTokens } = require('../modelPricingService');
 const { cronList, gatewayWsRpc } = require('../openclawGatewayClient');
 const {
   parseInterval,
+  getAgentWorkspaceBase,
   getHeartbeatJobsFromConfig,
   getCronJobsData,
   getCronJobStatsData,
@@ -47,6 +48,14 @@ describe('cronJobService', () => {
     expect(parseInterval('30m')).toBe(30 * 60 * 1000);
     expect(parseInterval('2h')).toBe(2 * 60 * 60 * 1000);
     expect(parseInterval('bad')).toBeNull();
+  });
+
+  it('uses the correct default workspace base and lets config override it', () => {
+    expect(getAgentWorkspaceBase({ id: 'main' })).toBe('/home/node/.openclaw/workspace');
+    expect(getAgentWorkspaceBase({ id: 'coo' })).toBe('/home/node/.openclaw/workspace-coo');
+    expect(getAgentWorkspaceBase({ id: 'main', workspace: '/custom/main-workspace' })).toBe(
+      '/custom/main-workspace',
+    );
   });
 
   it('reads heartbeat jobs from parsed openclaw config', async () => {
@@ -71,6 +80,30 @@ describe('cronJobService', () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0].jobId).toBe('heartbeat-coo');
     expect(jobs[0].schedule.everyMs).toBe(30 * 60 * 1000);
+  });
+
+  it('uses the main workspace default when reading heartbeat state', async () => {
+    makeOpenClawRequest
+      .mockResolvedValueOnce({ content: '{"agents":[]}' })
+      .mockResolvedValueOnce({ content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }) });
+
+    parseOpenClawConfig.mockReturnValueOnce({
+      agents: {
+        list: [
+          {
+            id: 'main',
+            identity: { name: 'Main' },
+            heartbeat: { every: '15m' },
+          },
+        ],
+      },
+    });
+
+    await getHeartbeatJobsFromConfig();
+
+    expect(makeOpenClawRequest).toHaveBeenNthCalledWith(2, 'GET', expect.stringContaining(
+      encodeURIComponent('/workspace/runtime/heartbeat/last.json'),
+    ));
   });
 
   it('handles missing heartbeat last-run file gracefully', async () => {
