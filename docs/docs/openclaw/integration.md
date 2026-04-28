@@ -148,6 +148,14 @@ OPENCLAW_WORKSPACE_URL=http://host.docker.internal:18780
 OPENCLAW_GATEWAY_URL=http://host.docker.internal:18789
 ```
 
+If your OpenClaw gateway only allows browser origins from a public hostname, keep the local
+container-to-host gateway URL and set an explicit allowed origin for the WebSocket handshake:
+
+```bash
+OPENCLAW_GATEWAY_URL=http://host.docker.internal:18789
+OPENCLAW_GATEWAY_ORIGIN=https://control.example.com
+```
+
 ### OpenClaw runs on a remote server
 
 Use the server's hostname or IP address:

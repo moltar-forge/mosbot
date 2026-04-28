@@ -174,15 +174,27 @@ function resetPersistentRpcState(cause = null) {
   }
   persistentRpcState.pending.clear();
   if (persistentRpcState.ws) {
-    if (typeof persistentRpcState.ws.removeAllListeners === 'function') {
+    const ws = persistentRpcState.ws;
+    if (typeof ws.removeAllListeners === 'function') {
       try {
-        persistentRpcState.ws.removeAllListeners();
+        ws.removeAllListeners();
+      } catch (_) {
+        void _;
+      }
+    }
+    if (typeof ws.on === 'function') {
+      try {
+        ws.on('error', () => {});
       } catch (_) {
         void _;
       }
     }
     try {
-      persistentRpcState.ws.close();
+      if (ws.readyState === 0 && typeof ws.terminate === 'function') {
+        ws.terminate();
+      } else {
+        ws.close();
+      }
     } catch (_) {
       void _;
     }
@@ -819,11 +831,25 @@ async function sessionsListAllViaWs({
   messageLimit = 0,
 } = {}) {
   const params = { includeGlobal, includeUnknown };
-  if (activeMinutes > 0) params.activeMinutes = activeMinutes;
+  if (Number.isFinite(activeMinutes) && activeMinutes >= 1) params.activeMinutes = activeMinutes;
   if (limit > 0) params.limit = limit;
   if (messageLimit > 0) params.messageLimit = messageLimit;
 
   return gatewayWsRpc('sessions.list', params);
+}
+
+function getGatewayWsHeaders(wsUrl, gatewayToken) {
+  const parsedUrl = new URL(wsUrl.replace(/^ws/, 'http'));
+  const configuredOrigin =
+    typeof config.openclaw.gatewayOrigin === 'string' ? config.openclaw.gatewayOrigin.trim() : '';
+  const defaultOriginScheme = wsUrl.startsWith('wss://') ? 'https' : 'http';
+  const defaultOrigin = `${defaultOriginScheme}://${parsedUrl.host}`;
+
+  return {
+    ...(gatewayToken ? { Authorization: `Bearer ${gatewayToken}` } : {}),
+    Origin: configuredOrigin || defaultOrigin,
+    Host: parsedUrl.host,
+  };
 }
 
 function schedulePersistentRpcIdleClose() {
@@ -949,9 +975,6 @@ async function ensurePersistentRpcConnection(options = {}) {
 
   const wsUrl = gatewayUrl.replace(/^http:\/\//, 'ws://').replace(/^https:\/\//, 'wss://');
   const WebSocket = require('ws');
-  const parsedUrl = new URL(wsUrl.replace(/^ws/, 'http'));
-  const originHost = parsedUrl.host;
-  const originScheme = wsUrl.startsWith('wss://') ? 'https' : 'http';
 
   persistentRpcState.connecting = new Promise((resolve, reject) => {
     let settled = false;
@@ -966,11 +989,7 @@ async function ensurePersistentRpcConnection(options = {}) {
     }, config.openclaw.gatewayTimeoutMs);
 
     const ws = new WebSocket(wsUrl, {
-      headers: {
-        ...(gatewayToken ? { Authorization: `Bearer ${gatewayToken}` } : {}),
-        Origin: `${originScheme}://${originHost}`,
-        Host: originHost,
-      },
+      headers: getGatewayWsHeaders(wsUrl, gatewayToken),
       rejectUnauthorized: !OPENCLAW_GATEWAY_INSECURE_TLS,
     });
 
@@ -1233,15 +1252,8 @@ async function gatewayWsRpcWithDeviceAuth(method, params = {}, options = {}) {
     }, timeoutMs);
 
     const WebSocket = require('ws');
-    const parsedUrl = new URL(wsUrl.replace(/^ws/, 'http'));
-    const originHost = parsedUrl.host; // e.g. "openclaw.openclaw-personal.svc.cluster.local:18789"
-    const originScheme = wsUrl.startsWith('wss://') ? 'https' : 'http';
     const ws = new WebSocket(wsUrl, {
-      headers: {
-        ...(gatewayToken ? { Authorization: `Bearer ${gatewayToken}` } : {}),
-        Origin: `${originScheme}://${originHost}`,
-        Host: originHost,
-      },
+      headers: getGatewayWsHeaders(wsUrl, gatewayToken),
       rejectUnauthorized: !OPENCLAW_GATEWAY_INSECURE_TLS,
     });
 

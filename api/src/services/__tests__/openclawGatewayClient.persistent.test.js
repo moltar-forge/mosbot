@@ -56,6 +56,7 @@ describe('openclawGatewayClient persistent RPC mode', () => {
       openclaw: {
         gatewayUrl: 'http://test-gateway:18789',
         gatewayToken: null,
+        gatewayOrigin: null,
         gatewayTimeoutMs,
       },
     }));
@@ -161,6 +162,68 @@ describe('openclawGatewayClient persistent RPC mode', () => {
 
     await expect(promise).resolves.toEqual({ method: 'sessions.list' });
     expect(ws.close).toHaveBeenCalled();
+  });
+
+  it('uses the configured Origin header while connecting to a local gateway host', async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.OPENCLAW_WS_PERSISTENT_RPC = 'true';
+    jest.resetModules();
+
+    const wsInstances = [];
+    const WebSocketMock = jest.fn().mockImplementation(() => {
+      const handlers = {};
+      const ws = {
+        on: jest.fn((event, handler) => {
+          handlers[event] = handler;
+        }),
+        send: jest.fn(),
+        close: jest.fn(),
+        __handlers: handlers,
+      };
+      wsInstances.push(ws);
+      return ws;
+    });
+
+    jest.doMock('ws', () => WebSocketMock);
+    jest.doMock('../../config', () => ({
+      openclaw: {
+        gatewayUrl: 'http://host.containers.internal:18789',
+        gatewayToken: null,
+        gatewayOrigin: 'https://control.example.com',
+        gatewayTimeoutMs: 1000,
+      },
+    }));
+    jest.doMock('../../utils/logger', () => ({
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+    }));
+    jest.doMock('../openclawWorkspaceClient', () => ({
+      getFileContent: jest.fn(),
+    }));
+
+    const client = require('../openclawGatewayClient');
+    const deviceAuth = buildDeviceAuth('device-origin', 'token-origin');
+    const promise = client.gatewayWsRpc('sessions.list', {}, { deviceAuth });
+    await nextTick();
+
+    expect(WebSocketMock).toHaveBeenCalledWith(
+      'ws://host.containers.internal:18789',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Origin: 'https://control.example.com',
+          Host: 'host.containers.internal:18789',
+        }),
+      }),
+    );
+
+    const ws = wsInstances[0];
+    ws.__handlers.error?.(new Error('connection failed'));
+    await expect(promise).rejects.toMatchObject({
+      status: 503,
+      code: 'SERVICE_UNAVAILABLE',
+    });
   });
 
 });

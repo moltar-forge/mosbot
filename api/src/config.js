@@ -46,6 +46,9 @@ const config = {
     get gatewayToken() {
       return process.env.OPENCLAW_GATEWAY_TOKEN || null;
     },
+    get gatewayOrigin() {
+      return process.env.OPENCLAW_GATEWAY_ORIGIN || null;
+    },
     get gatewayTimeoutMs() {
       // Use test-friendly timeout in service tests but allow config tests to override
       // The config tests will temporarily set this environment variable to get standard values
