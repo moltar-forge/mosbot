@@ -153,7 +153,7 @@ container-to-host gateway URL and set an explicit allowed origin for the WebSock
 
 ```bash
 OPENCLAW_GATEWAY_URL=http://host.docker.internal:18789
-OPENCLAW_GATEWAY_ORIGIN=https://moltar.spoved.io
+OPENCLAW_GATEWAY_ORIGIN=https://control.example.com
 ```
 
 ### OpenClaw runs on a remote server

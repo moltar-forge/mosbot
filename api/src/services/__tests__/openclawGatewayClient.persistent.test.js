@@ -189,7 +189,7 @@ describe('openclawGatewayClient persistent RPC mode', () => {
       openclaw: {
         gatewayUrl: 'http://host.containers.internal:18789',
         gatewayToken: null,
-        gatewayOrigin: 'https://moltar.spoved.io',
+        gatewayOrigin: 'https://control.example.com',
         gatewayTimeoutMs: 1000,
       },
     }));
@@ -212,7 +212,7 @@ describe('openclawGatewayClient persistent RPC mode', () => {
       'ws://host.containers.internal:18789',
       expect.objectContaining({
         headers: expect.objectContaining({
-          Origin: 'https://moltar.spoved.io',
+          Origin: 'https://control.example.com',
           Host: 'host.containers.internal:18789',
         }),
       }),

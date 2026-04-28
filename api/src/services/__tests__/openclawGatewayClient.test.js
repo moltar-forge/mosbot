@@ -1282,7 +1282,7 @@ Line 2"}`;
       const WebSocket = require('ws');
       const deviceAuth = configureDeviceAuth();
       mockConfig.openclaw.gatewayUrl = 'http://host.containers.internal:18789';
-      mockConfig.openclaw.gatewayOrigin = 'https://moltar.spoved.io';
+      mockConfig.openclaw.gatewayOrigin = 'https://control.example.com';
 
       const promise = openclawGatewayClient.gatewayWsRpc('sessions.list', {}, { deviceAuth });
 
@@ -1290,7 +1290,7 @@ Line 2"}`;
         'ws://host.containers.internal:18789',
         expect.objectContaining({
           headers: expect.objectContaining({
-            Origin: 'https://moltar.spoved.io',
+            Origin: 'https://control.example.com',
             Host: 'host.containers.internal:18789',
           }),
         }),
