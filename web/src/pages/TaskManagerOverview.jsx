@@ -22,7 +22,7 @@ import { getCronJobs, getSchedulerStats } from '../api/client';
 import logger from '../utils/logger';
 import { classNames, formatTokens } from '../utils/helpers';
 
-const MONITOR_REFRESH_INTERVAL_MS = 15000;
+const MONITOR_REFRESH_INTERVAL_MS = 30000;
 
 const SESSION_TYPES = [
   { id: 'main', label: 'Agent' },
@@ -331,19 +331,18 @@ export default function TaskManagerOverview() {
 
     const runIfVisible = () => {
       if (document.visibilityState === 'visible') {
-        refreshOverview();
+        void Promise.all([fetchSessions(), fetchTodaySummary()]);
       }
     };
 
     const interval = setInterval(runIfVisible, MONITOR_REFRESH_INTERVAL_MS);
     document.addEventListener('visibilitychange', runIfVisible);
-    runIfVisible();
 
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', runIfVisible);
     };
-  }, [autoRefreshEnabled, refreshOverview]);
+  }, [autoRefreshEnabled, fetchSessions, fetchTodaySummary]);
 
   // All live sessions (running + active + idle) passing current filters
   const liveSessions = useMemo(() => sessions.filter(passesFilters), [sessions, passesFilters]);

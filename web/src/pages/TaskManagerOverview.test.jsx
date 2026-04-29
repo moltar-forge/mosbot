@@ -128,15 +128,15 @@ describe('TaskManagerOverview', () => {
     useSchedulerStore.mockImplementation((selector) => selector(schedulerState));
   });
 
-  it('runs an immediate visible refresh when auto-refresh is enabled', async () => {
+  it('loads overview data once on mount without triggering a duplicate visible refresh', async () => {
     await renderOverview();
 
     await waitFor(() => {
-      expect(mockFetchSessions).toHaveBeenCalledTimes(2);
+      expect(mockFetchSessions).toHaveBeenCalledTimes(1);
     });
-    expect(getCronJobs).toHaveBeenCalledTimes(2);
-    expect(mockFetchTodaySummary).toHaveBeenCalledTimes(2);
-    expect(getSchedulerStats).toHaveBeenCalledTimes(2);
+    expect(getCronJobs).toHaveBeenCalledTimes(1);
+    expect(mockFetchTodaySummary).toHaveBeenCalledTimes(1);
+    expect(getSchedulerStats).toHaveBeenCalledTimes(1);
   });
 
   it('clears the activity filter with the rest of the filters', async () => {
