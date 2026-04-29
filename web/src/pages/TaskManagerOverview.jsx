@@ -294,6 +294,17 @@ export default function TaskManagerOverview() {
     }
   }, [fetchSessions, loadRecentActivity, fetchTodaySummary, loadSchedulerStats]);
 
+  const refreshLiveOverview = useCallback(async () => {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+
+    try {
+      await Promise.all([fetchSessions(), fetchTodaySummary()]);
+    } finally {
+      refreshInFlightRef.current = false;
+    }
+  }, [fetchSessions, fetchTodaySummary]);
+
   const handleRefresh = async () => {
     await refreshOverview();
   };
@@ -331,7 +342,7 @@ export default function TaskManagerOverview() {
 
     const runIfVisible = () => {
       if (document.visibilityState === 'visible') {
-        void Promise.all([fetchSessions(), fetchTodaySummary()]);
+        void refreshLiveOverview();
       }
     };
 
@@ -342,7 +353,7 @@ export default function TaskManagerOverview() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', runIfVisible);
     };
-  }, [autoRefreshEnabled, fetchSessions, fetchTodaySummary]);
+  }, [autoRefreshEnabled, refreshLiveOverview]);
 
   // All live sessions (running + active + idle) passing current filters
   const liveSessions = useMemo(() => sessions.filter(passesFilters), [sessions, passesFilters]);
