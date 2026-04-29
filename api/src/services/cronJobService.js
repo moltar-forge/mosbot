@@ -23,11 +23,14 @@ function getAgentWorkspaceBase(agent) {
   return `/home/node/.openclaw/workspace-${agent.id}`;
 }
 
-async function getHeartbeatJobsFromConfig() {
+async function getHeartbeatJobsFromConfig(parsedConfig = null) {
   try {
-    const data = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
-    const parsedConfig = parseOpenClawConfig(data.content);
-    const agentsList = parsedConfig?.agents?.list || [];
+    let resolvedConfig = parsedConfig;
+    if (!resolvedConfig) {
+      const data = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
+      resolvedConfig = parseOpenClawConfig(data.content);
+    }
+    const agentsList = resolvedConfig?.agents?.list || [];
     const agentsWithHeartbeat = agentsList.filter((agent) => agent.heartbeat);
 
     const heartbeatResults = await Promise.all(
@@ -98,479 +101,548 @@ async function getHeartbeatJobsFromConfig() {
   }
 }
 
+const CRON_JOBS_CACHE_TTL_MS = 15000;
+const ENABLE_CRON_JOBS_CACHE = process.env.NODE_ENV !== 'test';
+let cronJobsCache = { value: null, fetchedAt: 0 };
+let cronJobsInflight = null;
+
 async function getCronJobsData({ userId }) {
-  logger.info('Fetching cron jobs from OpenClaw', { userId });
-
-  let openclawConfig = null;
-  try {
-    const configData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
-    openclawConfig = parseOpenClawConfig(configData.content);
-  } catch (configErr) {
-    logger.warn('Could not read OpenClaw config for agent enrichment', {
-      error: configErr.message,
-    });
+  const now = Date.now();
+  if (
+    ENABLE_CRON_JOBS_CACHE &&
+    cronJobsCache.value &&
+    now - cronJobsCache.fetchedAt < CRON_JOBS_CACHE_TTL_MS
+  ) {
+    return cronJobsCache.value;
+  }
+  if (ENABLE_CRON_JOBS_CACHE && cronJobsInflight) {
+    return cronJobsInflight;
   }
 
-  const [gatewayJobs, heartbeatJobs] = await Promise.all([
-    cronList().catch((err) => {
-      if (err.code === 'SERVICE_NOT_CONFIGURED' || err.code === 'SERVICE_UNAVAILABLE') {
-        return [];
-      }
-      logger.warn('Failed to fetch gateway cron jobs', {
-        error: err.message,
+  cronJobsInflight = (async () => {
+    logger.info('Fetching cron jobs from OpenClaw', { userId });
+
+    let openclawConfig = null;
+    try {
+      const configData = await makeOpenClawRequest('GET', '/files/content?path=/openclaw.json');
+      openclawConfig = parseOpenClawConfig(configData.content);
+    } catch (configErr) {
+      logger.warn('Could not read OpenClaw config for agent enrichment', {
+        error: configErr.message,
       });
-      return [];
-    }),
-    getHeartbeatJobsFromConfig(),
-  ]);
-
-  let CronExpressionParser = null;
-  try {
-    CronExpressionParser = require('cron-parser').CronExpressionParser;
-  } catch (_) {
-    // Optional dependency.
-  }
-
-  if (gatewayJobs.length > 0) {
-    logger.info('Raw gateway job sample (first job keys)', {
-      keys: Object.keys(gatewayJobs[0]),
-      sample: JSON.stringify(gatewayJobs[0]).slice(0, 500),
-    });
-  }
-
-  const taggedGatewayJobs = gatewayJobs.map((job) => {
-    const normalized = {
-      ...job,
-      source: job.source || 'gateway',
-    };
-
-    if (!normalized.schedule) {
-      if (job.cron) {
-        normalized.schedule = {
-          kind: 'cron',
-          expr: job.cron,
-          tz: job.tz || job.timezone || null,
-        };
-      } else if (job.expression) {
-        normalized.schedule = {
-          kind: 'cron',
-          expr: job.expression,
-          tz: job.tz || job.timezone || null,
-        };
-      } else if (job.interval || job.every) {
-        const intervalStr = job.interval || job.every;
-        const intervalMs = parseInterval(intervalStr);
-        normalized.schedule = {
-          kind: 'every',
-          everyMs: intervalMs,
-          label: intervalStr,
-        };
-      }
     }
 
-    if (!normalized.lastRunAt) {
-      const state = job.state || {};
-      if (state.lastRunAtMs) {
-        normalized.lastRunAt = new Date(state.lastRunAtMs).toISOString();
-      } else {
-        normalized.lastRunAt = job.lastFiredAt || job.lastRanAt || job.lastRun || job.last_fired_at || null;
-      }
-    }
-
-    if (!normalized.nextRunAt) {
-      const state = job.state || {};
-      if (state.nextRunAtMs) {
-        normalized.nextRunAt = new Date(state.nextRunAtMs).toISOString();
-      } else {
-        normalized.nextRunAt = job.nextFireAt || job.nextRun || job.next_fire_at || null;
-      }
-    }
-
-    if (!normalized.nextRunAt) {
-      try {
-        const sched = normalized.schedule || {};
-        if (sched.kind === 'cron' && sched.expr && CronExpressionParser) {
-          const options = {};
-          options.tz = sched.tz || config.timezone;
-          const interval = CronExpressionParser.parse(sched.expr, options);
-          normalized.nextRunAt = interval.next().toISOString();
-        } else if (sched.kind === 'every' && sched.everyMs && normalized.lastRunAt) {
-          normalized.nextRunAt = new Date(
-            new Date(normalized.lastRunAt).getTime() + sched.everyMs,
-          ).toISOString();
+    const [gatewayJobs, heartbeatJobs] = await Promise.all([
+      cronList().catch((err) => {
+        if (err.code === 'SERVICE_NOT_CONFIGURED' || err.code === 'SERVICE_UNAVAILABLE') {
+          return [];
         }
-      } catch (cronErr) {
-        logger.warn('Could not compute nextRunAt for gateway job', {
-          jobId: job.jobId || job.id || job.name,
-          error: cronErr.message,
-        });
-      }
-    }
-
-    if (!normalized.status && job.state?.lastStatus) {
-      normalized.status = job.state.lastStatus;
-    }
-
-    if (normalized.payload) {
-      if (!normalized.payload.message && normalized.payload.text) {
-        normalized.payload.message = normalized.payload.text;
-      }
-      if (!normalized.payload.message && normalized.payload.prompt) {
-        normalized.payload.message = normalized.payload.prompt;
-      }
-    }
-
-    return normalized;
-  });
-
-  const agentsList = openclawConfig?.agents?.list || [];
-  const enrichedJobs = [...taggedGatewayJobs, ...heartbeatJobs].map((job) => {
-    if (job.agentId && agentsList.length > 0) {
-      const agent = agentsList.find((a) => a.id === job.agentId);
-      if (agent && agent.model) {
-        return {
-          ...job,
-          agentModel: agent.model?.primary || agent.model || null,
-        };
-      }
-    }
-    return job;
-  });
-
-  let cronSessionMap = new Map();
-  let cronUsageByParent = new Map();
-
-  try {
-    const [sessionsResult, usageResult] = await Promise.all([
-      gatewayWsRpc('sessions.list', { includeUnknown: true, limit: 500 }),
-      gatewayWsRpc('sessions.usage', {
-        startDate: new Date().toISOString().slice(0, 10),
-        endDate: new Date().toISOString().slice(0, 10),
-        limit: 2000,
-      }).catch((err) => {
-        logger.warn('Failed to fetch cron session usage', {
+        logger.warn('Failed to fetch gateway cron jobs', {
           error: err.message,
         });
-        return { sessions: [] };
+        return [];
       }),
+      getHeartbeatJobsFromConfig(openclawConfig),
     ]);
 
-    const allSessions = sessionsResult?.sessions || [];
-    allSessions.forEach((session) => {
-      if (
-        session.key &&
-        (session.key.includes(':cron:') ||
-          session.key.includes(':heartbeat') ||
-          /^agent:[^:]+:isolated$/.test(session.key))
-      ) {
-        cronSessionMap.set(session.key, session);
-      }
-    });
-
-    const isCronOrHeartbeatKey = (key) =>
-      key.includes(':cron:') || key.includes(':heartbeat') || /^agent:[^:]+:isolated(:|$)/.test(key);
-
-    const cronRawBuckets = new Map();
-    for (const entry of usageResult?.sessions || []) {
-      if (!entry.key || !isCronOrHeartbeatKey(entry.key)) continue;
-      const runIdx = entry.key.indexOf(':run:');
-      const isIsolatedRun = runIdx !== -1;
-      const parentKey = isIsolatedRun ? entry.key.slice(0, runIdx) : entry.key;
-
-      if (!cronRawBuckets.has(parentKey)) {
-        cronRawBuckets.set(parentKey, { runs: [], parent: null });
-      }
-      const bucket = cronRawBuckets.get(parentKey);
-      if (isIsolatedRun) {
-        bucket.runs.push(entry.usage || {});
-      } else {
-        bucket.parent = entry.usage || {};
-      }
+    let CronExpressionParser = null;
+    try {
+      CronExpressionParser = require('cron-parser').CronExpressionParser;
+    } catch (_) {
+      // Optional dependency.
     }
 
-    for (const [parentKey, bucket] of cronRawBuckets) {
-      const hasRuns = bucket.runs.length > 0;
-      const entries = hasRuns ? bucket.runs : bucket.parent ? [bucket.parent] : [];
-      const agg = {
-        totalCost: 0,
-        latestRun: null,
-        latestActivity: 0,
-        isCumulative: false,
+    if (gatewayJobs.length > 0) {
+      logger.info('Raw gateway job sample (first job keys)', {
+        keys: Object.keys(gatewayJobs[0]),
+        sample: JSON.stringify(gatewayJobs[0]).slice(0, 500),
+      });
+    }
+
+    const taggedGatewayJobs = gatewayJobs.map((job) => {
+      const normalized = {
+        ...job,
+        source: job.source || 'gateway',
       };
 
-      for (const usage of entries) {
-        agg.totalCost += usage.totalCost || 0;
-        const activity = usage.lastActivity || 0;
-        if (activity > agg.latestActivity) {
-          agg.latestActivity = activity;
-          agg.latestRun = usage;
+      if (!normalized.schedule) {
+        if (job.cron) {
+          normalized.schedule = {
+            kind: 'cron',
+            expr: job.cron,
+            tz: job.tz || job.timezone || null,
+          };
+        } else if (job.expression) {
+          normalized.schedule = {
+            kind: 'cron',
+            expr: job.expression,
+            tz: job.tz || job.timezone || null,
+          };
+        } else if (job.interval || job.every) {
+          const intervalStr = job.interval || job.every;
+          const intervalMs = parseInterval(intervalStr);
+          normalized.schedule = {
+            kind: 'every',
+            everyMs: intervalMs,
+            label: intervalStr,
+          };
         }
       }
 
-      if (!hasRuns && bucket.parent) {
-        agg.isCumulative = true;
-        agg.runCount = entries.length;
-      } else if (hasRuns && bucket.runs.length === 1) {
-        const userMsgs = bucket.runs[0]?.messageCounts?.user || 0;
-        if (userMsgs > 1) {
+      if (!normalized.lastRunAt) {
+        const state = job.state || {};
+        if (state.lastRunAtMs) {
+          normalized.lastRunAt = new Date(state.lastRunAtMs).toISOString();
+        } else {
+          normalized.lastRunAt =
+            job.lastFiredAt || job.lastRanAt || job.lastRun || job.last_fired_at || null;
+        }
+      }
+
+      if (!normalized.nextRunAt) {
+        const state = job.state || {};
+        if (state.nextRunAtMs) {
+          normalized.nextRunAt = new Date(state.nextRunAtMs).toISOString();
+        } else {
+          normalized.nextRunAt = job.nextFireAt || job.nextRun || job.next_fire_at || null;
+        }
+      }
+
+      if (!normalized.nextRunAt) {
+        try {
+          const sched = normalized.schedule || {};
+          if (sched.kind === 'cron' && sched.expr && CronExpressionParser) {
+            const options = {};
+            options.tz = sched.tz || config.timezone;
+            const interval = CronExpressionParser.parse(sched.expr, options);
+            normalized.nextRunAt = interval.next().toISOString();
+          } else if (sched.kind === 'every' && sched.everyMs && normalized.lastRunAt) {
+            normalized.nextRunAt = new Date(
+              new Date(normalized.lastRunAt).getTime() + sched.everyMs,
+            ).toISOString();
+          }
+        } catch (cronErr) {
+          logger.warn('Could not compute nextRunAt for gateway job', {
+            jobId: job.jobId || job.id || job.name,
+            error: cronErr.message,
+          });
+        }
+      }
+
+      if (!normalized.status && job.state?.lastStatus) {
+        normalized.status = job.state.lastStatus;
+      }
+
+      if (normalized.payload) {
+        if (!normalized.payload.message && normalized.payload.text) {
+          normalized.payload.message = normalized.payload.text;
+        }
+        if (!normalized.payload.message && normalized.payload.prompt) {
+          normalized.payload.message = normalized.payload.prompt;
+        }
+      }
+
+      return normalized;
+    });
+
+    const agentsList = openclawConfig?.agents?.list || [];
+    const enrichedJobs = [...taggedGatewayJobs, ...heartbeatJobs].map((job) => {
+      if (job.agentId && agentsList.length > 0) {
+        const agent = agentsList.find((a) => a.id === job.agentId);
+        if (agent && agent.model) {
+          return {
+            ...job,
+            agentModel: agent.model?.primary || agent.model || null,
+          };
+        }
+      }
+      return job;
+    });
+
+    let cronSessionMap = new Map();
+    let cronUsageByParent = new Map();
+
+    try {
+      const [sessionsResult, usageResult] = await Promise.all([
+        gatewayWsRpc('sessions.list', { includeUnknown: true, limit: 500 }),
+        gatewayWsRpc('sessions.usage', {
+          startDate: new Date().toISOString().slice(0, 10),
+          endDate: new Date().toISOString().slice(0, 10),
+          limit: 2000,
+        }).catch((err) => {
+          logger.warn('Failed to fetch cron session usage', {
+            error: err.message,
+          });
+          return { sessions: [] };
+        }),
+      ]);
+
+      const allSessions = sessionsResult?.sessions || [];
+      allSessions.forEach((session) => {
+        if (
+          session.key &&
+          (session.key.includes(':cron:') ||
+            session.key.includes(':heartbeat') ||
+            /^agent:[^:]+:isolated$/.test(session.key))
+        ) {
+          cronSessionMap.set(session.key, session);
+        }
+      });
+
+      const isCronOrHeartbeatKey = (key) =>
+        key.includes(':cron:') ||
+        key.includes(':heartbeat') ||
+        /^agent:[^:]+:isolated(:|$)/.test(key);
+
+      const cronRawBuckets = new Map();
+      for (const entry of usageResult?.sessions || []) {
+        if (!entry.key || !isCronOrHeartbeatKey(entry.key)) continue;
+        const runIdx = entry.key.indexOf(':run:');
+        const isIsolatedRun = runIdx !== -1;
+        const parentKey = isIsolatedRun ? entry.key.slice(0, runIdx) : entry.key;
+
+        if (!cronRawBuckets.has(parentKey)) {
+          cronRawBuckets.set(parentKey, { runs: [], parent: null });
+        }
+        const bucket = cronRawBuckets.get(parentKey);
+        if (isIsolatedRun) {
+          bucket.runs.push(entry.usage || {});
+        } else {
+          bucket.parent = entry.usage || {};
+        }
+      }
+
+      for (const [parentKey, bucket] of cronRawBuckets) {
+        const hasRuns = bucket.runs.length > 0;
+        const entries = hasRuns ? bucket.runs : bucket.parent ? [bucket.parent] : [];
+        const agg = {
+          totalCost: 0,
+          latestRun: null,
+          latestActivity: 0,
+          isCumulative: false,
+        };
+
+        for (const usage of entries) {
+          agg.totalCost += usage.totalCost || 0;
+          const activity = usage.lastActivity || 0;
+          if (activity > agg.latestActivity) {
+            agg.latestActivity = activity;
+            agg.latestRun = usage;
+          }
+        }
+
+        if (!hasRuns && bucket.parent) {
           agg.isCumulative = true;
-          agg.runCount = userMsgs;
+          agg.runCount = entries.length;
+        } else if (hasRuns && bucket.runs.length === 1) {
+          const userMsgs = bucket.runs[0]?.messageCounts?.user || 0;
+          if (userMsgs > 1) {
+            agg.isCumulative = true;
+            agg.runCount = userMsgs;
+          }
+        }
+        cronUsageByParent.set(parentKey, agg);
+      }
+
+      logger.info('Cron sessions fetched via WebSocket RPC', {
+        totalSessions: allSessions.length,
+        cronSessions: cronSessionMap.size,
+        cronUsageEntries: cronUsageByParent.size,
+      });
+    } catch (wsErr) {
+      logger.warn('Failed to fetch sessions via WebSocket for cron matching', {
+        error: wsErr.message,
+      });
+    }
+
+    const jobsWithExecutionData = enrichedJobs.map((job) => {
+      if (!job.agentId) return job;
+
+      const isHeartbeatJob = job.source === 'config' || job.payload?.kind === 'heartbeat';
+      const jobId = job.jobId || job.id;
+
+      if (!isHeartbeatJob && job.source !== 'gateway') return job;
+
+      const resolvedSessionTarget =
+        job.sessionTarget ||
+        job.payload?.session ||
+        (job.payload?.kind === 'agentTurn' ? 'isolated' : 'main');
+
+      let expectedKey;
+      let messageSessionKey;
+
+      if (isHeartbeatJob) {
+        const isolatedKey = `agent:${job.agentId}:isolated`;
+        const heartbeatKey = `agent:${job.agentId}:heartbeat`;
+        expectedKey = cronSessionMap.has(isolatedKey) ? isolatedKey : heartbeatKey;
+        messageSessionKey = expectedKey;
+      } else {
+        expectedKey = `agent:${job.agentId}:cron:${jobId}`;
+        messageSessionKey =
+          resolvedSessionTarget === 'main' ? `agent:${job.agentId}:main` : expectedKey;
+      }
+
+      let matchedSession = cronSessionMap.get(expectedKey);
+      if (!matchedSession && !isHeartbeatJob) {
+        const runPrefix = `${expectedKey}:run:`;
+        let latestRunTs = 0;
+        for (const [key, session] of cronSessionMap) {
+          if (!key.startsWith(runPrefix)) continue;
+          const ts = toUpdatedAtMs(session.updatedAt ?? session.updated_at) || 0;
+          if (ts > latestRunTs) {
+            latestRunTs = ts;
+            matchedSession = session;
+          }
         }
       }
-      cronUsageByParent.set(parentKey, agg);
-    }
 
-    logger.info('Cron sessions fetched via WebSocket RPC', {
-      totalSessions: allSessions.length,
-      cronSessions: cronSessionMap.size,
-      cronUsageEntries: cronUsageByParent.size,
-    });
-  } catch (wsErr) {
-    logger.warn('Failed to fetch sessions via WebSocket for cron matching', {
-      error: wsErr.message,
-    });
-  }
+      const usageAgg = cronUsageByParent.get(expectedKey);
+      const latestRun = usageAgg?.latestRun;
+      const jobLastRunMs = job.state?.lastRunAtMs;
 
-  const jobsWithExecutionData = enrichedJobs.map((job) => {
-    if (!job.agentId) return job;
+      if (matchedSession || latestRun) {
+        const isCumulative = usageAgg?.isCumulative === true;
+        const actualModel = matchedSession?.model || null;
 
-    const isHeartbeatJob = job.source === 'config' || job.payload?.kind === 'heartbeat';
-    const jobId = job.jobId || job.id;
+        const inputTokens = latestRun?.input ?? matchedSession?.inputTokens ?? 0;
+        const outputTokens = latestRun?.output ?? matchedSession?.outputTokens ?? 0;
+        const cacheReadTokens = latestRun?.cacheRead ?? 0;
+        const cacheWriteTokens = latestRun?.cacheWrite ?? 0;
+        const messageCost =
+          latestRun?.totalCost ||
+          estimateCostFromTokens(actualModel, inputTokens, outputTokens, {
+            cacheReadTokens,
+            cacheWriteTokens,
+          }) ||
+          0;
 
-    if (!isHeartbeatJob && job.source !== 'gateway') return job;
+        const todayTotalCost = usageAgg?.totalCost ?? 0;
+        const contextTokens = matchedSession?.contextTokens || 0;
+        const rawTotalTokens = latestRun?.totalTokens ?? matchedSession?.totalTokens ?? 0;
+        const totalTokensUsed =
+          contextTokens > 0 ? Math.min(rawTotalTokens, contextTokens) : rawTotalTokens;
+        const contextUsagePercent =
+          contextTokens > 0 ? Math.round((totalTokensUsed / contextTokens) * 100 * 10) / 10 : 0;
 
-    const resolvedSessionTarget =
-      job.sessionTarget ||
-      job.payload?.session ||
-      (job.payload?.kind === 'agentTurn' ? 'isolated' : 'main');
-
-    let expectedKey;
-    let messageSessionKey;
-
-    if (isHeartbeatJob) {
-      const isolatedKey = `agent:${job.agentId}:isolated`;
-      const heartbeatKey = `agent:${job.agentId}:heartbeat`;
-      expectedKey = cronSessionMap.has(isolatedKey) ? isolatedKey : heartbeatKey;
-      messageSessionKey = expectedKey;
-    } else {
-      expectedKey = `agent:${job.agentId}:cron:${jobId}`;
-      messageSessionKey =
-        resolvedSessionTarget === 'main' ? `agent:${job.agentId}:main` : expectedKey;
-    }
-
-    let matchedSession = cronSessionMap.get(expectedKey);
-    if (!matchedSession && !isHeartbeatJob) {
-      const runPrefix = `${expectedKey}:run:`;
-      let latestRunTs = 0;
-      for (const [key, session] of cronSessionMap) {
-        if (!key.startsWith(runPrefix)) continue;
-        const ts = toUpdatedAtMs(session.updatedAt ?? session.updated_at) || 0;
-        if (ts > latestRunTs) {
-          latestRunTs = ts;
-          matchedSession = session;
-        }
+        return {
+          ...job,
+          lastExecution: {
+            inputTokens,
+            outputTokens,
+            cacheReadTokens,
+            cacheWriteTokens,
+            messageCost,
+            todayTotalCost,
+            isCumulative,
+            model: actualModel,
+            lastMessage: null,
+            updatedAt:
+              toUpdatedAtMs(matchedSession?.updatedAt ?? matchedSession?.updated_at) ||
+              jobLastRunMs ||
+              null,
+            contextTokens,
+            totalTokensUsed,
+            contextUsagePercent,
+            sessionKey: messageSessionKey,
+            sessionLabel: matchedSession?.displayName || matchedSession?.sessionLabel || null,
+          },
+        };
       }
-    }
-
-    const usageAgg = cronUsageByParent.get(expectedKey);
-    const latestRun = usageAgg?.latestRun;
-    const jobLastRunMs = job.state?.lastRunAtMs;
-
-    if (matchedSession || latestRun) {
-      const isCumulative = usageAgg?.isCumulative === true;
-      const actualModel = matchedSession?.model || null;
-
-      const inputTokens = latestRun?.input ?? matchedSession?.inputTokens ?? 0;
-      const outputTokens = latestRun?.output ?? matchedSession?.outputTokens ?? 0;
-      const cacheReadTokens = latestRun?.cacheRead ?? 0;
-      const cacheWriteTokens = latestRun?.cacheWrite ?? 0;
-      const messageCost =
-        latestRun?.totalCost ||
-        estimateCostFromTokens(actualModel, inputTokens, outputTokens, {
-          cacheReadTokens,
-          cacheWriteTokens,
-        }) ||
-        0;
-
-      const todayTotalCost = usageAgg?.totalCost ?? 0;
-      const contextTokens = matchedSession?.contextTokens || 0;
-      const rawTotalTokens = latestRun?.totalTokens ?? matchedSession?.totalTokens ?? 0;
-      const totalTokensUsed = contextTokens > 0 ? Math.min(rawTotalTokens, contextTokens) : rawTotalTokens;
-      const contextUsagePercent =
-        contextTokens > 0 ? Math.round((totalTokensUsed / contextTokens) * 100 * 10) / 10 : 0;
 
       return {
         ...job,
         lastExecution: {
-          inputTokens,
-          outputTokens,
-          cacheReadTokens,
-          cacheWriteTokens,
-          messageCost,
-          todayTotalCost,
-          isCumulative,
-          model: actualModel,
+          inputTokens: null,
+          outputTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          messageCost: null,
+          todayTotalCost: null,
+          model: null,
           lastMessage: null,
-          updatedAt:
-            toUpdatedAtMs(matchedSession?.updatedAt ?? matchedSession?.updated_at) ||
-            jobLastRunMs ||
-            null,
-          contextTokens,
-          totalTokensUsed,
-          contextUsagePercent,
+          updatedAt: jobLastRunMs || null,
+          contextTokens: null,
+          totalTokensUsed: null,
+          contextUsagePercent: null,
           sessionKey: messageSessionKey,
-          sessionLabel: matchedSession?.displayName || matchedSession?.sessionLabel || null,
+          durationMs: job.state?.lastDurationMs || null,
+          status: job.state?.lastStatus || null,
+          unavailable: true,
         },
       };
-    }
-
-    return {
-      ...job,
-      lastExecution: {
-        inputTokens: null,
-        outputTokens: null,
-        cacheReadTokens: null,
-        cacheWriteTokens: null,
-        messageCost: null,
-        todayTotalCost: null,
-        model: null,
-        lastMessage: null,
-        updatedAt: jobLastRunMs || null,
-        contextTokens: null,
-        totalTokensUsed: null,
-        contextUsagePercent: null,
-        sessionKey: messageSessionKey,
-        durationMs: job.state?.lastDurationMs || null,
-        status: job.state?.lastStatus || null,
-        unavailable: true,
-      },
-    };
-  });
-
-  const jobsWithRecalculatedNextRun = jobsWithExecutionData.map((job) => {
-    const isHeartbeatJob = job.source === 'config' || job.payload?.kind === 'heartbeat';
-    if (!isHeartbeatJob) return job;
-
-    const lastExecutionTime = job.lastExecution?.updatedAt;
-    const intervalMs = job.schedule?.everyMs;
-
-    if (lastExecutionTime && intervalMs) {
-      const lastExecutionMs =
-        typeof lastExecutionTime === 'number'
-          ? lastExecutionTime
-          : new Date(lastExecutionTime).getTime();
-
-      if (!isNaN(lastExecutionMs)) {
-        const recalculatedNextRunAt = new Date(lastExecutionMs + intervalMs).toISOString();
-        return {
-          ...job,
-          nextRunAt: recalculatedNextRunAt,
-        };
-      }
-    }
-
-    return job;
-  });
-
-  const agentNameMap = new Map();
-  const agentTitleMap = new Map();
-
-  (openclawConfig?.agents?.list || []).forEach((agent) => {
-    if (agent.id) {
-      agentTitleMap.set(agent.id, agent.identity?.title || null);
-    }
-  });
-
-  try {
-    const allAgentIds = [...new Set(jobsWithRecalculatedNextRun.map((j) => j.agentId).filter(Boolean))];
-    if (allAgentIds.length > 0) {
-      const result = await pool.query('SELECT agent_id, name FROM agents WHERE agent_id = ANY($1)', [
-        allAgentIds,
-      ]);
-      result.rows.forEach((row) => {
-        agentNameMap.set(row.agent_id, row.name);
-      });
-    }
-  } catch (dbErr) {
-    logger.warn('Could not query agents table for agent names', {
-      error: dbErr.message,
     });
-  }
 
-  const finalJobs = jobsWithRecalculatedNextRun.map((job) => {
-    if (!job.agentId) return job;
-    return {
-      ...job,
-      agentName: agentNameMap.get(job.agentId) || null,
-      agentTitle: agentTitleMap.get(job.agentId) || null,
-    };
-  });
+    const jobsWithRecalculatedNextRun = jobsWithExecutionData.map((job) => {
+      const isHeartbeatJob = job.source === 'config' || job.payload?.kind === 'heartbeat';
+      if (!isHeartbeatJob) return job;
 
-  logger.info('Cron jobs aggregated', {
-    userId,
-    gateway: taggedGatewayJobs.length,
-    heartbeats: heartbeatJobs.length,
-    total: finalJobs.length,
-    withExecutionData: finalJobs.filter((j) => j.lastExecution).length,
-  });
+      const lastExecutionTime = job.lastExecution?.updatedAt;
+      const intervalMs = job.schedule?.everyMs;
 
-  return { version: 1, jobs: finalJobs };
-}
+      if (lastExecutionTime && intervalMs) {
+        const lastExecutionMs =
+          typeof lastExecutionTime === 'number'
+            ? lastExecutionTime
+            : new Date(lastExecutionTime).getTime();
 
-async function getCronJobStatsData({ userId }) {
-  logger.info('Fetching cron jobs stats for attention counts', {
-    userId,
-  });
-
-  const gatewayJobsP = cronList().catch((err) => {
-    logger.warn('Failed to fetch gateway jobs for stats', {
-      error: err.message,
-    });
-    return [];
-  });
-
-  const configJobsP = getHeartbeatJobsFromConfig().catch((err) => {
-    logger.warn('Failed to fetch config jobs for stats', {
-      error: err.message,
-    });
-    return [];
-  });
-
-  let [gatewayJobs, configJobs] = await Promise.all([gatewayJobsP, configJobsP]);
-  if (!Array.isArray(gatewayJobs)) gatewayJobs = [];
-  if (!Array.isArray(configJobs)) configJobs = [];
-
-  const gatewayJobsNormalized = gatewayJobs.map((job) => {
-    let nextRunAtMs = job.state?.nextRunAtMs || null;
-    if (!nextRunAtMs && job.enabled !== false) {
-      if (job.cron || job.expression || (job.schedule?.kind === 'cron' && job.schedule?.expr)) {
-        try {
-          const expr = job.cron || job.expression || job.schedule.expr;
-          const tz = job.tz || job.schedule?.tz || config.timezone;
-          const { CronExpressionParser } = require('cron-parser');
-          nextRunAtMs = CronExpressionParser.parse(expr, { tz }).next().getTime();
-        } catch (_e) {
-          nextRunAtMs = null;
+        if (!isNaN(lastExecutionMs)) {
+          const recalculatedNextRunAt = new Date(lastExecutionMs + intervalMs).toISOString();
+          return {
+            ...job,
+            nextRunAt: recalculatedNextRunAt,
+          };
         }
       }
+
+      return job;
+    });
+
+    const agentNameMap = new Map();
+    const agentTitleMap = new Map();
+
+    (openclawConfig?.agents?.list || []).forEach((agent) => {
+      if (agent.id) {
+        agentTitleMap.set(agent.id, agent.identity?.title || null);
+      }
+    });
+
+    try {
+      const allAgentIds = [
+        ...new Set(jobsWithRecalculatedNextRun.map((j) => j.agentId).filter(Boolean)),
+      ];
+      if (allAgentIds.length > 0) {
+        const result = await pool.query(
+          'SELECT agent_id, name FROM agents WHERE agent_id = ANY($1)',
+          [allAgentIds],
+        );
+        result.rows.forEach((row) => {
+          agentNameMap.set(row.agent_id, row.name);
+        });
+      }
+    } catch (dbErr) {
+      logger.warn('Could not query agents table for agent names', {
+        error: dbErr.message,
+      });
     }
-    return { ...job, nextRunAtMs };
-  });
 
-  const allJobs = [
-    ...gatewayJobsNormalized,
-    ...configJobs.map((j) => ({
-      ...j,
-      nextRunAtMs: j.state?.nextRunAtMs || null,
-    })),
-  ];
+    const finalJobs = jobsWithRecalculatedNextRun.map((job) => {
+      if (!job.agentId) return job;
+      return {
+        ...job,
+        agentName: agentNameMap.get(job.agentId) || null,
+        agentTitle: agentTitleMap.get(job.agentId) || null,
+      };
+    });
 
-  const nowMs = Date.now();
+    logger.info('Cron jobs aggregated', {
+      userId,
+      gateway: taggedGatewayJobs.length,
+      heartbeats: heartbeatJobs.length,
+      total: finalJobs.length,
+      withExecutionData: finalJobs.filter((j) => j.lastExecution).length,
+    });
 
-  const errors = allJobs.filter((j) => j.state?.lastStatus === 'error' || j.status === 'error').length;
-  const missed = allJobs.filter((j) => j.enabled !== false && j.nextRunAtMs && j.nextRunAtMs < nowMs).length;
+    const payload = { version: 1, jobs: finalJobs };
+    if (ENABLE_CRON_JOBS_CACHE) {
+      cronJobsCache = { value: payload, fetchedAt: now };
+    }
+    return payload;
+  })();
 
-  return { errors, missed };
+  try {
+    return await cronJobsInflight;
+  } finally {
+    cronJobsInflight = null;
+  }
+}
+
+const CRON_JOB_STATS_CACHE_TTL_MS = 15000;
+const ENABLE_CRON_JOB_STATS_CACHE = process.env.NODE_ENV !== 'test';
+let cronJobStatsCache = { value: null, fetchedAt: 0 };
+let cronJobStatsInflight = null;
+
+async function getCronJobStatsData({ userId }) {
+  const now = Date.now();
+  if (
+    ENABLE_CRON_JOB_STATS_CACHE &&
+    cronJobStatsCache.value &&
+    now - cronJobStatsCache.fetchedAt < CRON_JOB_STATS_CACHE_TTL_MS
+  ) {
+    return cronJobStatsCache.value;
+  }
+  if (ENABLE_CRON_JOB_STATS_CACHE && cronJobStatsInflight) {
+    return cronJobStatsInflight;
+  }
+
+  cronJobStatsInflight = (async () => {
+    logger.info('Fetching cron jobs stats for attention counts', {
+      userId,
+    });
+
+    const gatewayJobsP = cronList().catch((err) => {
+      logger.warn('Failed to fetch gateway jobs for stats', {
+        error: err.message,
+      });
+      return [];
+    });
+
+    const configJobsP = getHeartbeatJobsFromConfig().catch((err) => {
+      logger.warn('Failed to fetch config jobs for stats', {
+        error: err.message,
+      });
+      return [];
+    });
+
+    let [gatewayJobs, configJobs] = await Promise.all([gatewayJobsP, configJobsP]);
+    if (!Array.isArray(gatewayJobs)) gatewayJobs = [];
+    if (!Array.isArray(configJobs)) configJobs = [];
+
+    const gatewayJobsNormalized = gatewayJobs.map((job) => {
+      let nextRunAtMs = job.state?.nextRunAtMs || null;
+      if (!nextRunAtMs && job.enabled !== false) {
+        if (job.cron || job.expression || (job.schedule?.kind === 'cron' && job.schedule?.expr)) {
+          try {
+            const expr = job.cron || job.expression || job.schedule.expr;
+            const tz = job.tz || job.schedule?.tz || config.timezone;
+            const { CronExpressionParser } = require('cron-parser');
+            nextRunAtMs = CronExpressionParser.parse(expr, { tz }).next().getTime();
+          } catch (_e) {
+            nextRunAtMs = null;
+          }
+        }
+      }
+      return { ...job, nextRunAtMs };
+    });
+
+    const allJobs = [
+      ...gatewayJobsNormalized,
+      ...configJobs.map((j) => ({
+        ...j,
+        nextRunAtMs: j.state?.nextRunAtMs || null,
+      })),
+    ];
+
+    const nowMs = Date.now();
+
+    const errors = allJobs.filter(
+      (j) => j.state?.lastStatus === 'error' || j.status === 'error',
+    ).length;
+    const missed = allJobs.filter(
+      (j) => j.enabled !== false && j.nextRunAtMs && j.nextRunAtMs < nowMs,
+    ).length;
+
+    const stats = { errors, missed };
+    if (ENABLE_CRON_JOB_STATS_CACHE) {
+      cronJobStatsCache = { value: stats, fetchedAt: now };
+    }
+    return stats;
+  })();
+
+  try {
+    return await cronJobStatsInflight;
+  } finally {
+    cronJobStatsInflight = null;
+  }
 }
 
 async function getCronJobRunsData({ userId, jobId, limit }) {

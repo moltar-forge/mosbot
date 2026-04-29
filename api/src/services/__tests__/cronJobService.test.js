@@ -61,7 +61,9 @@ describe('cronJobService', () => {
   it('reads heartbeat jobs from parsed openclaw config', async () => {
     makeOpenClawRequest
       .mockResolvedValueOnce({ content: '{"agents":[]}' })
-      .mockResolvedValueOnce({ content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }) });
+      .mockResolvedValueOnce({
+        content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }),
+      });
 
     parseOpenClawConfig.mockReturnValue({
       agents: {
@@ -85,7 +87,9 @@ describe('cronJobService', () => {
   it('uses the main workspace default when reading heartbeat state', async () => {
     makeOpenClawRequest
       .mockResolvedValueOnce({ content: '{"agents":[]}' })
-      .mockResolvedValueOnce({ content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }) });
+      .mockResolvedValueOnce({
+        content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }),
+      });
 
     parseOpenClawConfig.mockReturnValueOnce({
       agents: {
@@ -101,9 +105,11 @@ describe('cronJobService', () => {
 
     await getHeartbeatJobsFromConfig();
 
-    expect(makeOpenClawRequest).toHaveBeenNthCalledWith(2, 'GET', expect.stringContaining(
-      encodeURIComponent('/workspace/runtime/heartbeat/last.json'),
-    ));
+    expect(makeOpenClawRequest).toHaveBeenNthCalledWith(
+      2,
+      'GET',
+      expect.stringContaining(encodeURIComponent('/workspace/runtime/heartbeat/last.json')),
+    );
   });
 
   it('handles missing heartbeat last-run file gracefully', async () => {
@@ -131,7 +137,9 @@ describe('cronJobService', () => {
   it('aggregates cron jobs with execution data and agent enrichment', async () => {
     makeOpenClawRequest
       .mockResolvedValueOnce({ content: '{"agents":[]}' })
-      .mockResolvedValueOnce({ content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }) });
+      .mockResolvedValueOnce({
+        content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }),
+      });
 
     parseOpenClawConfig.mockReturnValueOnce({
       agents: {
@@ -244,9 +252,7 @@ describe('cronJobService', () => {
     parseOpenClawConfig.mockReturnValueOnce({ agents: { list: [] } });
     cronList.mockRejectedValueOnce({ code: 'SERVICE_NOT_CONFIGURED', message: 'off' });
 
-    gatewayWsRpc
-      .mockResolvedValueOnce({ sessions: [] })
-      .mockResolvedValueOnce({ sessions: [] });
+    gatewayWsRpc.mockResolvedValueOnce({ sessions: [] }).mockResolvedValueOnce({ sessions: [] });
 
     const data = await getCronJobsData({ userId: 'u1' });
     expect(Array.isArray(data.jobs)).toBe(true);
@@ -256,9 +262,7 @@ describe('cronJobService', () => {
     makeOpenClawRequest.mockResolvedValueOnce({ content: '{"agents":[]}' });
     parseOpenClawConfig.mockReturnValueOnce({ agents: { list: [] } });
     cronList.mockRejectedValueOnce(new Error('gateway failed'));
-    gatewayWsRpc
-      .mockResolvedValueOnce({ sessions: [] })
-      .mockResolvedValueOnce({ sessions: [] });
+    gatewayWsRpc.mockResolvedValueOnce({ sessions: [] }).mockResolvedValueOnce({ sessions: [] });
 
     const data = await getCronJobsData({ userId: 'u1' });
     expect(data.jobs).toEqual([]);
@@ -273,9 +277,7 @@ describe('cronJobService', () => {
       { id: 'g1', source: 'gateway', agentId: 'x1', payload: { kind: 'systemEvent' } },
     ]);
 
-    gatewayWsRpc
-      .mockResolvedValueOnce({ sessions: [] })
-      .mockResolvedValueOnce({ sessions: [] });
+    gatewayWsRpc.mockResolvedValueOnce({ sessions: [] }).mockResolvedValueOnce({ sessions: [] });
 
     const data = await getCronJobsData({ userId: 'u1' });
     const custom = data.jobs.find((j) => j.id === 'custom');
@@ -287,7 +289,9 @@ describe('cronJobService', () => {
   it('covers parent-only cumulative usage, run-prefix fallback, and heartbeat isolated mapping', async () => {
     makeOpenClawRequest
       .mockResolvedValueOnce({ content: '{"agents":[]}' })
-      .mockResolvedValueOnce({ content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }) });
+      .mockResolvedValueOnce({
+        content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }),
+      });
 
     parseOpenClawConfig.mockReturnValueOnce({
       agents: {
@@ -303,7 +307,12 @@ describe('cronJobService', () => {
     });
 
     cronList.mockResolvedValueOnce([
-      { id: 'g-main', source: 'gateway', agentId: 'coo', payload: { kind: 'systemEvent', session: 'main' } },
+      {
+        id: 'g-main',
+        source: 'gateway',
+        agentId: 'coo',
+        payload: { kind: 'systemEvent', session: 'main' },
+      },
       { id: 'g-iso', source: 'gateway', agentId: 'coo', payload: { kind: 'agentTurn' } },
     ]);
 
@@ -328,10 +337,19 @@ describe('cronJobService', () => {
       })
       .mockResolvedValueOnce({
         sessions: [
-          { key: 'agent:coo:cron:g-main', usage: { totalCost: 3, input: 20, output: 10, lastActivity: 100 } },
+          {
+            key: 'agent:coo:cron:g-main',
+            usage: { totalCost: 3, input: 20, output: 10, lastActivity: 100 },
+          },
           {
             key: 'agent:coo:cron:g-iso:run:1',
-            usage: { totalCost: 1, input: 5, output: 2, messageCounts: { user: 2 }, lastActivity: 200 },
+            usage: {
+              totalCost: 1,
+              input: 5,
+              output: 2,
+              messageCounts: { user: 2 },
+              lastActivity: 200,
+            },
           },
         ],
       });
@@ -346,12 +364,11 @@ describe('cronJobService', () => {
   it('handles sessions usage fetch failure and heartbeat fallback to heartbeat key', async () => {
     makeOpenClawRequest
       .mockResolvedValueOnce({ content: '{"agents":[]}' })
-      .mockResolvedValueOnce({ content: '{"agents":[]}' })
-      .mockResolvedValueOnce({ content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }) });
+      .mockResolvedValueOnce({
+        content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }),
+      });
 
-    parseOpenClawConfig
-      .mockReturnValueOnce({ agents: { list: [] } })
-      .mockReturnValueOnce({
+    parseOpenClawConfig.mockReturnValueOnce({
       agents: {
         list: [
           {
@@ -362,7 +379,7 @@ describe('cronJobService', () => {
           },
         ],
       },
-      });
+    });
 
     cronList.mockResolvedValueOnce([]);
     gatewayWsRpc
@@ -399,9 +416,7 @@ describe('cronJobService', () => {
       },
     ]);
 
-    gatewayWsRpc
-      .mockResolvedValueOnce({ sessions: [] })
-      .mockResolvedValueOnce({ sessions: [] });
+    gatewayWsRpc.mockResolvedValueOnce({ sessions: [] }).mockResolvedValueOnce({ sessions: [] });
 
     const data = await getCronJobsData({ userId: 'u1' });
     expect(data.jobs[0].nextRunAt).toBeNull();
@@ -435,7 +450,9 @@ describe('cronJobService', () => {
     cronList.mockRejectedValueOnce(new Error('gateway stats fail'));
     makeOpenClawRequest
       .mockResolvedValueOnce({ content: '{"agents":[]}' })
-      .mockResolvedValueOnce({ content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }) });
+      .mockResolvedValueOnce({
+        content: JSON.stringify({ lastHeartbeat: '2026-03-10T01:00:00.000Z' }),
+      });
     parseOpenClawConfig.mockReturnValueOnce({
       agents: {
         list: [

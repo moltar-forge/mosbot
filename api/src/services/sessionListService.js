@@ -2,11 +2,7 @@ const logger = require('../utils/logger');
 const pool = require('../db/pool');
 const { estimateCostFromTokens } = require('./modelPricingService');
 const { makeOpenClawRequest } = require('./openclawWorkspaceClient');
-const {
-  gatewayWsRpc,
-  sessionsListAllViaWs,
-  sessionsList,
-} = require('./openclawGatewayClient');
+const { gatewayWsRpc, sessionsListAllViaWs, sessionsList } = require('./openclawGatewayClient');
 const { upsertSessionUsageBatch } = require('./sessionUsageService');
 
 function toUpdatedAtMs(val) {
@@ -16,43 +12,71 @@ function toUpdatedAtMs(val) {
   return Number.isFinite(t) ? t : 0;
 }
 
+const SESSIONS_STATUS_CACHE_TTL_MS = 15000;
+const ENABLE_SESSIONS_STATUS_CACHE = process.env.NODE_ENV !== 'test';
+let sessionsStatusCache = { value: null, fetchedAt: 0 };
+let sessionsStatusInflight = null;
+
 async function getSessionsStatusData() {
-  const RUNNING_THRESHOLD_MS = 2 * 60 * 1000;
-  const ACTIVE_THRESHOLD_MS = 30 * 60 * 1000;
   const now = Date.now();
-
-  let sessions = [];
-  try {
-    const wsResult = await sessionsListAllViaWs({
-      includeGlobal: true,
-      includeUnknown: false,
-      activeMinutes: 0,
-      limit: 0,
-    });
-    if (Array.isArray(wsResult)) {
-      sessions = wsResult;
-    } else if (wsResult?.sessions && Array.isArray(wsResult.sessions)) {
-      sessions = wsResult.sessions;
+  if (
+    ENABLE_SESSIONS_STATUS_CACHE &&
+    sessionsStatusCache.value &&
+    now - sessionsStatusCache.fetchedAt < SESSIONS_STATUS_CACHE_TTL_MS
+  ) {
+    return sessionsStatusCache.value;
+  }
+  if (ENABLE_SESSIONS_STATUS_CACHE && sessionsStatusInflight) {
+    return sessionsStatusInflight;
+  }
+  if (!ENABLE_SESSIONS_STATUS_CACHE) {
+    sessionsStatusInflight = null;
+  }
+  sessionsStatusInflight = (async () => {
+    const RUNNING_THRESHOLD_MS = 2 * 60 * 1000;
+    const ACTIVE_THRESHOLD_MS = 30 * 60 * 1000;
+    let sessions = [];
+    try {
+      const wsResult = await sessionsListAllViaWs({
+        includeGlobal: true,
+        includeUnknown: false,
+        limit: 0,
+      });
+      if (Array.isArray(wsResult)) {
+        sessions = wsResult;
+      } else if (wsResult?.sessions && Array.isArray(wsResult.sessions)) {
+        sessions = wsResult.sessions;
+      }
+    } catch (wsErr) {
+      logger.warn('sessions/status: WebSocket sessions.list failed', {
+        error: wsErr.message,
+      });
+      return { running: 0, active: 0, idle: 0, total: 0 };
     }
-  } catch (wsErr) {
-    logger.warn('sessions/status: WebSocket sessions.list failed', {
-      error: wsErr.message,
-    });
-    return { running: 0, active: 0, idle: 0, total: 0 };
-  }
 
-  let running = 0;
-  let active = 0;
-  let idle = 0;
-  for (const s of sessions) {
-    const updatedAtMs = toUpdatedAtMs(s.updatedAt ?? s.updated_at);
-    const age = now - updatedAtMs;
-    if (age <= RUNNING_THRESHOLD_MS) running++;
-    else if (age <= ACTIVE_THRESHOLD_MS) active++;
-    else idle++;
-  }
+    let running = 0;
+    let active = 0;
+    let idle = 0;
+    for (const s of sessions) {
+      const updatedAtMs = toUpdatedAtMs(s.updatedAt ?? s.updated_at);
+      const age = now - updatedAtMs;
+      if (age <= RUNNING_THRESHOLD_MS) running++;
+      else if (age <= ACTIVE_THRESHOLD_MS) active++;
+      else idle++;
+    }
 
-  return { running, active, idle, total: sessions.length };
+    const counts = { running, active, idle, total: sessions.length };
+    if (ENABLE_SESSIONS_STATUS_CACHE) {
+      sessionsStatusCache = { value: counts, fetchedAt: now };
+    }
+    return counts;
+  })();
+
+  try {
+    return await sessionsStatusInflight;
+  } finally {
+    sessionsStatusInflight = null;
+  }
 }
 
 async function listSessionsData({ userId }) {
@@ -66,7 +90,6 @@ async function listSessionsData({ userId }) {
     const wsResult = await sessionsListAllViaWs({
       includeGlobal: true,
       includeUnknown: true,
-      activeMinutes: 0,
       limit: 0,
     });
 
@@ -473,7 +496,8 @@ async function listSessionsData({ userId }) {
 
     const contextTokens = session.contextTokens || 0;
     const rawTotalTokens = session._cronLatestRun?.totalTokens ?? session.totalTokens ?? 0;
-    const totalTokensUsed = contextTokens > 0 ? Math.min(rawTotalTokens, contextTokens) : rawTotalTokens;
+    const totalTokensUsed =
+      contextTokens > 0 ? Math.min(rawTotalTokens, contextTokens) : rawTotalTokens;
     const contextUsagePercent =
       contextTokens > 0 ? Math.round((totalTokensUsed / contextTokens) * 100 * 10) / 10 : 0;
 
@@ -703,9 +727,10 @@ async function listSessionsData({ userId }) {
   try {
     const sessionAgentIds = [...new Set(transformedSessions.map((s) => s.agent).filter(Boolean))];
     if (sessionAgentIds.length > 0) {
-      const result = await pool.query('SELECT agent_id, name FROM agents WHERE agent_id = ANY($1)', [
-        sessionAgentIds,
-      ]);
+      const result = await pool.query(
+        'SELECT agent_id, name FROM agents WHERE agent_id = ANY($1)',
+        [sessionAgentIds],
+      );
       result.rows.forEach((row) => {
         sessionAgentNameMap.set(row.agent_id, row.name);
       });
